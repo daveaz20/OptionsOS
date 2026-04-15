@@ -40,6 +40,15 @@ export const ListStocksResponseItem = zod.object({
     .number()
     .min(1)
     .max(listStocksResponseTechnicalStrengthMax),
+  ivRank: zod.number().optional(),
+  relativeStrength: zod.string().optional(),
+  priceAction: zod.string().optional(),
+  supportPrice: zod.number().optional(),
+  resistancePrice: zod.number().optional(),
+  earningsDate: zod.string().optional(),
+  liquidity: zod.string().optional(),
+  fiftyTwoWeekHigh: zod.number().optional(),
+  fiftyTwoWeekLow: zod.number().optional(),
 });
 export const ListStocksResponse = zod.array(ListStocksResponseItem);
 
@@ -158,7 +167,7 @@ export const GetStrategiesResponseItem = zod.object({
   legs: zod.array(
     zod.object({
       action: zod.enum(["buy", "sell"]),
-      optionType: zod.enum(["call", "put"]),
+      optionType: zod.enum(["call", "put", "stock"]),
       strikePrice: zod.number(),
       premium: zod.number(),
       quantity: zod.number(),
@@ -188,8 +197,8 @@ export const CalculatePnlParams = zod.object({
 export const CalculatePnlBody = zod.object({
   strategyId: zod.number(),
   targetPrice: zod.number(),
-  targetDate: zod.string(),
-  impliedVolatility: zod.number(),
+  targetDate: zod.string().optional(),
+  impliedVolatility: zod.number().optional(),
 });
 
 export const CalculatePnlResponse = zod.object({

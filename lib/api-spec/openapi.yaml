@@ -466,7 +466,7 @@ components:
           enum: [buy, sell]
         optionType:
           type: string
-          enum: [call, put]
+          enum: [call, put, stock]
         strikePrice:
           type: number
         premium:
@@ -497,8 +497,6 @@ components:
       required:
         - strategyId
         - targetPrice
-        - targetDate
-        - impliedVolatility
 
     PnlResult:
       type: object

@@ -24,6 +24,15 @@ export interface Stock {
    * @maximum 10
    */
   technicalStrength: number;
+  ivRank?: number;
+  relativeStrength?: string;
+  priceAction?: string;
+  supportPrice?: number;
+  resistancePrice?: number;
+  earningsDate?: string;
+  liquidity?: string;
+  fiftyTwoWeekHigh?: number;
+  fiftyTwoWeekLow?: number;
 }
 
 export type StockDetailLiquidity =
@@ -116,6 +125,7 @@ export type OptionLegOptionType =
 export const OptionLegOptionType = {
   call: "call",
   put: "put",
+  stock: "stock",
 } as const;
 
 export interface OptionLeg {
@@ -150,8 +160,8 @@ export interface OptionsStrategy {
 export interface PnlRequest {
   strategyId: number;
   targetPrice: number;
-  targetDate: string;
-  impliedVolatility: number;
+  targetDate?: string;
+  impliedVolatility?: number;
 }
 
 export type PnlResultPnlCurveItem = {

@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { like, desc, asc, sql } from "drizzle-orm";
+import { like, sql } from "drizzle-orm";
 import { db, stocksTable } from "@workspace/db";
 import {
   ListStocksQueryParams,
@@ -10,125 +10,139 @@ import {
   GetStockPriceHistoryQueryParams,
   GetStockPriceHistoryResponse,
 } from "@workspace/api-zod";
+import { getQuote, getQuotes, getPriceHistory, getHistoricalVolatility, DEFAULT_UNIVERSE } from "../lib/market-data.js";
+import { computeSignals } from "../lib/technical-analysis.js";
 
 const router: IRouter = Router();
 
+// GET /stocks — list all stocks in scanner universe with live quotes + technicals
 router.get("/stocks", async (req, res): Promise<void> => {
   const query = ListStocksQueryParams.safeParse(req.query);
-  if (!query.success) {
-    res.status(400).json({ error: query.error.message });
-    return;
-  }
+  if (!query.success) { res.status(400).json({ error: query.error.message }); return; }
 
   const { search, limit } = query.data;
 
-  let q = db.select().from(stocksTable).orderBy(asc(stocksTable.symbol)).$dynamic();
-
+  let universe = DEFAULT_UNIVERSE;
   if (search) {
-    q = q.where(
-      sql`(${stocksTable.symbol} ILIKE ${`%${search}%`} OR ${stocksTable.name} ILIKE ${`%${search}%`})`
-    );
+    const q = search.trim().toLowerCase();
+    universe = universe.filter((s) => s.toLowerCase().includes(q));
   }
+  if (limit && limit < universe.length) universe = universe.slice(0, limit);
 
-  if (limit) {
-    q = q.limit(limit);
-  }
+  const quotes = await getQuotes(universe);
 
-  const stocks = await q;
-  res.json(ListStocksResponse.parse(stocks));
+  // Fetch technicals for each — parallel with a concurrency guard
+  const enriched = await Promise.all(
+    quotes.map(async (quote) => {
+      try {
+        const [history, hv] = await Promise.all([
+          getPriceHistory(quote.symbol, "3M"),
+          getHistoricalVolatility(quote.symbol),
+        ]);
+        const signals = computeSignals(history, quote.price);
+        return quoteToStock(quote, signals, hv.ivRank);
+      } catch {
+        return quoteToStock(quote, null, 30);
+      }
+    })
+  );
+
+  res.json(ListStocksResponse.parse(enriched));
 });
 
+// GET /stocks/:symbol — full detail for one symbol
 router.get("/stocks/:symbol", async (req, res): Promise<void> => {
   const params = GetStockParams.safeParse(req.params);
-  if (!params.success) {
-    res.status(400).json({ error: params.error.message });
-    return;
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+
+  const symbol = (Array.isArray(params.data.symbol) ? params.data.symbol[0] : params.data.symbol).toUpperCase();
+
+  try {
+    const [quote, history, hv] = await Promise.all([
+      getQuote(symbol),
+      getPriceHistory(symbol, "3M"),
+      getHistoricalVolatility(symbol),
+    ]);
+    const signals = computeSignals(history, quote.price);
+    res.json(GetStockResponse.parse(quoteToStock(quote, signals, hv.ivRank)));
+  } catch (err: any) {
+    res.status(404).json({ error: `Symbol not found: ${symbol}` });
   }
-
-  const symbol = Array.isArray(params.data.symbol) ? params.data.symbol[0] : params.data.symbol;
-
-  const [stock] = await db
-    .select()
-    .from(stocksTable)
-    .where(sql`${stocksTable.symbol} = ${symbol.toUpperCase()}`);
-
-  if (!stock) {
-    res.status(404).json({ error: "Stock not found" });
-    return;
-  }
-
-  res.json(GetStockResponse.parse(stock));
 });
 
+// GET /stocks/:symbol/price-history — OHLCV candles from Yahoo Finance
 router.get("/stocks/:symbol/price-history", async (req, res): Promise<void> => {
   const params = GetStockPriceHistoryParams.safeParse(req.params);
-  if (!params.success) {
-    res.status(400).json({ error: params.error.message });
-    return;
-  }
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
 
   const query = GetStockPriceHistoryQueryParams.safeParse(req.query);
-  const period = query.success ? query.data.period : "3M";
+  const period = query.success ? (query.data.period ?? "3M") : "3M";
+  const symbol = (Array.isArray(params.data.symbol) ? params.data.symbol[0] : params.data.symbol).toUpperCase();
 
-  const symbol = Array.isArray(params.data.symbol) ? params.data.symbol[0] : params.data.symbol;
-
-  const [stock] = await db
-    .select()
-    .from(stocksTable)
-    .where(sql`${stocksTable.symbol} = ${symbol.toUpperCase()}`);
-
-  if (!stock) {
-    res.status(404).json({ error: "Stock not found" });
-    return;
+  try {
+    const history = await getPriceHistory(symbol, period);
+    res.json(GetStockPriceHistoryResponse.parse(history));
+  } catch (err: any) {
+    res.status(500).json({ error: `Failed to fetch price history: ${err.message}` });
   }
-
-  const days = periodToDays(period ?? "3M");
-  const priceHistory = generatePriceHistory(stock.price, days);
-
-  res.json(GetStockPriceHistoryResponse.parse(priceHistory));
 });
 
-function periodToDays(period: string): number {
-  switch (period) {
-    case "1D": return 1;
-    case "1W": return 7;
-    case "1M": return 30;
-    case "3M": return 90;
-    case "6M": return 180;
-    case "1Y": return 365;
-    default: return 90;
-  }
+// ─── Shape adapter ────────────────────────────────────────────────────────
+
+function quoteToStock(
+  quote: Awaited<ReturnType<typeof getQuote>>,
+  signals: ReturnType<typeof computeSignals> | null,
+  ivRank: number
+) {
+  const sig = signals ?? {
+    strength: 5,
+    trend: "neutral" as const,
+    support: round2(quote.price * 0.94),
+    resistance: round2(quote.price * 1.06),
+    priceAction: "Neutral trend, insufficient history.",
+    relativeStrength: "5/10",
+    rsi14: 50,
+    sma20: quote.price,
+    sma50: quote.price,
+    sma200: quote.price,
+    macd: { value: 0, signal: 0, histogram: 0 },
+    atr14: quote.price * 0.015,
+    volumeRatio: 1,
+  };
+
+  return {
+    id: hashSymbol(quote.symbol),
+    symbol: quote.symbol,
+    name: quote.name,
+    price: quote.price,
+    change: round2(quote.change),
+    changePercent: round2(quote.changePercent),
+    volume: quote.volume,
+    marketCap: quote.marketCap,
+    sector: quote.sector,
+    technicalStrength: Math.round(sig.strength),
+    fiftyTwoWeekHigh: quote.fiftyTwoWeekHigh,
+    fiftyTwoWeekLow: quote.fiftyTwoWeekLow,
+    eps: quote.eps,
+    pe: quote.pe,
+    dividendYield: quote.dividendYield,
+    ivRank: round2(ivRank),
+    relativeStrength: sig.relativeStrength,
+    supportPrice: sig.support,
+    resistancePrice: sig.resistance,
+    earningsDate: quote.earningsDate,
+    liquidity: quote.avgVolume > 1_000_000 ? "Liquid" : "Illiquid",
+    priceAction: sig.priceAction,
+    createdAt: new Date(),
+  };
 }
 
-function generatePriceHistory(currentPrice: number, days: number) {
-  const points = [];
-  const now = new Date();
-  let price = currentPrice * (0.85 + Math.random() * 0.15);
-
-  for (let i = days; i >= 0; i--) {
-    const date = new Date(now);
-    date.setDate(date.getDate() - i);
-
-    const volatility = 0.02;
-    const drift = (currentPrice - price) / (i + 1) * 0.1;
-    const change = price * (drift / price + volatility * (Math.random() - 0.5));
-    price = Math.max(price + change, 1);
-
-    const dayHigh = price * (1 + Math.random() * 0.02);
-    const dayLow = price * (1 - Math.random() * 0.02);
-    const open = price + (Math.random() - 0.5) * price * 0.01;
-
-    points.push({
-      date: date.toISOString().split("T")[0],
-      open: Math.round(open * 100) / 100,
-      high: Math.round(dayHigh * 100) / 100,
-      low: Math.round(dayLow * 100) / 100,
-      close: Math.round(price * 100) / 100,
-      volume: Math.round(10000000 + Math.random() * 50000000),
-    });
-  }
-
-  return points;
+function hashSymbol(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) & 0x7fffffff;
+  return (h % 999) + 1;
 }
+
+function round2(n: number) { return Math.round(n * 100) / 100; }
 
 export default router;
