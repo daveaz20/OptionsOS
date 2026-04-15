@@ -1,8 +1,7 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useListStocks, useGetWatchlist } from "@workspace/api-client-react";
-import { ArrowDownRight, ArrowUpRight, BarChart2, Search, SlidersHorizontal, Star, Zap, TrendingUp, TrendingDown, Activity } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, BarChart2, Search, SlidersHorizontal, Star, Zap } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { cn } from "@/lib/utils";
 import { formatCurrency, formatPercent } from "@/lib/format";
 import type { Stock } from "@workspace/api-client-react";
 
@@ -73,13 +72,28 @@ export function StockListPanel({ selectedSymbol, onSelect }: StockListPanelProps
   const [filter, setFilter]   = useState<IdeaFilter>("all");
   const [sortKey, setSortKey] = useState<SortKey>("opportunity");
 
+  const [portfolioSymbols, setPortfolioSymbols] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem("portfolio") ?? "[]"); } catch { return []; }
+  });
+
+  // Re-read portfolio from localStorage when tab switches to portfolio
+  useEffect(() => {
+    if (tab === "portfolio") {
+      try { setPortfolioSymbols(JSON.parse(localStorage.getItem("portfolio") ?? "[]")); } catch {}
+    }
+  }, [tab]);
+
   const { data: stocks = [], isLoading: loadingStocks }       = useListStocks({ search, limit: 200 });
   const { data: watchlist = [], isLoading: loadingWatchlist } = useGetWatchlist();
 
   const watchlistSymbols = new Set(watchlist.map((w) => w.symbol));
 
   const items = useMemo(() => {
-    const source: Stock[] = tab === "watchlist" ? (watchlist as Stock[]) : stocks;
+    const portfolioSet = new Set(portfolioSymbols);
+    const source: Stock[] =
+      tab === "watchlist" ? (watchlist as Stock[]) :
+      tab === "portfolio" ? stocks.filter((s) => portfolioSet.has(s.symbol)) :
+      stocks;
     const q = search.trim().toLowerCase();
 
     let filtered = source.filter((item) => {
@@ -207,10 +221,11 @@ export function StockListPanel({ selectedSymbol, onSelect }: StockListPanelProps
             Array.from({ length: 8 }).map((_, i) => (
               <div key={i} style={{ height: 80, borderRadius: 8, background: "rgba(255,255,255,0.035)", margin: "3px 0", animation: "pulse 1.4s infinite" }} />
             ))
-          ) : tab === "portfolio" ? (
-            <div style={{ margin: "32px 8px", textAlign: "center", color: "hsl(var(--muted-foreground))", fontSize: 13 }}>
-              <BarChart2 style={{ width: 28, height: 28, opacity: 0.25, margin: "0 auto 10px" }} />
-              Portfolio coming soon
+          ) : tab === "portfolio" && items.length === 0 ? (
+            <div style={{ margin: "40px 8px", textAlign: "center", color: "hsl(var(--muted-foreground))", fontSize: 12, lineHeight: 1.6 }}>
+              <BarChart2 style={{ width: 26, height: 26, opacity: 0.2, margin: "0 auto 10px" }} />
+              <div style={{ fontWeight: 500, marginBottom: 4 }}>No portfolio positions</div>
+              <div style={{ opacity: 0.7 }}>Click <strong style={{ color: "hsl(var(--foreground))", opacity: 1 }}>+ Portfolio</strong> on any stock to track it here</div>
             </div>
           ) : items.length === 0 ? (
             <div style={{ padding: "40px 8px", textAlign: "center", color: "hsl(var(--muted-foreground))", fontSize: 13 }}>

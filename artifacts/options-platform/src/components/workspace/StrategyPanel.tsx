@@ -164,9 +164,9 @@ function StrategyCard({ strategy, isSelected, onClick }: { strategy: OptionsStra
 
       {/* Metrics */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 4, paddingTop: 8, borderTop: "1px solid rgba(255,255,255,0.05)" }}>
-        <MetricCell label="Cost" value={formatCurrency(strategy.tradeCost)} />
-        <MetricCell label="Max Profit" value={formatCurrency(strategy.maxProfit)} valueColor="hsl(var(--success))" />
-        <MetricCell label="Return" value={formatPercent(strategy.returnPercent)} valueColor="hsl(var(--primary))" />
+        <MetricCell label="Cost" value={formatCurrency(strategy.tradeCost)} valueColor={strategy.tradeCost < 0 ? "hsl(var(--destructive))" : "hsl(var(--success))"} />
+        <MetricCell label="Max profit" value={formatCurrency(strategy.maxProfit)} valueColor={strategy.maxProfit >= 0 ? "hsl(var(--success))" : "hsl(var(--destructive))"} />
+        <MetricCell label="Return" value={formatPercent(strategy.returnPercent)} valueColor={strategy.returnPercent >= 0 ? "hsl(var(--success))" : "hsl(var(--destructive))"} />
       </div>
     </button>
   );
@@ -211,9 +211,9 @@ function PnlSimulator({ strategy, symbol, currentPrice }: { strategy: OptionsStr
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {/* Sliders */}
       <div style={{ background: "rgba(255,255,255,0.03)", borderRadius: 8, border: "1px solid rgba(255,255,255,0.06)", padding: "14px 14px", display: "flex", flexDirection: "column", gap: 14 }}>
-        <SimSlider label="Target Price" display={formatCurrency(targetPrice)} value={[targetPrice]} min={minP} max={maxP} step={0.5} onChange={([v]) => setTargetPrice(v)} />
-        <SimSlider label="Days to Expiry" display={`${daysToExpiry}d`} value={[daysToExpiry]} min={0} max={90} step={1} onChange={([v]) => setDaysToExpiry(v)} />
-        <SimSlider label="Implied Volatility" display={`${iv}%`} value={[iv]} min={10} max={150} step={1} onChange={([v]) => setIv(v)} />
+        <SimSlider label="Target price" value={[targetPrice]} min={minP} max={maxP} step={0.5} prefix="$" onChange={([v]) => setTargetPrice(v)} />
+        <SimSlider label="Days to expiry" value={[daysToExpiry]} min={0} max={90} step={1} suffix="d" onChange={([v]) => setDaysToExpiry(v)} />
+        <SimSlider label="Implied volatility" value={[iv]} min={10} max={150} step={1} suffix="%" onChange={([v]) => setIv(v)} />
       </div>
 
       {/* Results */}
@@ -291,14 +291,57 @@ function PnlSimulator({ strategy, symbol, currentPrice }: { strategy: OptionsStr
   );
 }
 
-function SimSlider({ label, display, value, min, max, step, onChange }: {
-  label: string; display: string; value: number[]; min: number; max: number; step: number; onChange: (v: number[]) => void;
+function SimSlider({ label, value, min, max, step, prefix, suffix, onChange }: {
+  label: string; value: number[]; min: number; max: number; step: number;
+  prefix?: string; suffix?: string; onChange: (v: number[]) => void;
 }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const current = value[0] ?? min;
+
+  const commit = () => {
+    const parsed = parseFloat(draft.replace(/[^0-9.-]/g, ""));
+    if (!isNaN(parsed)) {
+      onChange([Math.min(max, Math.max(min, Math.round(parsed / step) * step))]);
+    }
+    setEditing(false);
+  };
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <span style={{ fontSize: 12, color: "hsl(var(--muted-foreground))", fontWeight: 400 }}>{label}</span>
-        <span style={{ fontSize: 13, fontWeight: 600, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums" }}>{display}</span>
+    <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+        <span style={{ fontSize: 11, color: "hsl(var(--muted-foreground))", fontWeight: 400, flexShrink: 0 }}>{label}</span>
+        {editing ? (
+          <input
+            autoFocus
+            type="text"
+            defaultValue={current.toFixed(step < 1 ? 2 : 0)}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commit}
+            onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") setEditing(false); }}
+            style={{
+              width: 80, textAlign: "right", padding: "2px 6px", borderRadius: 5,
+              border: "1px solid hsl(var(--primary) / 0.5)", background: "hsl(var(--primary) / 0.06)",
+              color: "hsl(var(--primary))", fontSize: 13, fontWeight: 600, letterSpacing: "-0.02em",
+              fontVariantNumeric: "tabular-nums", outline: "none",
+            }}
+          />
+        ) : (
+          <button
+            onClick={() => { setDraft(String(current)); setEditing(true); }}
+            title="Click to type a value"
+            style={{
+              padding: "2px 7px", borderRadius: 5, border: "1px solid transparent",
+              background: "rgba(255,255,255,0.05)", color: "hsl(var(--foreground))",
+              fontSize: 13, fontWeight: 600, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums",
+              cursor: "text", transition: "all 0.12s",
+            }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(255,255,255,0.15)"; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.borderColor = "transparent"; }}
+          >
+            {prefix}{step < 1 ? current.toFixed(2) : Math.round(current)}{suffix}
+          </button>
+        )}
       </div>
       <Slider value={value} min={min} max={max} step={step} onValueChange={onChange} className="py-0.5" />
     </div>

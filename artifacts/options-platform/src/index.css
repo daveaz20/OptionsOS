@@ -92,11 +92,10 @@
   --accent: 0 0% 12%;
   --accent-foreground: 0 0% 95%;
 
-  /* Muted red / green — not too aggressive */
-  --destructive: 4 86% 58%;
+  --destructive: 4 90% 63%;
   --destructive-foreground: 0 0% 100%;
 
-  --success: 142 71% 45%;
+  --success: 142 76% 52%;
   --success-foreground: 0 0% 100%;
 
   --chart-1: 217 91% 60%;

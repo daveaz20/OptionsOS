@@ -1,13 +1,24 @@
 import { useState, type ReactNode } from "react";
 import { useGetStock, useGetStockPriceHistory, useGetWatchlist, useAddToWatchlist, useRemoveFromWatchlist, getGetWatchlistQueryKey } from "@workspace/api-client-react";
-import { AlertCircle, BarChart2, Star, TrendingDown, TrendingUp } from "lucide-react";
+import { AlertCircle, BarChart2, Bookmark, BookmarkCheck, BriefcaseBusiness, Check, TrendingDown, TrendingUp } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { formatCurrency, formatNumber, formatPercent } from "@/lib/format";
-import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import type { PricePoint } from "@workspace/api-client-react";
+
+// ── Portfolio stored in localStorage ────────────────────────────────────────
+function getPortfolio(): string[] {
+  try { return JSON.parse(localStorage.getItem("portfolio") ?? "[]"); } catch { return []; }
+}
+function addToPortfolio(symbol: string) {
+  const p = getPortfolio();
+  if (!p.includes(symbol)) localStorage.setItem("portfolio", JSON.stringify([...p, symbol]));
+}
+function removeFromPortfolio(symbol: string) {
+  localStorage.setItem("portfolio", JSON.stringify(getPortfolio().filter((s) => s !== symbol)));
+}
 
 interface StockDetailPanelProps {
   symbol: string;
@@ -18,6 +29,7 @@ type Period = (typeof PERIODS)[number];
 
 export function StockDetailPanel({ symbol }: StockDetailPanelProps) {
   const [period, setPeriod] = useState<Period>("3M");
+  const [inPortfolio, setInPortfolio] = useState(() => getPortfolio().includes(symbol));
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -35,16 +47,28 @@ export function StockDetailPanel({ symbol }: StockDetailPanelProps) {
       removeFromWatchlist.mutate({ id: watchlistItem.id }, {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getGetWatchlistQueryKey() });
-          toast({ title: `Removed ${symbol}`, description: "Removed from watchlist." });
+          toast({ title: `Removed from watchlist`, description: symbol });
         },
       });
     } else {
       addToWatchlist.mutate({ data: { symbol } }, {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getGetWatchlistQueryKey() });
-          toast({ title: `Added ${symbol}`, description: "Added to watchlist." });
+          toast({ title: `Added to watchlist`, description: symbol });
         },
       });
+    }
+  };
+
+  const handlePortfolioToggle = () => {
+    if (inPortfolio) {
+      removeFromPortfolio(symbol);
+      setInPortfolio(false);
+      toast({ title: `Removed from portfolio`, description: symbol });
+    } else {
+      addToPortfolio(symbol);
+      setInPortfolio(true);
+      toast({ title: `Added to portfolio`, description: symbol });
     }
   };
 
@@ -109,24 +133,25 @@ export function StockDetailPanel({ symbol }: StockDetailPanelProps) {
                 }}>
                   {stock.sector}
                 </span>
-                <button
+                <ActionBtn
+                  active={isWatched}
                   onClick={handleWatchlistToggle}
                   disabled={addToWatchlist.isPending || removeFromWatchlist.isPending}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    width: 28,
-                    height: 28,
-                    borderRadius: 6,
-                    border: "none",
-                    background: isWatched ? "hsl(var(--primary) / 0.1)" : "rgba(255,255,255,0.05)",
-                    cursor: "pointer",
-                    transition: "all 0.15s",
-                  }}
-                >
-                  <Star style={{ width: 13, height: 13, fill: isWatched ? "hsl(var(--primary))" : "none", color: isWatched ? "hsl(var(--primary))" : "hsl(var(--muted-foreground))", stroke: "currentColor", strokeWidth: 2 }} />
-                </button>
+                  activeIcon={<BookmarkCheck style={{ width: 11, height: 11 }} />}
+                  inactiveIcon={<Bookmark style={{ width: 11, height: 11 }} />}
+                  activeLabel="Watching"
+                  inactiveLabel="+ Watchlist"
+                  activeColor="hsl(var(--primary))"
+                />
+                <ActionBtn
+                  active={inPortfolio}
+                  onClick={handlePortfolioToggle}
+                  activeIcon={<Check style={{ width: 11, height: 11 }} />}
+                  inactiveIcon={<BriefcaseBusiness style={{ width: 11, height: 11 }} />}
+                  activeLabel="In portfolio"
+                  inactiveLabel="+ Portfolio"
+                  activeColor="hsl(var(--success))"
+                />
               </div>
               <p style={{ fontSize: 13, color: "hsl(var(--muted-foreground))", fontWeight: 400 }}>{stock.name}</p>
             </div>
@@ -391,6 +416,31 @@ function StatCard({ label, value, valueColor }: { label: string; value: ReactNod
       <span style={{ fontSize: 11, color: "hsl(var(--muted-foreground))", fontWeight: 400, lineHeight: 1.2 }}>{label}</span>
       <span style={{ fontSize: 15, fontWeight: 600, letterSpacing: "-0.02em", color: valueColor ?? "hsl(var(--foreground))", fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>{value}</span>
     </div>
+  );
+}
+
+function ActionBtn({ active, onClick, disabled, activeIcon, inactiveIcon, activeLabel, inactiveLabel, activeColor }: {
+  active: boolean; onClick: () => void; disabled?: boolean;
+  activeIcon: ReactNode; inactiveIcon: ReactNode;
+  activeLabel: string; inactiveLabel: string; activeColor: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        display: "flex", alignItems: "center", gap: 5, padding: "4px 10px",
+        borderRadius: 6, border: active ? `1px solid ${activeColor}40` : "1px solid rgba(255,255,255,0.10)",
+        background: active ? `${activeColor}14` : "rgba(255,255,255,0.05)",
+        color: active ? activeColor : "hsl(var(--muted-foreground))",
+        fontSize: 11, fontWeight: 500, letterSpacing: "-0.01em",
+        cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.5 : 1,
+        transition: "all 0.15s", whiteSpace: "nowrap",
+      }}
+    >
+      {active ? activeIcon : inactiveIcon}
+      {active ? activeLabel : inactiveLabel}
+    </button>
   );
 }
 
