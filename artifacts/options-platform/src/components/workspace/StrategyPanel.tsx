@@ -266,16 +266,37 @@ function ModifyPanel({
   const [legs, setLegs] = useState<ModifiedLeg[]>(
     strategy.legs.map(l => ({ ...l }))
   );
-  const [dte, setDte] = useState(() => {
-    const d = Math.max(0, Math.round((new Date(strategy.expirationDate).getTime() - Date.now()) / 86_400_000));
-    return d > 50 ? 60 : d > 35 ? 45 : 30;
-  });
+  // Derive initial expiry date from strategy, default to 45 DTE if past
+  const initExpStr = (() => {
+    const stratDays = Math.round((new Date(strategy.expirationDate).getTime() - Date.now()) / 86_400_000);
+    const days = stratDays > 5 ? stratDays : 45;
+    const d = new Date(); d.setDate(d.getDate() + days);
+    return d.toISOString().split("T")[0]!;
+  })();
+  const [expStr, setExpStr] = useState(initExpStr);
   const [contracts, setContracts] = useState(1);
+
+  // DTE computed from the chosen date
+  const dte = Math.max(1, Math.round((new Date(expStr).getTime() - Date.now()) / 86_400_000));
+
+  // Min date = tomorrow, max date = 2 years out
+  const minDate = (() => { const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().split("T")[0]!; })();
+  const maxDate = (() => { const d = new Date(); d.setFullYear(d.getFullYear() + 2); return d.toISOString().split("T")[0]!; })();
+
+  const setDteQuick = (days: number) => {
+    const d = new Date(); d.setDate(d.getDate() + days);
+    setExpStr(d.toISOString().split("T")[0]!);
+  };
+
+  // Which quick button (if any) matches the current date?
+  const activeQuick = [30, 45, 60].find(d => {
+    const candidate = new Date(); candidate.setDate(candidate.getDate() + d);
+    return Math.abs(new Date(expStr).getTime() - candidate.getTime()) < 86_400_000 * 2;
+  }) ?? null;
 
   const T = dte / 365;
   const sigma = Math.max(0.15, iv / 100);
 
-  // Recalculate premiums whenever strikes or dte change
   const recalcPremium = (leg: ModifiedLeg): ModifiedLeg => {
     if (leg.optionType === "stock") return leg;
     const premium = Math.round(bsPrice(currentPrice, leg.strikePrice, T, sigma, leg.optionType as "call" | "put") * 100) / 100;
@@ -293,9 +314,6 @@ function ModifyPanel({
   };
 
   const updatedMetrics = computeMetrics(legs.map(l => ({ ...l, quantity: l.quantity * contracts })), currentPrice);
-  const expDate = new Date();
-  expDate.setDate(expDate.getDate() + dte);
-  const expStr = expDate.toISOString().split("T")[0]!;
 
   const apply = () => {
     const updated: OptionsStrategy = {
@@ -355,22 +373,38 @@ function ModifyPanel({
       </div>
 
       {/* Expiry + Contracts */}
-      <div style={{ padding: "10px 12px", borderTop: "1px solid rgba(255,255,255,0.05)", display: "flex", gap: 12, alignItems: "center" }}>
+      <div style={{ padding: "10px 12px", borderTop: "1px solid rgba(255,255,255,0.05)", display: "flex", gap: 12, alignItems: "flex-start" }}>
         <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 10, color: "hsl(var(--muted-foreground))", marginBottom: 5 }}>Expiry</div>
-          <div style={{ display: "flex", gap: 4 }}>
+          <div style={{ fontSize: 10, color: "hsl(var(--muted-foreground))", marginBottom: 5 }}>Expiry · {dte}d</div>
+          {/* Quick-select buttons */}
+          <div style={{ display: "flex", gap: 4, marginBottom: 6 }}>
             {[30, 45, 60].map(d => (
-              <button key={d} onClick={() => setDte(d)} style={{
+              <button key={d} onClick={() => setDteQuick(d)} style={{
                 flex: 1, padding: "4px 0", borderRadius: 5, fontSize: 10, fontWeight: 600,
-                border: dte === d ? "1px solid hsl(var(--primary)/0.4)" : "1px solid rgba(255,255,255,0.08)",
-                background: dte === d ? "hsl(var(--primary)/0.1)" : "transparent",
-                color: dte === d ? "hsl(var(--primary))" : "hsl(var(--muted-foreground))",
+                border: activeQuick === d ? "1px solid hsl(var(--primary)/0.4)" : "1px solid rgba(255,255,255,0.08)",
+                background: activeQuick === d ? "hsl(var(--primary)/0.1)" : "transparent",
+                color: activeQuick === d ? "hsl(var(--primary))" : "hsl(var(--muted-foreground))",
                 cursor: "pointer",
               }}>
                 {d}d
               </button>
             ))}
           </div>
+          {/* Exact date picker */}
+          <input
+            type="date"
+            value={expStr}
+            min={minDate}
+            max={maxDate}
+            onChange={e => { if (e.target.value) setExpStr(e.target.value); }}
+            style={{
+              width: "100%", padding: "4px 8px", borderRadius: 5, fontSize: 11, fontWeight: 500,
+              border: activeQuick === null ? "1px solid hsl(var(--primary)/0.5)" : "1px solid rgba(255,255,255,0.10)",
+              background: activeQuick === null ? "hsl(var(--primary)/0.07)" : "rgba(255,255,255,0.04)",
+              color: "hsl(var(--foreground))", outline: "none", cursor: "pointer",
+              colorScheme: "dark", boxSizing: "border-box",
+            }}
+          />
         </div>
         <div style={{ flexShrink: 0 }}>
           <div style={{ fontSize: 10, color: "hsl(var(--muted-foreground))", marginBottom: 5 }}>Contracts</div>
