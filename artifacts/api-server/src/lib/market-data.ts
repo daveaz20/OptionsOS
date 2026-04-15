@@ -27,6 +27,37 @@ const OPTIONS_TTL = 15 * 60 * 1000;   // 15 min
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
+// ─── Static sector map (batch API doesn't return sector field) ────────────────
+
+const SECTOR_MAP: Record<string, string> = {
+  // Technology
+  ...Object.fromEntries(["AAPL","MSFT","NVDA","AVGO","ORCL","CRM","ADBE","NOW","INTU","SNOW","PLTR","WDAY","TEAM","DDOG","MDB","ZS","CRWD","NET","OKTA","FTNT","PANW","HUBS","TTD","GDDY","DOCN","CFLT","GTLB","U","RBLX","APP","AI","BBAI","SOUN","ASAN","ZI","AMD","INTC","QCOM","MU","ARM","AMAT","LRCX","KLAC","MCHP","TXN","MRVL","SMCI","ADI","SWKS","MPWR","NXPI","ON","WOLF","ENPH","FSLR","ANET","KEYS","NTAP","SNPS","CDNS","ANSS","EPAM","CTSH","ACN","IBM","HPQ","HPE","CSCO","TEL","GLW","JNPR","FFIV","AKAM","CDW","LDOS"].map(s=>[s,"Technology"])),
+  // Communication Services
+  ...Object.fromEntries(["GOOGL","GOOG","META","DIS","NFLX","CMCSA","T","VZ","TMUS","CHTR","DISH","SIRI","PARA","WBD","FOX","FOXA","IPG","OMC"].map(s=>[s,"Communication Services"])),
+  // Financial Services
+  ...Object.fromEntries(["JPM","BAC","WFC","GS","MS","C","AXP","V","MA","BLK","SCHW","BK","COF","USB","PNC","TFC","SPGI","MCO","ICE","CME","CBOE","MSCI","FIS","FISV","DFS","SYF","ALLY","MTB","CFG","RF","FITB","HBAN","KEY","PRU","MET","AFL","ALL","MMC","AJG","PGR","HIG","CB","TRV","CINF","PYPL","COIN","SQ","HOOD","SOFI","NDAQ","MKTX","RJF","SEIC","LPLA"].map(s=>[s,"Financial Services"])),
+  // Healthcare
+  ...Object.fromEntries(["UNH","JNJ","LLY","ABBV","MRK","TMO","ABT","DHR","ISRG","BSX","MDT","SYK","BMY","GILD","VRTX","AMGN","REGN","PFE","MRNA","BIIB","CI","CVS","HCA","ELV","MCK","IQV","BDX","ZTS","IDXX","DGX","PODD","INCY","ALNY","ILMN","EXAS","HOLX","GEHC","BAX","EW","HUM","MOH","CNC","WBA","RMD","DXCM","ALGN","STE","BIO","PKI"].map(s=>[s,"Healthcare"])),
+  // Consumer Cyclical
+  ...Object.fromEntries(["AMZN","TSLA","HD","MCD","NKE","SBUX","TGT","LOW","BKNG","ABNB","CMG","DHI","LEN","PHM","MAR","HLT","RCL","CCL","NCLH","LYV","EA","TTWO","F","GM","ROST","TJX","ULTA","LULU","RL","TPR","CPRI","VFC","GAP","BBWI","BBY","AZO","ORLY","GPC","KMX","AN","CHWY","W","ETSY","EBAY","EXPE","VRSK","YELP","TRIP"].map(s=>[s,"Consumer Cyclical"])),
+  // Consumer Defensive
+  ...Object.fromEntries(["WMT","COST","PG","KO","PEP","PM","MO","MDLZ","CL","GIS","K","KMB","CLX","EL","HRL","CAG","MKC","SJM","CHD","HSY","MNST","KDP","KHC","STZ","TAP","BG","ADM","MOS","INGR","SFM"].map(s=>[s,"Consumer Defensive"])),
+  // Energy
+  ...Object.fromEntries(["XOM","CVX","COP","SLB","EOG","MPC","PSX","VLO","HAL","OXY","DVN","HES","APA","MRO","CTRA","EQT","RRC","AR","FANG","BKR","NOV","CHK","WMB","OKE","KMI","LNG","ET","EPD","MPLX","PAA"].map(s=>[s,"Energy"])),
+  // Industrials
+  ...Object.fromEntries(["GE","RTX","HON","UPS","BA","CAT","DE","MMM","ITW","EMR","LMT","NOC","GD","TDG","LHX","PH","ETN","ROK","AME","GWW","FAST","IR","FTV","ROP","CTAS","SWK","XYL","TRMB","PCAR","ODFL","CHRW","EXPD","JBHT","NSC","CSX","UNP","CP","WAB","TT","CARR","OTIS","MAS","SNA","PNR","GNRC","AOS","LII","FDX","DAL","UAL","AAL","LUV","ALK","HA","SAVE","JBLU","UBER","LYFT","DKNG","PENN"].map(s=>[s,"Industrials"])),
+  // Basic Materials
+  ...Object.fromEntries(["NEM","FCX","DOW","LYB","APD","ECL","CF","NTR","ALB","CE","FMC","IFF","EMN","OLIN","ASH","HUN","AMCR","PKG","IP","SEE","WRK","SON"].map(s=>[s,"Basic Materials"])),
+  // Real Estate
+  ...Object.fromEntries(["AMT","PLD","CCI","EQIX","PSA","SPG","O","WELL","DLR","AVB","EQR","ESS","MAA","UDR","CPT","VTR","PEAK","SBA","SBAC","HST","EXR","INVH","STAG","ARE","BXP","KIM","REG"].map(s=>[s,"Real Estate"])),
+  // Utilities
+  ...Object.fromEntries(["NEE","DUK","SO","D","EXC","SRE","AEP","PCG","ED","WEC","ES","PPL","AEE","ETR","EVRG","CNP","NI","LNT","PNW"].map(s=>[s,"Utilities"])),
+};
+
+export function getSectorForSymbol(symbol: string): string {
+  return SECTOR_MAP[symbol] ?? "";
+}
+
 // ─── Quote ────────────────────────────────────────────────────────────────────
 
 export interface MarketQuote {
@@ -132,7 +163,7 @@ export async function getQuotes(symbols: string[]): Promise<MarketQuote[]> {
         volume:          vol2,
         avgVolume:       avgVol2,
         marketCap:       q.marketCap ?? 0,
-        sector:          q.sector ?? "Equity",
+        sector:          q.sector && q.sector !== "Equity" ? q.sector : (SECTOR_MAP[q.symbol ?? ""] ?? "Equity"),
         fiftyTwoWeekHigh: q.fiftyTwoWeekHigh ?? 0,
         fiftyTwoWeekLow:  q.fiftyTwoWeekLow ?? 0,
         eps:              q.epsTrailingTwelveMonths ?? 0,
