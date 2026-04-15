@@ -73,7 +73,7 @@ export function StockListPanel({ selectedSymbol, onSelect }: StockListPanelProps
   const [filter, setFilter]   = useState<IdeaFilter>("all");
   const [sortKey, setSortKey] = useState<SortKey>("opportunity");
 
-  const { data: stocks = [], isLoading: loadingStocks }       = useListStocks({ search, limit: 50 });
+  const { data: stocks = [], isLoading: loadingStocks }       = useListStocks({ search, limit: 200 });
   const { data: watchlist = [], isLoading: loadingWatchlist } = useGetWatchlist();
 
   const watchlistSymbols = new Set(watchlist.map((w) => w.symbol));

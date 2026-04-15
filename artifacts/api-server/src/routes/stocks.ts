@@ -28,28 +28,38 @@ router.get("/stocks", async (req, res): Promise<void> => {
     const q = search.trim().toLowerCase();
     universe = universe.filter((s) => s.toLowerCase().includes(q));
   }
-  if (limit && limit < universe.length) universe = universe.slice(0, limit);
+  // Note: limit is applied AFTER scoring so best opportunities always surface
 
   const quotes = await getQuotes(universe);
 
-  // Fetch technicals for each — parallel with a concurrency guard
-  const enriched = await Promise.all(
-    quotes.map(async (quote) => {
-      try {
-        const [history, hv] = await Promise.all([
-          getPriceHistory(quote.symbol, "3M"),
-          getHistoricalVolatility(quote.symbol),
-        ]);
-        const signals = computeSignals(history, quote.price);
-        const scan = scanOpportunity(signals, hv.ivRank, quote.price, quote.changePercent);
-        return quoteToStock(quote, signals, hv.ivRank, scan);
-      } catch {
-        return quoteToStock(quote, null, 30, null);
-      }
-    })
-  );
+  // Concurrency-limited technicals fetch — max 8 parallel to stay within Yahoo rate limits
+  const CONCURRENCY = 8;
+  const enriched: ReturnType<typeof quoteToStock>[] = [];
+  for (let i = 0; i < quotes.length; i += CONCURRENCY) {
+    const batch = quotes.slice(i, i + CONCURRENCY);
+    const results = await Promise.all(
+      batch.map(async (quote) => {
+        try {
+          const [history, hv] = await Promise.all([
+            getPriceHistory(quote.symbol, "3M"),
+            getHistoricalVolatility(quote.symbol),
+          ]);
+          const signals = computeSignals(history, quote.price);
+          const scan = scanOpportunity(signals, hv.ivRank, quote.price, quote.changePercent);
+          return quoteToStock(quote, signals, hv.ivRank, scan);
+        } catch {
+          return quoteToStock(quote, null, 30, null);
+        }
+      })
+    );
+    enriched.push(...results);
+  }
 
-  res.json(ListStocksResponse.parse(enriched));
+  // Sort by opportunity score (best first), then apply limit
+  enriched.sort((a, b) => (b.opportunityScore ?? 0) - (a.opportunityScore ?? 0));
+  const limited = limit ? enriched.slice(0, limit) : enriched;
+
+  res.json(ListStocksResponse.parse(limited));
 });
 
 // GET /stocks/:symbol — full detail for one symbol

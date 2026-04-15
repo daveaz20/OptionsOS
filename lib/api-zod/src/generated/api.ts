@@ -17,7 +17,7 @@ export const HealthCheckResponse = zod.object({
 /**
  * @summary List available stocks
  */
-export const listStocksQueryLimitDefault = 50;
+export const listStocksQueryLimitDefault = 200;
 
 export const ListStocksQueryParams = zod.object({
   search: zod.coerce.string().optional(),
@@ -38,7 +38,7 @@ export const ListStocksResponseItem = zod.object({
   sector: zod.string(),
   technicalStrength: zod
     .number()
-    .min(1)
+    .min(0)
     .max(listStocksResponseTechnicalStrengthMax),
   ivRank: zod.number().optional(),
   relativeStrength: zod.string().optional(),

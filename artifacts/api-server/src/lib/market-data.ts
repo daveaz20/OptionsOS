@@ -87,7 +87,55 @@ export async function getQuote(symbol: string): Promise<MarketQuote> {
 }
 
 export async function getQuotes(symbols: string[]): Promise<MarketQuote[]> {
-  return Promise.all(symbols.map((s) => getQuote(s).catch(() => null as any))).then((r) => r.filter(Boolean));
+  // Use yahoo-finance2 batch quoting — one network round-trip for all symbols
+  const cacheKey = `quotes:batch:${symbols.sort().join(",")}`;
+  const cached = getCache<MarketQuote[]>(cacheKey);
+  if (cached) return cached;
+
+  // Fetch individual cached quotes first, only hit network for misses
+  const missing: string[] = [];
+  const fromCache: MarketQuote[] = [];
+  for (const s of symbols) {
+    const c = getCache<MarketQuote>(`quote:${s}`);
+    if (c) fromCache.push(c);
+    else missing.push(s);
+  }
+  if (missing.length === 0) return fromCache;
+
+  try {
+    // yahoo-finance2 accepts an array — returns QuoteResult[]
+    const raw = await (yahooFinance.quote as any)(missing, {}, { validateResult: false });
+    const results: any[] = Array.isArray(raw) ? raw : [raw];
+    const fetched: MarketQuote[] = results.map((q: any) => ({
+      symbol:          q.symbol ?? "",
+      name:            q.longName ?? q.shortName ?? q.symbol ?? "",
+      price:           q.regularMarketPrice ?? 0,
+      change:          q.regularMarketChange ?? 0,
+      changePercent:   q.regularMarketChangePercent ?? 0,
+      volume:          q.regularMarketVolume ?? 0,
+      avgVolume:       q.averageDailyVolume3Month ?? q.regularMarketVolume ?? 0,
+      marketCap:       q.marketCap ?? 0,
+      sector:          q.sector ?? "Equity",
+      fiftyTwoWeekHigh: q.fiftyTwoWeekHigh ?? 0,
+      fiftyTwoWeekLow:  q.fiftyTwoWeekLow ?? 0,
+      eps:              q.epsTrailingTwelveMonths ?? 0,
+      pe:               q.trailingPE ?? 0,
+      dividendYield:    q.trailingAnnualDividendYield ?? 0,
+      earningsDate:     q.earningsTimestamp
+        ? new Date(q.earningsTimestamp * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+        : "TBD",
+      beta:             q.beta ?? 1,
+    })).filter((q) => q.symbol && q.price > 0);
+
+    // Warm individual caches
+    for (const q of fetched) setCache(`quote:${q.symbol}`, q, QUOTE_TTL);
+
+    return [...fromCache, ...fetched];
+  } catch {
+    // Fallback: serial fetch with individual caches
+    const fallback = await Promise.all(missing.map((s) => getQuote(s).catch(() => null as any)));
+    return [...fromCache, ...fallback.filter(Boolean)];
+  }
 }
 
 // ─── Price History ─────────────────────────────────────────────────────────
@@ -188,10 +236,25 @@ export async function getHistoricalVolatility(symbol: string): Promise<{ hv30: n
 
 function round2(n: number) { return Math.round(n * 100) / 100; }
 
-// Default scanner universe — easily configurable
+// Default scanner universe — 100 liquid, optionable stocks
 export const DEFAULT_UNIVERSE = [
-  "AAPL","MSFT","NVDA","GOOGL","AMZN","META","TSLA","AMD","NFLX","CRM",
-  "ORCL","ADBE","INTC","QCOM","AVGO","MU","NOW","SNOW","PLTR","MSTR",
-  "JPM","BAC","GS","MS","V","MA","PYPL",
-  "SPY","QQQ","IWM",
+  // Mega-cap tech
+  "AAPL","MSFT","NVDA","GOOGL","AMZN","META","TSLA","AMD","NFLX","INTC",
+  // Software / Cloud
+  "CRM","ORCL","ADBE","NOW","SNOW","PLTR","MSTR","WDAY","TEAM","DDOG",
+  "MDB","ZS","CRWD","NET","OKTA","HCP","GTLB","TTD","HUBS",
+  // Semis
+  "QCOM","AVGO","MU","ARM","AMAT","LRCX","KLAC","TXN","MRVL","SMCI",
+  // Financials
+  "JPM","BAC","GS","MS","V","MA","PYPL","COIN","AXP","BLK","SCHW","WFC",
+  // Healthcare / Biotech
+  "UNH","JNJ","PFE","ABBV","LLY","MRK","MRNA","GILD","BIIB","REGN","BMY",
+  // Consumer / Retail
+  "COST","WMT","TGT","HD","LOW","MCD","SBUX","NKE","DIS","AMGN",
+  // Industrials / Defense
+  "CAT","DE","GE","HON","RTX","BA","LMT","NOC","UPS","FDX",
+  // Energy
+  "XOM","CVX","SLB","COP","OXY",
+  // ETFs (broad, high-vol)
+  "SPY","QQQ","IWM","GLD","TLT","VXX","XLE","XLF","XLK","ARKK",
 ];
