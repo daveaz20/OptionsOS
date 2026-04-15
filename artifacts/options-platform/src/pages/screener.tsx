@@ -14,6 +14,7 @@ interface ScreenerRow {
   technicalStrength: number; rsi14: number; macdHistogram: number; ivRank: number;
   opportunityScore: number; setupType: string; recommendedOutlook: string;
   supportPrice: number; resistancePrice: number; liquidity: string;
+  source?: "polygon" | "yahoo";
 }
 
 interface FactoredRow extends ScreenerRow {
@@ -193,6 +194,18 @@ function useScreenerData() {
   });
 }
 
+function useSourceInfo() {
+  return useQuery<{ source: "polygon" | "yahoo"; count: number; cachedAt: number }>({
+    queryKey: ["screener-source"],
+    queryFn: async () => {
+      const res = await fetch("/api/screener/source");
+      if (!res.ok) throw new Error("failed");
+      return res.json();
+    },
+    staleTime: 30*1000, retry: 1,
+  });
+}
+
 // ─── Filter chip & picker ─────────────────────────────────────────────────────
 
 function filterSummary(f: ActiveFilter): string {
@@ -344,6 +357,7 @@ function FilterPicker({ onAdd, existing }: { onAdd:(f:ActiveFilter)=>void; exist
 export default function Screener() {
   const [, setLocation] = useLocation();
   const { data: raw = [], isLoading, isFetching } = useScreenerData();
+  const { data: sourceInfo } = useSourceInfo();
 
   const [activeFilters, setActiveFilters] = useState<ActiveFilter[]>([]);
   const [activePreset,  setActivePreset]  = useState("All");
@@ -402,8 +416,34 @@ export default function Screener() {
               Clear all
             </button>
           )}
-          <div style={{ marginLeft:"auto", fontSize:11, color:"rgba(255,255,255,0.35)", fontVariantNumeric:"tabular-nums" }}>
-            {isLoading ? "Loading…" : `${filtered.length.toLocaleString()} stocks`} {isFetching && !isLoading ? "· Refreshing" : ""}
+          <div style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:8 }}>
+            {sourceInfo && (
+              <div style={{
+                display:"flex", alignItems:"center", gap:5,
+                padding:"2px 8px", borderRadius:4,
+                background: sourceInfo.source === "polygon"
+                  ? "rgba(10,132,255,0.12)" : "rgba(255,255,255,0.06)",
+                border: `1px solid ${sourceInfo.source === "polygon" ? "rgba(10,132,255,0.3)" : "rgba(255,255,255,0.1)"}`,
+              }}>
+                <div style={{
+                  width:6, height:6, borderRadius:"50%",
+                  background: sourceInfo.source === "polygon" ? "#0a84ff" : "rgba(255,255,255,0.4)",
+                  boxShadow: sourceInfo.source === "polygon" ? "0 0 6px rgba(10,132,255,0.8)" : "none",
+                }} />
+                <span style={{ fontSize:10, fontWeight:600, letterSpacing:"0.04em",
+                  color: sourceInfo.source === "polygon" ? "#0a84ff" : "rgba(255,255,255,0.4)",
+                  textTransform:"uppercase" }}>
+                  {sourceInfo.source === "polygon" ? "Polygon" : "Yahoo Finance"}
+                </span>
+                <span style={{ fontSize:10, color:"rgba(255,255,255,0.3)" }}>
+                  {sourceInfo.count.toLocaleString()} stocks
+                </span>
+              </div>
+            )}
+            <span style={{ fontSize:11, color:"rgba(255,255,255,0.35)", fontVariantNumeric:"tabular-nums" }}>
+              {isLoading ? "Loading…" : `${filtered.length.toLocaleString()} results`}
+              {isFetching && !isLoading ? " · Refreshing" : ""}
+            </span>
           </div>
         </div>
 
