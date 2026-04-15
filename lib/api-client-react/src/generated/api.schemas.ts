@@ -33,6 +33,10 @@ export interface Stock {
   liquidity?: string;
   fiftyTwoWeekHigh?: number;
   fiftyTwoWeekLow?: number;
+  opportunityScore?: number;
+  setupType?: string;
+  recommendedOutlook?: "bullish" | "bearish" | "neutral";
+  setupDescription?: string;
 }
 
 export type StockDetailLiquidity =
@@ -66,8 +70,12 @@ export interface StockDetail {
   supportPrice: number;
   resistancePrice: number;
   earningsDate: string;
-  liquidity: StockDetailLiquidity;
+  liquidity: string;
   priceAction: string;
+  opportunityScore?: number;
+  setupType?: string;
+  recommendedOutlook?: "bullish" | "bearish" | "neutral";
+  setupDescription?: string;
 }
 
 export interface PricePoint {

@@ -49,6 +49,10 @@ export const ListStocksResponseItem = zod.object({
   liquidity: zod.string().optional(),
   fiftyTwoWeekHigh: zod.number().optional(),
   fiftyTwoWeekLow: zod.number().optional(),
+  opportunityScore: zod.number().min(0).max(100).optional(),
+  setupType: zod.string().optional(),
+  recommendedOutlook: zod.enum(["bullish", "bearish", "neutral"]).optional(),
+  setupDescription: zod.string().optional(),
 });
 export const ListStocksResponse = zod.array(ListStocksResponseItem);
 
@@ -80,8 +84,12 @@ export const GetStockResponse = zod.object({
   supportPrice: zod.number(),
   resistancePrice: zod.number(),
   earningsDate: zod.string(),
-  liquidity: zod.enum(["Very Liquid", "Liquid", "Moderate", "Low"]),
+  liquidity: zod.string(),
   priceAction: zod.string(),
+  opportunityScore: zod.number().min(0).max(100).optional(),
+  setupType: zod.string().optional(),
+  recommendedOutlook: zod.enum(["bullish", "bearish", "neutral"]).optional(),
+  setupDescription: zod.string().optional(),
 });
 
 /**

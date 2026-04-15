@@ -12,6 +12,7 @@ import {
 } from "@workspace/api-zod";
 import { getQuote, getQuotes, getPriceHistory, getHistoricalVolatility, DEFAULT_UNIVERSE } from "../lib/market-data.js";
 import { computeSignals } from "../lib/technical-analysis.js";
+import { scanOpportunity } from "../lib/scanner.js";
 
 const router: IRouter = Router();
 
@@ -40,9 +41,10 @@ router.get("/stocks", async (req, res): Promise<void> => {
           getHistoricalVolatility(quote.symbol),
         ]);
         const signals = computeSignals(history, quote.price);
-        return quoteToStock(quote, signals, hv.ivRank);
+        const scan = scanOpportunity(signals, hv.ivRank, quote.price, quote.changePercent);
+        return quoteToStock(quote, signals, hv.ivRank, scan);
       } catch {
-        return quoteToStock(quote, null, 30);
+        return quoteToStock(quote, null, 30, null);
       }
     })
   );
@@ -64,7 +66,8 @@ router.get("/stocks/:symbol", async (req, res): Promise<void> => {
       getHistoricalVolatility(symbol),
     ]);
     const signals = computeSignals(history, quote.price);
-    res.json(GetStockResponse.parse(quoteToStock(quote, signals, hv.ivRank)));
+    const scan = scanOpportunity(signals, hv.ivRank, quote.price, quote.changePercent);
+    res.json(GetStockResponse.parse(quoteToStock(quote, signals, hv.ivRank, scan)));
   } catch (err: any) {
     res.status(404).json({ error: `Symbol not found: ${symbol}` });
   }
@@ -92,7 +95,8 @@ router.get("/stocks/:symbol/price-history", async (req, res): Promise<void> => {
 function quoteToStock(
   quote: Awaited<ReturnType<typeof getQuote>>,
   signals: ReturnType<typeof computeSignals> | null,
-  ivRank: number
+  ivRank: number,
+  scan: ReturnType<typeof scanOpportunity> | null
 ) {
   const sig = signals ?? {
     strength: 5,
@@ -133,6 +137,10 @@ function quoteToStock(
     earningsDate: quote.earningsDate,
     liquidity: quote.avgVolume > 1_000_000 ? "Liquid" : "Illiquid",
     priceAction: sig.priceAction,
+    opportunityScore: scan?.opportunityScore ?? 40,
+    setupType: scan?.setupType ?? "Neutral",
+    recommendedOutlook: scan?.recommendedOutlook ?? "neutral",
+    setupDescription: scan?.setupDescription ?? "Insufficient data for analysis.",
     createdAt: new Date(),
   };
 }
