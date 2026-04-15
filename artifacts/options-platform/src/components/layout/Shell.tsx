@@ -11,7 +11,7 @@ export function Shell({ children }: ShellProps) {
   const navItems = [
     { href: "/", label: "Dashboard" },
     { href: "/screener", label: "Screener" },
-    { href: "/scanner", label: "Scanner" },
+    { href: "/scanner", label: "Analysis" },
   ];
 
   return (
