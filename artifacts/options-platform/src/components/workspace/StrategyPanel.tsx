@@ -303,6 +303,15 @@ function ModifyPanel({
     return { ...leg, premium: Math.max(0.01, premium) };
   };
 
+  // Re-price all legs whenever the expiry date changes (new T → new option values)
+  useEffect(() => {
+    setLegs(prev => prev.map(l => {
+      if (l.optionType === "stock") return l;
+      const premium = Math.round(bsPrice(currentPrice, l.strikePrice, T, sigma, l.optionType as "call" | "put") * 100) / 100;
+      return { ...l, premium: Math.max(0.01, premium) };
+    }));
+  }, [expStr]);
+
   const updateStrike = (i: number, delta: number) => {
     setLegs(prev => {
       const next = [...prev];
@@ -315,9 +324,15 @@ function ModifyPanel({
 
   const updatedMetrics = computeMetrics(legs.map(l => ({ ...l, quantity: l.quantity * contracts })), currentPrice);
 
+  // Format new expiry label for the strategy name, e.g. "Jun 18"
+  const newExpLabel = new Date(expStr + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
+
   const apply = () => {
+    // Replace the leading date label in the name (e.g. "Jun 5 265/285…" → "Jun 18 265/285…")
+    const newName = strategy.name.replace(/^[A-Z][a-z]+ \d+\s/, `${newExpLabel} `);
     const updated: OptionsStrategy = {
       ...strategy,
+      name: newName,
       legs: legs.map(l => ({ ...l, quantity: l.quantity * contracts, expiration: expStr })),
       expirationDate: expStr,
       tradeCost: Math.round(updatedMetrics.cost * 100) / 100,
@@ -484,8 +499,17 @@ export function StrategyPanel({ symbol, currentPrice = 0 }: StrategyPanelProps) 
   const customKey = `${symbol}:${outlook}:${selectedStrategyId}`;
   const selectedStrategy = customStrategies[customKey] ?? rawSelected;
 
-  // Estimate IV from the strategy score / HV proxy — rough but workable
-  const estimatedIv = selectedStrategy ? Math.max(15, Math.min(120, 25 + (strategies.length > 0 ? 20 : 0))) : 30;
+  // Back-calculate IV from the strategy's long call/put leg premium using
+  // Brenner-Subrahmanyam: σ ≈ premium * √(2π) / (S * √T)
+  // This keeps Modify panel pricing consistent with what the server computed.
+  const estimatedIv = (() => {
+    if (!selectedStrategy || currentPrice <= 0) return 30;
+    const atmLeg = selectedStrategy.legs.find(l => l.optionType !== "stock" && l.action === "buy");
+    if (!atmLeg || atmLeg.premium <= 0) return 30;
+    const T0 = Math.max(0.01, (new Date(selectedStrategy.expirationDate).getTime() - Date.now()) / (365 * 24 * 60 * 60 * 1000));
+    const iv = (atmLeg.premium * Math.sqrt(2 * Math.PI)) / (currentPrice * Math.sqrt(T0)) * 100;
+    return Math.round(Math.min(120, Math.max(10, iv)));
+  })();
 
   return (
     <div className="flex h-full flex-col" style={{ borderLeft: "1px solid rgba(255,255,255,0.05)", background: "hsl(0 0% 5%)" }}>
