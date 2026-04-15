@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { Activity, LayoutDashboard, Settings } from "lucide-react";
+import { Activity, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface ShellProps {
@@ -11,47 +11,69 @@ export function Shell({ children }: ShellProps) {
 
   return (
     <div className="flex h-[100dvh] w-full flex-col overflow-hidden bg-background text-foreground font-sans">
-      <header className="flex h-14 shrink-0 items-center justify-between glass-panel px-4 md:px-6 z-50">
-        <div className="flex items-center gap-6">
-          <Link href="/" className="flex items-center gap-2 text-foreground font-semibold tracking-tight">
-            <Activity className="h-5 w-5 text-primary" />
-            <span>OptionsPlay</span>
+      <header
+        style={{
+          display: "flex",
+          height: 48,
+          flexShrink: 0,
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "0 20px",
+          borderBottom: "1px solid rgba(255,255,255,0.06)",
+          background: "rgba(0,0,0,0.6)",
+          backdropFilter: "blur(20px)",
+          zIndex: 50,
+        }}
+      >
+        {/* Left: logo + nav */}
+        <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
+          <Link href="/" style={{ display: "flex", alignItems: "center", gap: 7, textDecoration: "none", color: "hsl(var(--foreground))" }}>
+            <Activity style={{ width: 16, height: 16, color: "hsl(var(--primary))" }} />
+            <span style={{ fontSize: 14, fontWeight: 600, letterSpacing: "-0.02em" }}>OptionsPlay</span>
           </Link>
-          <nav className="hidden md:flex items-center gap-2 text-sm font-medium">
-            <Link 
-              href="/" 
-              className={cn(
-                "px-3 py-1.5 rounded-full transition-all duration-200",
-                location === "/" ? "bg-white/10 text-foreground" : "text-muted-foreground hover:text-foreground hover:bg-white/5"
-              )}
-            >
-              Workspace
-            </Link>
-            <Link 
-              href="/dashboard" 
-              className={cn(
-                "px-3 py-1.5 rounded-full transition-all duration-200",
-                location === "/dashboard" ? "bg-white/10 text-foreground" : "text-muted-foreground hover:text-foreground hover:bg-white/5"
-              )}
-            >
-              Dashboard
-            </Link>
+
+          <nav style={{ display: "flex", gap: 2 }}>
+            {[
+              { href: "/", label: "Workspace" },
+              { href: "/dashboard", label: "Dashboard" },
+            ].map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                style={{
+                  padding: "4px 12px",
+                  borderRadius: 6,
+                  fontSize: 13,
+                  fontWeight: location === item.href ? 500 : 400,
+                  color: location === item.href ? "hsl(var(--foreground))" : "hsl(var(--muted-foreground))",
+                  background: location === item.href ? "rgba(255,255,255,0.07)" : "transparent",
+                  textDecoration: "none",
+                  transition: "all 0.12s",
+                  letterSpacing: "-0.01em",
+                }}
+              >
+                {item.label}
+              </Link>
+            ))}
           </nav>
         </div>
-        <div className="flex items-center gap-5">
-          <div className="text-xs font-medium text-success flex items-center gap-2 bg-success/10 px-2.5 py-1 rounded-full">
-            <span className="relative flex h-1.5 w-1.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-success"></span>
+
+        {/* Right: status + settings */}
+        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 500, color: "hsl(var(--success))" }}>
+            <span style={{ position: "relative", display: "flex", width: 6, height: 6 }}>
+              <span style={{ position: "absolute", inset: 0, borderRadius: "50%", background: "hsl(var(--success))", opacity: 0.5, animation: "ping 1.5s cubic-bezier(0,0,0.2,1) infinite" }} />
+              <span style={{ width: 6, height: 6, borderRadius: "50%", background: "hsl(var(--success))", position: "relative" }} />
             </span>
             Market Open
           </div>
-          <div className="h-4 w-px bg-white/10"></div>
-          <button className="text-muted-foreground hover:text-foreground transition-colors p-1.5 rounded-full hover:bg-white/10">
-            <Settings className="h-4 w-4" />
+          <div style={{ width: 1, height: 16, background: "rgba(255,255,255,0.08)" }} />
+          <button style={{ display: "flex", padding: 5, borderRadius: 6, border: "none", background: "transparent", color: "hsl(var(--muted-foreground))", cursor: "pointer" }}>
+            <Settings style={{ width: 14, height: 14 }} />
           </button>
         </div>
       </header>
+
       <main className="flex-1 overflow-hidden flex flex-col relative z-0">
         {children}
       </main>
