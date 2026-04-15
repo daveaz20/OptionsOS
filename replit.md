@@ -1,8 +1,8 @@
-# Options Platform
+# OptionsPlay — Options Trading Analytics Platform
 
 ## Overview
 
-A modern, Apple-inspired options trading analytics platform. Features a three-panel workspace with a live stock scanner, interactive candlestick/RSI/volume charts, OptionsPlay-style strategy recommendations with real scoring (0–200), and a Black-Scholes P&L simulator.
+A modern, Apple-inspired options trading analytics platform with live market data, institutional-grade technical analysis, and OptionsPlay-style strategy scoring across 3,489+ quality US stocks.
 
 ## Stack
 
@@ -10,13 +10,13 @@ A modern, Apple-inspired options trading analytics platform. Features a three-pa
 - **Node.js version**: 24
 - **Package manager**: pnpm
 - **TypeScript version**: 5.9
-- **Frontend**: React + Vite + Tailwind CSS, pure SVG charts
+- **Frontend**: React + Vite + Tailwind CSS (Apple dark theme, Inter font)
 - **API framework**: Express 5
 - **Database**: PostgreSQL + Drizzle ORM
 - **Validation**: Zod (`zod/v4`), `drizzle-zod`
-- **API codegen**: Orval (from OpenAPI spec) — manually maintained schemas
-- **Build**: esbuild (CJS bundle)
-- **Market data**: `yahoo-finance2` (v3, class-based instantiation)
+- **API codegen**: Orval (from OpenAPI spec)
+- **Build**: esbuild
+- **Market data**: Polygon.io (primary, 3,489 stocks) + yahoo-finance2 (fundamentals fallback)
 
 ## Key Commands
 
@@ -29,40 +29,68 @@ A modern, Apple-inspired options trading analytics platform. Features a three-pa
 ## Architecture
 
 ### Frontend (artifacts/options-platform)
-- **Workspace page** (`/`): Three-panel layout — stock scanner, candlestick/RSI chart, strategy panel + P&L simulator
-- **Dashboard page** (`/dashboard`): Market overview with summary stats, top movers, and watchlist
-- Charts: Pure SVG (no Recharts) — OHLCV candlesticks, RSI oscillator, volume bars, support/resistance levels
+- **Dashboard** (`/`): Market breadth stats, top opportunities, top movers, sector performance, volatility leaders, watchlist. Customizable layout (drag/drop modules, persisted to localStorage `dashboard_v2`).
+- **Screener** (`/screener`): Full 3,489-stock table with 6 view tabs (Overview, Performance, Technicals, Fundamentals, Options, Factor Alpha), preset filters, custom filters, sort-by-column. Polygon badge.
+- **Analysis** (`/scanner`): Individual stock deep-dive workspace.
+- **Routing**: `wouter` (NOT react-router-dom)
+- **API calls**: Relative `/api/...` paths proxied via Replit to port 8080
 
 ### Backend (artifacts/api-server)
-- **market-data.ts**: Yahoo Finance integration with 5-min/30-min in-memory TTL cache. Real quotes, OHLCV history, historical volatility / IV Rank proxy. Ready to swap for Schwab API.
-- **technical-analysis.ts**: RSI-14, MACD, SMA 20/50/200, ATR-14, volume ratio, swing-pivot S/R, composite strength score (0–10).
-- **strategy-engine.ts**: OptionsPlay IV×Outlook matrix (Bull Put/Call Spread, Covered Call, Long Call, Iron Condor, Straddle, Calendar, Bear Put/Call Spread). Black-Scholes premium pricing. 4-factor score (0–200): R/R + Probability + IV Alignment + Technical Alignment.
-- **schwab.ts**: Full Schwab OAuth2 adapter stub — ready for credentials (SCHWAB_CLIENT_ID, SCHWAB_CLIENT_SECRET, SCHWAB_REFRESH_TOKEN in Replit Secrets).
-- Watchlist management (DB-backed)
+
+#### Data Sources
+- **Polygon.io** (`lib/polygon.ts`): Primary universe. Snapshot endpoint pulls 11k+ tickers → filtered to 3,489 quality CS/ADRC stocks (price ≥ $2, volume ≥ 100k). `POLYGON_API_KEY` secret required.
+- **Yahoo Finance** (`lib/market-data.ts`): Fundamentals fallback (P/E, beta, dividends, earnings dates) for the curated 477-symbol universe. 5-min/30-min in-memory TTL cache.
+
+#### Technical Analysis (`lib/technical-analysis.ts`)
+- **RSI-14**: Wilder's SMMA (seed with simple avg of first 14 bars, then iterate)
+- **MACD**: Proper EMA(12,26,9) — full EMA series aligned, then EMA(9) of MACD line for real signal
+- **Lookback**: **"TECH" period = 580 calendar days of daily bars** (~410 trading days) — enough for SMA200 warmup + stable MACD/RSI
+- SMA 20/50/200, ATR-14, volume ratio, swing-pivot S/R (5-bar pivot over last 60 bars), composite strength score (0–10)
+
+#### Opportunity Scanner (`lib/scanner.ts`)
+- 4-factor scoring (0–100): Technical setup (0–35) + IV alignment (0–25) + Entry quality (0–25) + Momentum (0–15)
+- **Earnings proximity factor**: adjusts IV score ±3-5pts based on days to earnings (<7d or <21d)
+- Setup types: Bull Put Spread, Call Spread, Long Call, Covered Call, Bear Call Spread, Bear Put Spread, Long Put, Iron Condor, Straddle, Calendar, Neutral
+- High conviction threshold: score ≥ 75
+
+#### Screener (`routes/screener.ts`)
+- **Unified cache**: Single stale-while-revalidate cache (30-min TTL) shared across ALL endpoints
+- Polygon path: snapshots for 3,489 stocks, full technicals (TECH lookback) for curated 477, basic estimates for the rest
+- Yahoo fallback path: 477-symbol universe with full technicals
+- Exports: `getScreenerData()`, `getScreenerRow(symbol)`, `ensureScreenerReady()` — consumed by `/stocks` route
+- Stats endpoint `/api/screener/stats`: breadth, conviction count, IV averages, best score, market hours
+
+#### Stocks Route (`routes/stocks.ts`)
+- **When Polygon enabled**: `/stocks` and `/stocks/:symbol` both serve from the screener cache — same universe, same scores, no redundant computation, instant response after warmup
+- **Fallback**: Live Yahoo Finance fetch with TECH lookback for the 477-symbol universe
+- `screenerRowToStock()` adapter maps ScreenerRow → Stock response shape
+- Price history endpoint still serves user-selected period (1D/1W/1M/3M/6M/1Y) separately
 
 ### Database (lib/db)
-- `stocks` table: Legacy — market data now served live from Yahoo Finance
-- `watchlist` table: User watchlist entries
+- `stocks` table: Legacy (market data served live from API)
+- `watchlist` table: User watchlist entries (DB-backed)
 
-### Data Flow
-1. `/api/stocks` → fetches real quotes for 30-symbol universe from Yahoo Finance, enriches with technical signals (cached 5 min)
-2. `/api/stocks/:symbol` → full detail with computed RSI, MACD, S/R, IV Rank
-3. `/api/stocks/:symbol/price-history` → real OHLCV candles (cached 30 min)
-4. `/api/stocks/:symbol/strategies` → Black-Scholes derived strategies scored 0–200
-5. `/api/stocks/:symbol/pnl` → real options P&L curve across price range
+### Data Flow (Polygon mode)
+```
+Startup → Polygon snapshots (11k tickers) → filter → 3,489 stocks
+  → Full TECH-period technicals for 477 curated stocks (Yahoo Finance)
+  → Basic estimated technicals for remaining 3,012 (price action only)
+  → Cache stored in memory (30-min TTL, stale-while-revalidate)
 
-### Schwab API Setup (when credentials arrive)
-Add to Replit Secrets:
-- `SCHWAB_CLIENT_ID` — App Key from developer.schwab.com
-- `SCHWAB_CLIENT_SECRET` — App Secret
-- `SCHWAB_REDIRECT_URI` — your Replit domain + `/api/schwab/callback`
-- `SCHWAB_REFRESH_TOKEN` — obtained after first OAuth flow via `/api/schwab/auth`
+/api/screener     → returns full 3,489-row cache
+/api/screener/stats → computes breadth/conviction/IV from cache
+/api/stocks       → serves from same cache (fast!)
+/api/stocks/:sym  → screener cache lookup first, then live fallback
+/api/dashboard/*  → uses /api/stocks which serves from cache
+```
 
-## Design
-- Background: `hsl(0 0% 4%)` deep dark
-- Primary: `hsl(217 91% 60%)` Apple Blue
-- Font: Inter, tabular-nums for prices
-- Radius: 8px
-- All labels sentence-case, no ALL CAPS
+### Secrets Required
+- `POLYGON_API_KEY` — Polygon.io Starter plan ($29/mo), 15-min delayed data
+- `SESSION_SECRET` — Express session secret
+- Schwab stub ready: `SCHWAB_CLIENT_ID`, `SCHWAB_CLIENT_SECRET`, `SCHWAB_REFRESH_TOKEN`
 
-See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details.
+### Design System
+- Background: `#0a0a0a`
+- Primary: `hsl(217 91% 60%)` (Apple Blue)
+- Fonts: Inter, tabular-nums for prices
+- Radius: 8px, sentence-case labels, no emoji in code

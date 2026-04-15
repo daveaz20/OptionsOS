@@ -30,7 +30,7 @@ import {
 
 const router: IRouter = Router();
 
-const SCREENER_TTL = 10 * 60 * 1000;
+const SCREENER_TTL = 30 * 60 * 1000; // 30 min — data is 15-min delayed anyway
 
 export interface ScreenerRow {
   symbol: string; name: string; price: number; change: number; changePercent: number;
@@ -48,6 +48,19 @@ export interface ScreenerRow {
 
 interface Cache { data: ScreenerRow[]; at: number; promise: Promise<void> | null }
 const cache: Cache = { data: [], at: 0, promise: null };
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/** Returns days until earningsDate string ("Apr 30, 2026"), or undefined if unknown/past */
+function daysUntilEarnings(earningsDate: string): number | undefined {
+  if (!earningsDate || earningsDate === "TBD") return undefined;
+  try {
+    const d = new Date(earningsDate);
+    if (isNaN(d.getTime())) return undefined;
+    const diff = Math.floor((d.getTime() - Date.now()) / 86_400_000);
+    return diff >= 0 ? diff : undefined; // ignore past earnings
+  } catch { return undefined; }
+}
 
 // ─── Yahoo Finance screener (original, ~477 symbols) ─────────────────────────
 
@@ -79,11 +92,12 @@ async function buildYahooData(): Promise<ScreenerRow[]> {
       };
       try {
         const [history, hv] = await Promise.all([
-          getPriceHistory(q.symbol, "3M"),
+          getPriceHistory(q.symbol, "TECH"),
           getHistoricalVolatility(q.symbol),
         ]);
         const sig  = computeSignals(history, q.price);
-        const scan = scanOpportunity(sig, hv.ivRank, q.price, q.changePercent);
+        const dte  = daysUntilEarnings(q.earningsDate);
+        const scan = scanOpportunity(sig, hv.ivRank, q.price, q.changePercent, dte);
         return {
           ...base,
           technicalStrength: Math.round(sig.strength),
@@ -200,11 +214,12 @@ async function buildKnownRows(
 
       try {
         const [history, hv] = await Promise.all([
-          getPriceHistory(s.ticker, "3M"),
+          getPriceHistory(s.ticker, "TECH"),
           getHistoricalVolatility(s.ticker),
         ]);
         const sig  = computeSignals(history, price);
-        const scan = scanOpportunity(sig, hv.ivRank, price, chPct);
+        const dte  = daysUntilEarnings(q?.earningsDate ?? "TBD");
+        const scan = scanOpportunity(sig, hv.ivRank, price, chPct, dte);
         return {
           ...base,
           technicalStrength: Math.round(sig.strength),
@@ -366,5 +381,24 @@ function isUSMarketOpen(): boolean {
 }
 
 function r2(n: number) { return Math.round(n * 100) / 100; }
+
+// ─── Cache access for other routes ────────────────────────────────────────────
+
+/** Returns all cached screener rows (may be empty on cold start) */
+export function getScreenerData(): ScreenerRow[] {
+  return cache.data;
+}
+
+/** Returns a single cached row by symbol, or undefined if not found */
+export function getScreenerRow(symbol: string): ScreenerRow | undefined {
+  return cache.data.find(r => r.symbol === symbol.toUpperCase());
+}
+
+/** Ensures the screener cache is warm; awaits initial load if empty */
+export async function ensureScreenerReady(): Promise<void> {
+  if (cache.data.length === 0) await triggerRefresh();
+}
+
+export { daysUntilEarnings };
 
 export default router;

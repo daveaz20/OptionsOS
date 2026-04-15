@@ -52,7 +52,8 @@ export function scanOpportunity(
   signals: TechnicalSignals,
   ivRank: number,
   price: number,
-  changePercent: number
+  changePercent: number,
+  daysToEarnings?: number   // undefined = unknown, 0 = today/past
 ): ScanResult {
   // ── 1. Determine directional outlook ────────────────────────────────────
   const outlook = determineOutlook(signals, ivRank);
@@ -62,7 +63,7 @@ export function scanOpportunity(
 
   // ── 3. Score each dimension ──────────────────────────────────────────────
   const technicalScore = scoreTechnical(signals, outlook);
-  const ivScore        = scoreIvAlignment(ivRank, setup);
+  const ivScore        = scoreIvAlignment(ivRank, setup, daysToEarnings);
   const entryScore     = scoreEntryQuality(signals, price, outlook);
   const momentumScore  = scoreMomentum(signals, changePercent, outlook);
 
@@ -73,7 +74,7 @@ export function scanOpportunity(
     opportunityScore,
     setupType: setup,
     recommendedOutlook: outlook,
-    setupDescription: buildDescription(setup, outlook, ivRank, signals),
+    setupDescription: buildDescription(setup, outlook, ivRank, signals, daysToEarnings),
     technicalScore: Math.round(technicalScore),
     ivScore: Math.round(ivScore),
     entryScore: Math.round(entryScore),
@@ -196,38 +197,46 @@ function scoreTechnical(signals: TechnicalSignals, outlook: ScanOutlook): number
   return Math.min(35, score);
 }
 
-function scoreIvAlignment(ivRank: number, setup: SetupType): number {
+function scoreIvAlignment(ivRank: number, setup: SetupType, daysToEarnings?: number): number {
   // Max 25 pts — does the IV rank environment suit the strategy?
   const creditSelling = ["Bull Put Spread", "Bear Call Spread", "Iron Condor", "Covered Call"].includes(setup);
   const debitBuying   = ["Call Spread", "Long Call", "Bear Put Spread", "Long Put", "Straddle"].includes(setup);
   const timeSpread    = setup === "Calendar";
 
+  let base: number;
   if (creditSelling) {
-    // Want high IV to sell expensive premium
-    if (ivRank >= 70) return 25;
-    if (ivRank >= 55) return 20;
-    if (ivRank >= 45) return 14;
-    if (ivRank >= 35) return 8;
-    return 3;
+    if (ivRank >= 70) base = 25;
+    else if (ivRank >= 55) base = 20;
+    else if (ivRank >= 45) base = 14;
+    else if (ivRank >= 35) base = 8;
+    else base = 3;
+  } else if (debitBuying) {
+    if (ivRank <= 20) base = 25;
+    else if (ivRank <= 35) base = 20;
+    else if (ivRank <= 50) base = 13;
+    else if (ivRank <= 65) base = 7;
+    else base = 3;
+  } else if (timeSpread) {
+    if (ivRank >= 30 && ivRank <= 55) base = 22;
+    else if (ivRank >= 20 && ivRank <= 65) base = 16;
+    else base = 9;
+  } else {
+    base = 12;
   }
 
-  if (debitBuying) {
-    // Want low IV so options are cheap
-    if (ivRank <= 20) return 25;
-    if (ivRank <= 35) return 20;
-    if (ivRank <= 50) return 13;
-    if (ivRank <= 65) return 7;
-    return 3;
+  // Earnings proximity bonus: near-term earnings inflate IV, which favours credit strategies.
+  // Penalises debit buyers entering just before earnings crush.
+  if (daysToEarnings !== undefined && daysToEarnings >= 0) {
+    if (daysToEarnings <= 7) {
+      // Very close — IV expansion almost certain
+      base = creditSelling ? Math.min(25, base + 5) : Math.max(1, base - 4);
+    } else if (daysToEarnings <= 21) {
+      base = creditSelling ? Math.min(25, base + 3) : Math.max(1, base - 2);
+    }
+    // If earnings > 21 days away, no adjustment (normal vol environment)
   }
 
-  if (timeSpread) {
-    // Calendar works best with mid IV and a vol term structure difference
-    if (ivRank >= 30 && ivRank <= 55) return 22;
-    if (ivRank >= 20 && ivRank <= 65) return 16;
-    return 9;
-  }
-
-  return 12;
+  return base;
 }
 
 function scoreEntryQuality(signals: TechnicalSignals, price: number, outlook: ScanOutlook): number {
@@ -302,7 +311,8 @@ function buildDescription(
   setup: SetupType,
   outlook: ScanOutlook,
   ivRank: number,
-  signals: TechnicalSignals
+  signals: TechnicalSignals,
+  daysToEarnings?: number
 ): string {
   const ivLevel = ivRank >= 60 ? "high" : ivRank >= 35 ? "moderate" : "low";
   const trendStr = signals.trend === "bullish" ? "uptrend" : signals.trend === "bearish" ? "downtrend" : "sideways";
@@ -321,5 +331,19 @@ function buildDescription(
     "Neutral":          `No high-conviction setup. Watch for trend development or IV expansion before entering.`,
   };
 
-  return map[setup] ?? "Options opportunity identified based on technical and volatility analysis.";
+  let desc = map[setup] ?? "Options opportunity identified based on technical and volatility analysis.";
+
+  // Append earnings risk / opportunity note when relevant
+  if (daysToEarnings !== undefined && daysToEarnings >= 0 && daysToEarnings <= 21) {
+    const creditSelling = ["Bull Put Spread", "Bear Call Spread", "Iron Condor", "Covered Call"].includes(setup);
+    if (daysToEarnings <= 7) {
+      desc += creditSelling
+        ? ` ⚠ Earnings in ≤${daysToEarnings}d — IV elevated; manage risk before the event.`
+        : ` ⚠ Earnings in ≤${daysToEarnings}d — consider waiting for post-earnings vol crush before entering.`;
+    } else {
+      desc += ` Earnings in ~${daysToEarnings}d — IV may continue expanding toward the event.`;
+    }
+  }
+
+  return desc;
 }

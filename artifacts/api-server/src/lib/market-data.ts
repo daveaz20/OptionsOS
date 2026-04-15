@@ -234,13 +234,15 @@ export async function getPriceHistory(symbol: string, period: string): Promise<O
 function periodToYahoo(period: string): { interval: "1d" | "1wk" | "1mo"; period1: Date } {
   const ago = (days: number) => { const d = new Date(); d.setDate(d.getDate() - days); return d; };
   switch (period) {
-    case "1D": return { interval: "1d", period1: ago(5) };
-    case "1W": return { interval: "1d", period1: ago(30) };
-    case "1M": return { interval: "1d", period1: ago(90) };
-    case "3M": return { interval: "1d", period1: ago(180) };
-    case "6M": return { interval: "1d", period1: ago(365) };
-    case "1Y": return { interval: "1wk", period1: ago(730) };
-    default:   return { interval: "1d", period1: ago(180) };
+    case "1D":   return { interval: "1d",  period1: ago(5) };
+    case "1W":   return { interval: "1d",  period1: ago(30) };
+    case "1M":   return { interval: "1d",  period1: ago(90) };
+    case "3M":   return { interval: "1d",  period1: ago(180) };
+    case "6M":   return { interval: "1d",  period1: ago(365) };
+    case "1Y":   return { interval: "1wk", period1: ago(730) };
+    // TECH: ~410 daily bars — enough for SMA200 + proper MACD/RSI warm-up
+    case "TECH": return { interval: "1d",  period1: ago(580) };
+    default:     return { interval: "1d",  period1: ago(180) };
   }
 }
 
