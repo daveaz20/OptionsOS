@@ -34,7 +34,7 @@ export function StrategyPanel({ symbol, currentPrice = 0 }: StrategyPanelProps) 
 
   if (!symbol) {
     return (
-      <div className="flex h-full flex-col items-center justify-center text-muted-foreground p-8 text-center bg-card border-l border-border">
+      <div className="flex h-full flex-col items-center justify-center text-muted-foreground p-8 text-center bg-background/95 backdrop-blur-md border-l border-white/5">
         <Target className="h-12 w-12 mb-4 opacity-20" />
         <p className="text-lg font-medium text-foreground">Strategies</p>
         <p className="text-sm mt-1">Select a stock to view recommended options strategies.</p>
@@ -45,20 +45,20 @@ export function StrategyPanel({ symbol, currentPrice = 0 }: StrategyPanelProps) 
   const selectedStrategy = strategies.find(s => s.id === selectedStrategyId);
 
   return (
-    <div className="flex h-full flex-col border-l border-border bg-card">
-      <div className="p-4 shrink-0 flex flex-col gap-4 border-b border-border">
-        <h2 className="font-bold text-lg flex items-center gap-2">
-          Options Strategies
+    <div className="flex h-full flex-col border-l border-white/5 bg-background/95 backdrop-blur-md">
+      <div className="p-4 shrink-0 flex flex-col gap-4 border-b border-white/5">
+        <h2 className="font-semibold text-lg flex items-center gap-2 tracking-tight">
+          Strategies
         </h2>
         <Tabs value={outlook} onValueChange={(v) => { setOutlook(v as GetStrategiesOutlook); setSelectedStrategyId(null); }} className="w-full">
-          <TabsList className="w-full h-8 bg-background/50 p-0.5 grid grid-cols-3">
-            <TabsTrigger value="bullish" className="text-xs data-[state=active]:bg-success/20 data-[state=active]:text-success">
+          <TabsList className="w-full h-8 bg-white/5 p-1 rounded-lg grid grid-cols-3">
+            <TabsTrigger value="bullish" className="text-xs rounded-md data-[state=active]:bg-success/20 data-[state=active]:text-success transition-all">
               Bullish
             </TabsTrigger>
-            <TabsTrigger value="neutral" className="text-xs data-[state=active]:bg-card data-[state=active]:text-primary">
+            <TabsTrigger value="neutral" className="text-xs rounded-md data-[state=active]:bg-white/10 data-[state=active]:text-foreground transition-all">
               Neutral
             </TabsTrigger>
-            <TabsTrigger value="bearish" className="text-xs data-[state=active]:bg-destructive/20 data-[state=active]:text-destructive">
+            <TabsTrigger value="bearish" className="text-xs rounded-md data-[state=active]:bg-destructive/20 data-[state=active]:text-destructive transition-all">
               Bearish
             </TabsTrigger>
           </TabsList>
@@ -66,14 +66,14 @@ export function StrategyPanel({ symbol, currentPrice = 0 }: StrategyPanelProps) 
       </div>
 
       <ScrollArea className="flex-1">
-        <div className="flex flex-col p-4 gap-4">
+        <div className="flex flex-col p-4 gap-5 pb-8">
           {isLoading ? (
             Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton key={i} className="h-32 w-full rounded-xl" />
+              <Skeleton key={i} className="h-[120px] w-full rounded-xl bg-white/5" />
             ))
           ) : strategies.length === 0 ? (
-            <div className="p-8 text-center text-muted-foreground text-sm flex flex-col items-center gap-2">
-              <AlertCircle className="h-8 w-8 opacity-50" />
+            <div className="p-8 text-center text-muted-foreground text-sm flex flex-col items-center gap-3">
+              <AlertCircle className="h-8 w-8 opacity-30" />
               <span>No {outlook} strategies found.</span>
             </div>
           ) : (
@@ -90,9 +90,9 @@ export function StrategyPanel({ symbol, currentPrice = 0 }: StrategyPanelProps) 
           )}
 
           {selectedStrategy && (
-            <div className="mt-4 border-t border-border pt-6">
-              <h3 className="font-bold text-base mb-4 flex items-center gap-2">
-                <TrendingUp className="h-4 w-4 text-primary" />
+            <div className="mt-2 border-t border-white/5 pt-6 flex flex-col gap-5">
+              <h3 className="font-semibold text-base flex items-center gap-2 tracking-tight">
+                <TrendingUp className="h-4.5 w-4.5 text-primary" />
                 P&L Simulator
               </h3>
               <PnlSimulator strategy={selectedStrategy} symbol={symbol} currentPrice={currentPrice} />
@@ -105,7 +105,6 @@ export function StrategyPanel({ symbol, currentPrice = 0 }: StrategyPanelProps) 
 }
 
 function StrategyCard({ strategy, isSelected, onClick }: { strategy: OptionsStrategy, isSelected: boolean, onClick: () => void }) {
-  // OptionsPlay-style score gauge (0-200)
   const scorePercent = Math.min(Math.max(strategy.score / 200, 0), 1) * 100;
   
   let scoreColor = "bg-primary";
@@ -116,38 +115,40 @@ function StrategyCard({ strategy, isSelected, onClick }: { strategy: OptionsStra
     <div 
       onClick={onClick}
       className={cn(
-        "cursor-pointer rounded-xl border p-4 transition-all hover:border-primary/50 relative overflow-hidden",
-        isSelected ? "bg-primary/5 border-primary shadow-sm" : "bg-background border-border"
+        "cursor-pointer rounded-xl border p-4 transition-all duration-300 relative overflow-hidden",
+        isSelected 
+          ? "bg-primary/10 border-primary/30 shadow-[0_4px_20px_rgba(10,132,255,0.1)]" 
+          : "bg-card/40 backdrop-blur-xl border-white/5 hover:border-white/20 hover:bg-white/5"
       )}
     >
-      <div className="flex justify-between items-start mb-3">
+      <div className="flex justify-between items-start mb-4">
         <div>
-          <h4 className="font-bold text-sm">{strategy.name}</h4>
-          <p className="text-xs text-muted-foreground mt-0.5 flex gap-2 items-center">
+          <h4 className={cn("font-semibold text-sm tracking-tight", isSelected ? "text-foreground" : "text-foreground/90")}>{strategy.name}</h4>
+          <p className="text-xs text-muted-foreground mt-1 flex gap-2 items-center font-medium">
             <span>{strategy.type === "income" ? "Income" : "Trade"}</span>
-            <span className="h-1 w-1 rounded-full bg-muted-foreground/50"></span>
+            <span className="h-1 w-1 rounded-full bg-white/20"></span>
             <span>Exp: {strategy.expirationDate}</span>
           </p>
         </div>
-        <div className="flex flex-col items-end gap-1">
-          <span className="text-xs font-mono text-muted-foreground">Score: {strategy.score}</span>
-          <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden">
-            <div className={cn("h-full rounded-full transition-all", scoreColor)} style={{ width: `${scorePercent}%` }} />
+        <div className="flex flex-col items-end gap-1.5">
+          <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Score <span className="text-foreground ml-1">{strategy.score}</span></span>
+          <div className="w-16 h-1 bg-white/10 rounded-full overflow-hidden">
+            <div className={cn("h-full rounded-full transition-all duration-500", scoreColor)} style={{ width: `${scorePercent}%` }} />
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-2 mt-4 pt-3 border-t border-border/50">
-        <div className="flex flex-col">
-          <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Cost</span>
+      <div className="grid grid-cols-3 gap-2 mt-4 pt-3 border-t border-white/5">
+        <div className="flex flex-col gap-0.5">
+          <span className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">Cost</span>
           <span className="font-mono text-sm font-medium">{formatCurrency(strategy.tradeCost)}</span>
         </div>
-        <div className="flex flex-col">
-          <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Max Profit</span>
+        <div className="flex flex-col gap-0.5">
+          <span className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">Max Profit</span>
           <span className="font-mono text-sm font-medium text-success">{formatCurrency(strategy.maxProfit)}</span>
         </div>
-        <div className="flex flex-col">
-          <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Return</span>
+        <div className="flex flex-col gap-0.5">
+          <span className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">Return</span>
           <span className="font-mono text-sm font-medium text-primary">{formatPercent(strategy.returnPercent)}</span>
         </div>
       </div>
@@ -157,8 +158,8 @@ function StrategyCard({ strategy, isSelected, onClick }: { strategy: OptionsStra
 
 function PnlSimulator({ strategy, symbol, currentPrice }: { strategy: OptionsStrategy, symbol: string, currentPrice: number }) {
   const [targetPrice, setTargetPrice] = useState(currentPrice || 100);
-  const [daysToExpiry, setDaysToExpiry] = useState(30); // Default to 30 days
-  const [iv, setIv] = useState(30); // Default IV 30%
+  const [daysToExpiry, setDaysToExpiry] = useState(30);
+  const [iv, setIv] = useState(30);
 
   const today = new Date();
   const targetDate = new Date(today);
@@ -170,11 +171,9 @@ function PnlSimulator({ strategy, symbol, currentPrice }: { strategy: OptionsStr
     }
   });
 
-  // Automatically trigger calculate PNL when inputs change
   const calculatePnl = useCalculatePnl();
 
   useEffect(() => {
-    // Only fetch if currentPrice is valid, avoiding initial 0
     if (currentPrice > 0 && targetPrice === 0) {
       setTargetPrice(currentPrice);
     }
@@ -202,11 +201,11 @@ function PnlSimulator({ strategy, symbol, currentPrice }: { strategy: OptionsStr
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-5 bg-background p-4 rounded-xl border border-border">
+      <div className="flex flex-col gap-5 bg-card/40 backdrop-blur-xl p-5 rounded-2xl border border-white/5 shadow-sm">
         <div className="space-y-3">
           <div className="flex justify-between items-center">
-            <label className="text-xs font-medium text-muted-foreground">Target Price</label>
-            <span className="font-mono text-sm font-bold text-primary">{formatCurrency(targetPrice)}</span>
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Target Price</label>
+            <span className="font-mono text-sm font-medium text-foreground">{formatCurrency(targetPrice)}</span>
           </div>
           <Slider 
             value={[targetPrice]} 
@@ -220,8 +219,8 @@ function PnlSimulator({ strategy, symbol, currentPrice }: { strategy: OptionsStr
 
         <div className="space-y-3">
           <div className="flex justify-between items-center">
-            <label className="text-xs font-medium text-muted-foreground">Days to Expiration</label>
-            <span className="font-mono text-sm font-bold text-primary">{daysToExpiry} Days</span>
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Days to Expiration</label>
+            <span className="font-mono text-sm font-medium text-foreground">{daysToExpiry} Days</span>
           </div>
           <Slider 
             value={[daysToExpiry]} 
@@ -235,8 +234,8 @@ function PnlSimulator({ strategy, symbol, currentPrice }: { strategy: OptionsStr
 
         <div className="space-y-3">
           <div className="flex justify-between items-center">
-            <label className="text-xs font-medium text-muted-foreground">Implied Volatility (IV)</label>
-            <span className="font-mono text-sm font-bold text-primary">{iv}%</span>
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Implied Volatility (IV)</label>
+            <span className="font-mono text-sm font-medium text-foreground">{iv}%</span>
           </div>
           <Slider 
             value={[iv]} 
@@ -250,32 +249,34 @@ function PnlSimulator({ strategy, symbol, currentPrice }: { strategy: OptionsStr
       </div>
 
       {isLoading && !pnlResult ? (
-        <Skeleton className="h-48 w-full rounded-xl" />
+        <Skeleton className="h-[260px] w-full rounded-2xl bg-white/5" />
       ) : pnlResult ? (
         <div className="flex flex-col gap-4">
           <div className="grid grid-cols-2 gap-4">
             <div className={cn(
-              "p-4 rounded-xl border flex flex-col gap-1 items-center text-center",
-              pnlResult.profitLoss >= 0 ? "bg-success/10 border-success/30 text-success" : "bg-destructive/10 border-destructive/30 text-destructive"
+              "p-4 rounded-2xl border flex flex-col gap-1 items-center justify-center text-center transition-colors",
+              pnlResult.profitLoss >= 0 
+                ? "bg-success/10 border-success/20 text-success" 
+                : "bg-destructive/10 border-destructive/20 text-destructive"
             )}>
-              <span className="text-xs font-medium uppercase tracking-wider opacity-80">Simulated P&L</span>
-              <span className="text-xl font-bold font-mono">{formatCurrency(pnlResult.profitLoss)}</span>
-              <span className="text-xs font-mono opacity-80">{formatPercent(pnlResult.profitLossPercent)}</span>
+              <span className="text-[10px] font-semibold uppercase tracking-wider opacity-80 mb-1">Simulated P&L</span>
+              <span className="text-2xl font-medium tracking-tight font-mono">{formatCurrency(pnlResult.profitLoss)}</span>
+              <span className="text-xs font-mono font-medium opacity-90">{formatPercent(pnlResult.profitLossPercent)}</span>
             </div>
             
-            <div className="p-4 rounded-xl border border-border bg-background flex flex-col gap-1 justify-center items-center text-center">
-              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Breakeven</span>
-              <span className="text-lg font-bold font-mono">{formatCurrency(pnlResult.breakeven)}</span>
+            <div className="p-4 rounded-2xl border border-white/5 bg-card/40 backdrop-blur-xl flex flex-col gap-1 justify-center items-center text-center">
+              <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Breakeven</span>
+              <span className="text-xl font-medium tracking-tight font-mono text-foreground">{formatCurrency(pnlResult.breakeven)}</span>
             </div>
           </div>
 
           {pnlResult.pnlCurve && pnlResult.pnlCurve.length > 0 && (
-            <div className="h-48 w-full bg-background rounded-xl border border-border p-2 pt-4 shadow-sm">
+            <div className="h-[200px] w-full bg-card/40 backdrop-blur-xl rounded-2xl border border-white/5 p-3 pt-5 shadow-sm">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={pnlResult.pnlCurve} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                   <defs>
                     <linearGradient id="pnlColor" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3}/>
+                      <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.2}/>
                       <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0}/>
                     </linearGradient>
                   </defs>
@@ -288,20 +289,23 @@ function PnlSimulator({ strategy, symbol, currentPrice }: { strategy: OptionsStr
                     fontSize={10}
                     tickMargin={8}
                     minTickGap={20}
+                    axisLine={false}
+                    tickLine={false}
                   />
                   <YAxis 
                     hide
                     domain={['dataMin', 'dataMax']}
                   />
                   <RechartsTooltip
+                    cursor={{ stroke: 'hsl(var(--muted-foreground))', strokeWidth: 1, strokeDasharray: '4 4' }}
                     content={({ active, payload }) => {
                       if (active && payload && payload.length) {
                         const data = payload[0].payload;
                         const isProfit = data.pnl >= 0;
                         return (
-                          <div className="bg-card border border-border p-2 rounded shadow-xl font-mono text-xs">
-                            <div className="text-muted-foreground mb-1">Price: {formatCurrency(data.price)}</div>
-                            <div className={isProfit ? "text-success font-bold" : "text-destructive font-bold"}>
+                          <div className="bg-card/80 backdrop-blur-xl border border-white/10 p-3 rounded-xl shadow-2xl font-mono text-xs min-w-[140px]">
+                            <div className="text-muted-foreground mb-2 font-sans font-medium">Price: {formatCurrency(data.price)}</div>
+                            <div className={cn("font-medium text-sm", isProfit ? "text-success" : "text-destructive")}>
                               P&L: {formatCurrency(data.pnl)}
                             </div>
                           </div>
@@ -310,15 +314,16 @@ function PnlSimulator({ strategy, symbol, currentPrice }: { strategy: OptionsStr
                       return null;
                     }}
                   />
-                  <ReferenceLine y={0} stroke="hsl(var(--muted-foreground))" strokeDasharray="3 3" opacity={0.5} />
-                  <ReferenceLine x={currentPrice} stroke="hsl(var(--foreground))" opacity={0.3} />
+                  <ReferenceLine y={0} stroke="hsl(var(--muted-foreground))" strokeDasharray="3 3" opacity={0.4} />
+                  <ReferenceLine x={currentPrice} stroke="hsl(var(--foreground))" strokeDasharray="3 3" opacity={0.2} />
                   <Area 
                     type="monotone" 
                     dataKey="pnl" 
                     stroke="hsl(var(--primary))" 
-                    strokeWidth={2}
+                    strokeWidth={2.5}
                     fillOpacity={1} 
                     fill="url(#pnlColor)" 
+                    animationDuration={800}
                   />
                 </AreaChart>
               </ResponsiveContainer>

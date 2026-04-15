@@ -11,7 +11,7 @@ export default function WorkspacePage() {
   const { data: stock } = useGetStock(selectedSymbol, { query: { enabled: !!selectedSymbol } });
 
   return (
-    <div className="h-full w-full flex flex-col">
+    <div className="h-full w-full flex flex-col bg-background">
       <ResizablePanelGroup direction="horizontal" className="h-full w-full rounded-none">
         <ResizablePanel defaultSize={20} minSize={15} maxSize={30} className="h-full">
           <StockListPanel 
@@ -20,13 +20,13 @@ export default function WorkspacePage() {
           />
         </ResizablePanel>
         
-        <ResizableHandle className="w-1 bg-border hover:bg-primary/50 transition-colors" />
+        <ResizableHandle className="w-px bg-white/5 hover:bg-primary/50 transition-colors cursor-col-resize" />
         
         <ResizablePanel defaultSize={50} minSize={40} className="h-full">
           <StockDetailPanel symbol={selectedSymbol} />
         </ResizablePanel>
         
-        <ResizableHandle className="w-1 bg-border hover:bg-primary/50 transition-colors" />
+        <ResizableHandle className="w-px bg-white/5 hover:bg-primary/50 transition-colors cursor-col-resize" />
         
         <ResizablePanel defaultSize={30} minSize={25} maxSize={40} className="h-full">
           <StrategyPanel 

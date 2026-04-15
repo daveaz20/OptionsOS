@@ -1,5 +1,5 @@
 import { useGetDashboardSummary, useGetTopMovers, useGetWatchlist, getGetWatchlistQueryKey, useRemoveFromWatchlist } from "@workspace/api-client-react";
-import { BarChart2, TrendingUp, TrendingDown, Activity, Star, ArrowUpRight, ArrowDownRight, AlertCircle, LayoutDashboard } from "lucide-react";
+import { BarChart2, TrendingUp, TrendingDown, Activity, Star, ArrowUpRight, ArrowDownRight, LayoutDashboard } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatCurrency, formatPercent, formatNumber } from "@/lib/format";
@@ -30,21 +30,21 @@ export default function DashboardPage() {
   };
 
   return (
-    <ScrollArea className="h-full w-full bg-background/50">
+    <ScrollArea className="h-full w-full bg-background">
       <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-8">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3">
+          <h1 className="text-3xl font-semibold tracking-tight flex items-center gap-3 text-foreground">
             <LayoutDashboard className="h-8 w-8 text-primary" />
             Market Overview
           </h1>
-          <p className="text-muted-foreground mt-2">Comprehensive snapshot of market conditions and your watchlisted assets.</p>
+          <p className="text-muted-foreground mt-2 font-medium">Comprehensive snapshot of market conditions and your watchlisted assets.</p>
         </div>
 
         {/* Summary Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
           <StatCard
             title="Market Sentiment"
-            value={isLoadingSummary ? <Skeleton className="h-8 w-24" /> : <span className="capitalize">{summary?.marketSentiment}</span>}
+            value={isLoadingSummary ? <Skeleton className="h-8 w-24 bg-white/5" /> : <span className="capitalize">{summary?.marketSentiment}</span>}
             icon={<Activity className="h-4 w-4 text-muted-foreground" />}
             valueColor={
               summary?.marketSentiment === "bullish" ? "text-success" : 
@@ -54,22 +54,22 @@ export default function DashboardPage() {
             description={!isLoadingSummary && `Based on ${summary?.totalStocks} stocks`}
           />
           <StatCard
-            title="Total Tracked Stocks"
-            value={isLoadingSummary ? <Skeleton className="h-8 w-16" /> : summary?.totalStocks.toString()}
+            title="Total Tracked"
+            value={isLoadingSummary ? <Skeleton className="h-8 w-16 bg-white/5" /> : summary?.totalStocks.toString()}
             icon={<BarChart2 className="h-4 w-4 text-muted-foreground" />}
           />
           <StatCard
             title="Avg Tech Strength"
-            value={isLoadingSummary ? <Skeleton className="h-8 w-16" /> : `${summary?.avgTechnicalStrength.toFixed(1)} / 10`}
+            value={isLoadingSummary ? <Skeleton className="h-8 w-16 bg-white/5" /> : `${summary?.avgTechnicalStrength.toFixed(1)} / 10`}
             icon={<TrendingUp className="h-4 w-4 text-muted-foreground" />}
             description="Overall market technicals"
           />
           <StatCard
             title="Market Breadth"
-            value={isLoadingSummary ? <Skeleton className="h-8 w-32" /> : (
+            value={isLoadingSummary ? <Skeleton className="h-8 w-32 bg-white/5" /> : (
               <div className="flex items-center gap-3 text-base">
                 <span className="text-success flex items-center"><TrendingUp className="h-4 w-4 mr-1" /> {summary?.bullishCount}</span>
-                <span className="text-muted-foreground">- {summary?.neutralCount} -</span>
+                <span className="text-muted-foreground opacity-50">- {summary?.neutralCount} -</span>
                 <span className="text-destructive flex items-center"><TrendingDown className="h-4 w-4 mr-1" /> {summary?.bearishCount}</span>
               </div>
             )}
@@ -78,26 +78,26 @@ export default function DashboardPage() {
           />
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-8">
           {/* Top Movers Section */}
           <div className="col-span-1 lg:col-span-2 space-y-6">
-            <Card className="bg-card border-border shadow-sm">
-              <CardHeader className="pb-3 border-b border-border/50">
-                <CardTitle className="text-lg font-bold flex items-center gap-2">
+            <Card className="glass-card border-none bg-card/60">
+              <CardHeader className="pb-3 border-b border-white/5">
+                <CardTitle className="text-lg font-semibold flex items-center gap-2">
                   <TrendingUp className="h-5 w-5 text-success" />
                   Top Gainers
                 </CardTitle>
-                <CardDescription>Stocks with the highest percentage gains today.</CardDescription>
+                <CardDescription className="text-muted-foreground/80">Stocks with the highest percentage gains today.</CardDescription>
               </CardHeader>
               <CardContent className="p-0">
                 {isLoadingMovers ? (
                   <div className="p-4 space-y-3">
-                    {Array.from({length: 3}).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
+                    {Array.from({length: 3}).map((_, i) => <Skeleton key={i} className="h-12 w-full bg-white/5" />)}
                   </div>
                 ) : topMovers?.gainers.length === 0 ? (
                   <div className="p-8 text-center text-muted-foreground text-sm">No gainers available.</div>
                 ) : (
-                  <div className="divide-y divide-border/50">
+                  <div className="divide-y divide-white/5">
                     {topMovers?.gainers.map((stock) => (
                       <MoverRow key={stock.id} stock={stock} type="gainer" />
                     ))}
@@ -106,23 +106,23 @@ export default function DashboardPage() {
               </CardContent>
             </Card>
 
-            <Card className="bg-card border-border shadow-sm">
-              <CardHeader className="pb-3 border-b border-border/50">
-                <CardTitle className="text-lg font-bold flex items-center gap-2">
+            <Card className="glass-card border-none bg-card/60">
+              <CardHeader className="pb-3 border-b border-white/5">
+                <CardTitle className="text-lg font-semibold flex items-center gap-2">
                   <TrendingDown className="h-5 w-5 text-destructive" />
                   Top Losers
                 </CardTitle>
-                <CardDescription>Stocks with the highest percentage losses today.</CardDescription>
+                <CardDescription className="text-muted-foreground/80">Stocks with the highest percentage losses today.</CardDescription>
               </CardHeader>
               <CardContent className="p-0">
                 {isLoadingMovers ? (
                   <div className="p-4 space-y-3">
-                    {Array.from({length: 3}).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
+                    {Array.from({length: 3}).map((_, i) => <Skeleton key={i} className="h-12 w-full bg-white/5" />)}
                   </div>
                 ) : topMovers?.losers.length === 0 ? (
                   <div className="p-8 text-center text-muted-foreground text-sm">No losers available.</div>
                 ) : (
-                  <div className="divide-y divide-border/50">
+                  <div className="divide-y divide-white/5">
                     {topMovers?.losers.map((stock) => (
                       <MoverRow key={stock.id} stock={stock} type="loser" />
                     ))}
@@ -134,37 +134,37 @@ export default function DashboardPage() {
 
           {/* Watchlist Quick View */}
           <div className="col-span-1 space-y-6">
-            <Card className="bg-card border-border shadow-sm h-full flex flex-col">
-              <CardHeader className="pb-3 border-b border-border/50 shrink-0">
-                <CardTitle className="text-lg font-bold flex items-center gap-2">
+            <Card className="glass-card border-none bg-card/60 h-full flex flex-col">
+              <CardHeader className="pb-3 border-b border-white/5 shrink-0">
+                <CardTitle className="text-lg font-semibold flex items-center gap-2">
                   <Star className="h-5 w-5 fill-primary text-primary" />
-                  Your Watchlist
+                  Watchlist
                 </CardTitle>
-                <CardDescription>Tracked assets and their performance.</CardDescription>
+                <CardDescription className="text-muted-foreground/80">Tracked assets and performance.</CardDescription>
               </CardHeader>
               <CardContent className="p-0 flex-1 overflow-hidden">
                 <ScrollArea className="h-[500px]">
                   {isLoadingWatchlist ? (
                     <div className="p-4 space-y-3">
-                      {Array.from({length: 5}).map((_, i) => <Skeleton key={i} className="h-16 w-full" />)}
+                      {Array.from({length: 5}).map((_, i) => <Skeleton key={i} className="h-16 w-full bg-white/5" />)}
                     </div>
                   ) : watchlist.length === 0 ? (
                     <div className="p-12 flex flex-col items-center justify-center text-center gap-3">
                       <Star className="h-12 w-12 text-muted-foreground opacity-20" />
-                      <p className="text-muted-foreground text-sm">Your watchlist is empty.</p>
-                      <Button asChild variant="outline" size="sm" className="mt-2">
+                      <p className="text-muted-foreground text-sm font-medium">Your watchlist is empty.</p>
+                      <Button asChild variant="secondary" size="sm" className="mt-2 rounded-full px-6">
                         <Link href="/">Go to Workspace</Link>
                       </Button>
                     </div>
                   ) : (
-                    <div className="divide-y divide-border/50">
+                    <div className="divide-y divide-white/5">
                       {watchlist.map((item) => {
                         const isUp = item.change >= 0;
                         return (
-                          <div key={item.id} className="p-4 flex flex-col gap-2 hover:bg-accent/30 transition-colors group">
+                          <div key={item.id} className="p-4 flex flex-col gap-2 hover:bg-white/[0.02] transition-colors group">
                             <div className="flex justify-between items-start">
                               <div>
-                                <Link href="/" className="font-bold font-mono text-foreground hover:text-primary transition-colors">
+                                <Link href="/" className="font-semibold font-mono text-foreground hover:text-primary transition-colors">
                                   {item.symbol}
                                 </Link>
                                 <p className="text-xs text-muted-foreground truncate max-w-[120px] mt-0.5">{item.name}</p>
@@ -178,13 +178,13 @@ export default function DashboardPage() {
                               </div>
                             </div>
                             <div className="flex items-center justify-between mt-2">
-                              <Badge variant="outline" className={cn("text-[10px] font-mono", item.technicalStrength >= 7 ? "text-success border-success/30" : item.technicalStrength <= 3 ? "text-destructive border-destructive/30" : "text-primary border-primary/30")}>
+                              <Badge variant="outline" className={cn("text-[10px] font-mono border-white/10 rounded-sm px-1.5", item.technicalStrength >= 7 ? "text-success" : item.technicalStrength <= 3 ? "text-destructive" : "text-primary")}>
                                 TS: {item.technicalStrength}
                               </Badge>
                               <Button 
                                 variant="ghost" 
                                 size="sm" 
-                                className="h-6 px-2 text-xs text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity hover:text-destructive"
+                                className="h-6 px-2 text-xs text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity hover:text-destructive hover:bg-destructive/10 rounded-full"
                                 onClick={() => handleRemoveWatchlist(item.id, item.symbol)}
                               >
                                 Remove
@@ -207,7 +207,7 @@ export default function DashboardPage() {
 
 function StatCard({ title, value, icon, description, valueColor = "text-foreground" }: { title: string, value: React.ReactNode, icon: React.ReactNode, description?: string | false, valueColor?: string }) {
   return (
-    <Card className="bg-card border-border shadow-sm">
+    <Card className="glass-card border-none bg-card/60">
       <CardHeader className="flex flex-row items-center justify-between pb-2">
         <CardTitle className="text-sm font-medium text-muted-foreground">
           {title}
@@ -215,11 +215,11 @@ function StatCard({ title, value, icon, description, valueColor = "text-foregrou
         {icon}
       </CardHeader>
       <CardContent>
-        <div className={cn("text-2xl font-bold font-mono tracking-tight", valueColor)}>
+        <div className={cn("text-2xl font-semibold font-mono tracking-tight", valueColor)}>
           {value}
         </div>
         {description && (
-          <p className="text-xs text-muted-foreground mt-1">
+          <p className="text-xs text-muted-foreground mt-1 opacity-80">
             {description}
           </p>
         )}
@@ -231,22 +231,22 @@ function StatCard({ title, value, icon, description, valueColor = "text-foregrou
 function MoverRow({ stock, type }: { stock: Stock, type: "gainer" | "loser" }) {
   const isGainer = type === "gainer";
   return (
-    <div className="p-4 flex items-center justify-between hover:bg-accent/30 transition-colors group">
+    <div className="p-4 flex items-center justify-between hover:bg-white/[0.02] transition-colors group">
       <div className="flex items-center gap-4">
-        <div className={cn("p-2 rounded-full shrink-0", isGainer ? "bg-success/10" : "bg-destructive/10")}>
-          {isGainer ? <TrendingUp className="h-4 w-4 text-success" /> : <TrendingDown className="h-4 w-4 text-destructive" />}
+        <div className={cn("p-2 rounded-full shrink-0", isGainer ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive")}>
+          {isGainer ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
         </div>
         <div>
-          <Link href="/" className="font-bold font-mono text-sm group-hover:text-primary transition-colors">{stock.symbol}</Link>
+          <Link href="/" className="font-semibold font-mono text-sm group-hover:text-primary transition-colors">{stock.symbol}</Link>
           <div className="text-xs text-muted-foreground flex items-center gap-2 mt-0.5">
             <span className="truncate max-w-[150px]">{stock.name}</span>
-            <span className="h-1 w-1 rounded-full bg-border"></span>
-            <span className="font-mono text-xs">Vol: {formatNumber(stock.volume)}</span>
+            <span className="h-1 w-1 rounded-full bg-white/20"></span>
+            <span className="font-mono text-xs opacity-80">Vol: {formatNumber(stock.volume)}</span>
           </div>
         </div>
       </div>
       <div className="text-right">
-        <div className="font-mono font-bold">{formatCurrency(stock.price)}</div>
+        <div className="font-mono font-medium">{formatCurrency(stock.price)}</div>
         <div className={cn("text-xs font-mono font-medium flex items-center justify-end gap-1 mt-0.5", isGainer ? "text-success" : "text-destructive")}>
           {isGainer ? "+" : ""}{formatPercent(stock.changePercent)}
         </div>
