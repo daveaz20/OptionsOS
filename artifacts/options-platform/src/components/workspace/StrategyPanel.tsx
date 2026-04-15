@@ -78,6 +78,7 @@ function computeMetrics(legs: StrategyLeg[], currentPrice: number) {
 
 // ── PayoffDiagram ────────────────────────────────────────────────────────
 function PayoffDiagram({ legs, currentPrice }: { legs: StrategyLeg[]; currentPrice: number }) {
+  if (!currentPrice || currentPrice <= 0) return null;
   const W = 300, H = 130;
   const PL = 0, PR = 0, PT = 10, PB = 10;
   const cw = W - PL - PR, ch = H - PT - PB;
@@ -612,7 +613,13 @@ function PnlSimulator({ strategy, currentPrice, symbol }: { strategy: OptionsStr
     const timer = setTimeout(() => {
       calculatePnl.mutate({
         symbol,
-        data: { strategyId: strategy.id, targetPrice, targetDate: targetDate.toISOString().split("T")[0]!, impliedVolatility: iv },
+        data: {
+          strategyId: strategy.id,
+          targetPrice,
+          targetDate: targetDate.toISOString().split("T")[0]!,
+          impliedVolatility: iv,
+          outlook: strategy.outlook,
+        },
       });
     }, 400);
     return () => clearTimeout(timer);

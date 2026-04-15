@@ -11,4 +11,5 @@ export interface PnlRequest {
   targetPrice: number;
   targetDate: string;
   impliedVolatility: number;
+  outlook: string;
 }

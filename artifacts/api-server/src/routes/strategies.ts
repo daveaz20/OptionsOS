@@ -35,7 +35,7 @@ router.get("/stocks/:symbol/strategies", async (req, res): Promise<void> => {
       symbol,
       quote.price,
       hv.ivRank,
-      hv.hv30,         // HV30 as IV proxy (percentage)
+      hv.hv30,
       signals,
       outlook as "bullish" | "bearish" | "neutral"
     );
@@ -55,7 +55,7 @@ router.post("/stocks/:symbol/pnl", async (req, res): Promise<void> => {
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
 
   const symbol = (Array.isArray(params.data.symbol) ? params.data.symbol[0] : params.data.symbol).toUpperCase();
-  const { strategyId, targetPrice, targetDate, impliedVolatility } = parsed.data;
+  const { strategyId, targetPrice, targetDate, impliedVolatility, outlook } = parsed.data;
 
   try {
     const [quote, history, hv] = await Promise.all([
@@ -65,22 +65,37 @@ router.post("/stocks/:symbol/pnl", async (req, res): Promise<void> => {
     ]);
 
     const signals = computeSignals(history, quote.price);
-    const outlook = signals.trend === "bullish" ? "bullish" : signals.trend === "bearish" ? "bearish" : "neutral";
 
-    // Rebuild strategies to find the selected one
-    const strategies = buildStrategies(symbol, quote.price, hv.ivRank, hv.hv30, signals, outlook as any);
-    const strategy = strategies.find((s) => s.id === strategyId) ?? strategies[0];
+    // Use the outlook from the request — this is the tab the user was viewing.
+    // Fall back to searching all outlooks to find the matching strategy ID.
+    const requestOutlook = (outlook ?? signals.trend ?? "bullish") as "bullish" | "bearish" | "neutral";
+
+    // Build strategies for the requested outlook first, then fall back to all
+    let strategy = buildStrategies(symbol, quote.price, hv.ivRank, hv.hv30, signals, requestOutlook)
+      .find((s) => s.id === strategyId);
+
+    if (!strategy) {
+      for (const ol of ["bullish", "bearish", "neutral"] as const) {
+        if (ol === requestOutlook) continue;
+        strategy = buildStrategies(symbol, quote.price, hv.ivRank, hv.hv30, signals, ol)
+          .find((s) => s.id === strategyId);
+        if (strategy) break;
+      }
+    }
 
     if (!strategy) {
       res.status(404).json({ error: "Strategy not found" });
       return;
     }
 
+    const iv = impliedVolatility ?? hv.hv30;
+
     const result = calcPnlCurve(
       strategy.legs as any,
       quote.price,
+      targetPrice,
       targetDate,
-      impliedVolatility ?? hv.hv30,
+      iv,
     );
 
     res.json(CalculatePnlResponse.parse(result));

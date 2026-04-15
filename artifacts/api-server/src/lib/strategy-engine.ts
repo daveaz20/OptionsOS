@@ -557,6 +557,7 @@ export interface PnlPoint { price: number; pnl: number }
 export function calcPnlCurve(
   legs: StrategyLeg[],
   currentPrice: number,
+  targetPrice: number,
   targetDate: string | undefined,
   impliedVolatility: number,
   riskFreeRate = 0.045
@@ -567,14 +568,13 @@ export function calcPnlCurve(
   const T = dte / 365;
   const iv = impliedVolatility / 100;
 
-  const points = 60;
-  const lo = currentPrice * 0.70;
-  const hi = currentPrice * 1.30;
+  // Build a range that always covers both current price and target price
+  const lo = Math.min(currentPrice, targetPrice) * 0.72;
+  const hi = Math.max(currentPrice, targetPrice) * 1.28;
+  const points = 80;
   const step = (hi - lo) / points;
 
-  const curve: PnlPoint[] = [];
-  for (let i = 0; i <= points; i++) {
-    const p = lo + i * step;
+  const evalLegs = (p: number): number => {
     let value = 0;
     for (const leg of legs) {
       if (leg.optionType === "stock") {
@@ -582,18 +582,23 @@ export function calcPnlCurve(
       } else {
         const optVal = bsCall(p, leg.strikePrice, riskFreeRate, iv, T, leg.optionType as "call" | "put") * 100;
         const openVal = leg.premium * 100;
-        const pnlLeg  = (optVal - openVal) * (leg.action === "buy" ? 1 : -1);
-        value += pnlLeg;
+        value += (optVal - openVal) * (leg.action === "buy" ? 1 : -1);
       }
     }
-    curve.push({ price: round2(p), pnl: round2(value) });
+    return value;
+  };
+
+  const curve: PnlPoint[] = [];
+  for (let i = 0; i <= points; i++) {
+    const p = lo + i * step;
+    curve.push({ price: round2(p), pnl: round2(evalLegs(p)) });
   }
 
-  // P&L at target price = currentPrice
-  const atCurrent = curve.reduce((best, pt) => Math.abs(pt.price - currentPrice) < Math.abs(best.price - currentPrice) ? pt : best, curve[0]!);
+  // P&L at the user's target price
+  const pnlAtTarget = round2(evalLegs(targetPrice));
   const pnlPcts = curve.map((pt) => pt.pnl);
 
-  // Find breakeven
+  // Find first zero-crossing for breakeven
   let breakeven = currentPrice;
   for (let i = 0; i < curve.length - 1; i++) {
     const a = curve[i]!, b = curve[i + 1]!;
@@ -604,10 +609,10 @@ export function calcPnlCurve(
   }
 
   const totalCost = legs.reduce((s, l) => s + l.premium * 100 * (l.action === "buy" ? 1 : -1), 0);
-  const profitLossPercent = totalCost !== 0 ? round2((atCurrent.pnl / Math.abs(totalCost)) * 100) : 0;
+  const profitLossPercent = totalCost !== 0 ? round2((pnlAtTarget / Math.abs(totalCost)) * 100) : 0;
 
   return {
-    profitLoss: round2(atCurrent.pnl),
+    profitLoss: pnlAtTarget,
     profitLossPercent,
     breakeven,
     maxProfit: round2(Math.max(...pnlPcts)),

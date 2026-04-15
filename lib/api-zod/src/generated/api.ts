@@ -207,6 +207,7 @@ export const CalculatePnlBody = zod.object({
   targetPrice: zod.number(),
   targetDate: zod.string().optional(),
   impliedVolatility: zod.number().optional(),
+  outlook: zod.string().optional(),
 });
 
 export const CalculatePnlResponse = zod.object({
