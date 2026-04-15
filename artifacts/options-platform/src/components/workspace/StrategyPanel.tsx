@@ -143,10 +143,11 @@ function PayoffDiagram({ legs, currentPrice }: { legs: StrategyLeg[]; currentPri
 
 // ── Strategy Detail (OptionsPlay-style card) ─────────────────────────────
 function StrategyDetail({
-  strategy, currentPrice, onModify,
+  strategy, currentPrice, symbol, onModify,
 }: {
   strategy: OptionsStrategy;
   currentPrice: number;
+  symbol: string;
   onModify: () => void;
 }) {
   const { toast } = useToast();
@@ -239,7 +240,7 @@ function StrategyDetail({
         </button>
         {showSim && (
           <div style={{ padding: "0 12px 14px" }}>
-            <PnlSimulator strategy={strategy} currentPrice={currentPrice} />
+            <PnlSimulator strategy={strategy} currentPrice={currentPrice} symbol={symbol} />
           </div>
         )}
       </div>
@@ -521,6 +522,7 @@ export function StrategyPanel({ symbol, currentPrice = 0 }: StrategyPanelProps) 
                 <StrategyDetail
                   strategy={selectedStrategy}
                   currentPrice={currentPrice}
+                  symbol={symbol}
                   onModify={() => setModifying(true)}
                 />
               )}
@@ -595,14 +597,13 @@ function MetricCell({ label, value, valueColor }: { label: string; value: string
 }
 
 // ── P&L Simulator (collapsible, slider + typeable) ───────────────────────
-function PnlSimulator({ strategy, currentPrice }: { strategy: OptionsStrategy; currentPrice: number }) {
+function PnlSimulator({ strategy, currentPrice, symbol }: { strategy: OptionsStrategy; currentPrice: number; symbol: string }) {
   const [targetPrice, setTargetPrice] = useState(currentPrice || 100);
   const [daysToExpiry, setDaysToExpiry] = useState(30);
   const [iv, setIv] = useState(30);
 
   const calculatePnl = useCalculatePnl();
   const { data: pnlData, isLoading } = calculatePnl;
-  const symbol = strategy.legs[0]?.optionType ?? "AAPL";
 
   useEffect(() => {
     if (currentPrice > 0 && targetPrice === 0) setTargetPrice(currentPrice);
@@ -610,12 +611,12 @@ function PnlSimulator({ strategy, currentPrice }: { strategy: OptionsStrategy; c
     targetDate.setDate(targetDate.getDate() + daysToExpiry);
     const timer = setTimeout(() => {
       calculatePnl.mutate({
-        symbol: symbol as any,
+        symbol,
         data: { strategyId: strategy.id, targetPrice, targetDate: targetDate.toISOString().split("T")[0]!, impliedVolatility: iv },
       });
     }, 400);
     return () => clearTimeout(timer);
-  }, [strategy.id, targetPrice, daysToExpiry, iv, currentPrice]);
+  }, [strategy.id, targetPrice, daysToExpiry, iv, currentPrice, symbol]);
 
   const minP = currentPrice * 0.7;
   const maxP = currentPrice * 1.3;
