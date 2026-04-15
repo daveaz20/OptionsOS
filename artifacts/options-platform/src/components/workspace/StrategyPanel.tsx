@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { useGetStrategies, useCalculatePnl } from "@workspace/api-client-react";
+import { useState, useEffect, useMemo } from "react";
+import { useGetStrategies } from "@workspace/api-client-react";
 import { Area, AreaChart, ResponsiveContainer, Tooltip as RechartsTooltip, XAxis, YAxis, ReferenceLine } from "recharts";
 import { formatCurrency, formatPercent } from "@/lib/format";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -52,28 +52,44 @@ function computePayoffs(legs: StrategyLeg[], prices: number[]): number[] {
 }
 
 function computeMetrics(legs: StrategyLeg[], currentPrice: number) {
-  const steps = 200;
-  const pMin = currentPrice * 0.5;
-  const pMax = currentPrice * 1.5;
-  const prices = Array.from({ length: steps + 1 }, (_, i) => pMin + (i / steps) * (pMax - pMin));
-  const pnls = computePayoffs(legs, prices);
-
-  const maxProfit = Math.max(...pnls);
-  const maxLoss   = Math.min(...pnls);
-  const cost      = legs.reduce((sum, l) => {
+  // Cost = net premium paid (negative = debit, positive = credit)
+  const cost = legs.reduce((sum, l) => {
     const sign = l.action === "buy" ? -1 : 1;
     if (l.optionType === "stock") return sum + sign * l.strikePrice * l.quantity;
     return sum + sign * l.premium * 100 * l.quantity;
   }, 0);
 
-  // Breakeven: first price where P&L crosses zero
+  // Probe at-expiry payoffs at analytically important prices:
+  // just below/above each strike + a very-high and very-low extreme.
+  const strikes = legs.map(l => l.strikePrice);
+  const probeBase = [
+    currentPrice * 0.3,          // very low (all calls worthless, puts max value)
+    currentPrice * 5,            // very high (all calls deep ITM)
+    ...strikes.flatMap(k => [k * 0.999, k * 1.001]),  // just below and above each strike
+  ].filter(p => p > 0);
+  const probePayoffs = computePayoffs(legs, probeBase);
+  const maxProfit = Math.round(Math.max(...probePayoffs) * 100) / 100;
+  const maxLoss   = Math.round(Math.min(...probePayoffs) * 100) / 100;
+
+  // Breakeven: fine-grained scan with linear interpolation for accuracy
+  const steps = 2000;
+  const allStrikes = [...strikes, currentPrice];
+  const pMin = Math.min(...allStrikes) * 0.5;
+  const pMax = Math.max(...allStrikes) * 1.8;
+  const prices = Array.from({ length: steps + 1 }, (_, i) => pMin + (i / steps) * (pMax - pMin));
+  const pnls = computePayoffs(legs, prices);
+
   let breakeven = currentPrice;
   for (let i = 1; i <= steps; i++) {
-    if (pnls[i - 1]! < 0 && pnls[i]! >= 0) { breakeven = prices[i]!; break; }
-    if (pnls[i - 1]! > 0 && pnls[i]! <= 0) { breakeven = prices[i - 1]!; break; }
+    const a = pnls[i - 1]!, b = pnls[i]!, pa = prices[i - 1]!, pb = prices[i]!;
+    if ((a < 0 && b >= 0) || (a > 0 && b <= 0)) {
+      // Linear interpolation for sub-dollar precision
+      breakeven = Math.round((pa + (pb - pa) * (-a / (b - a))) * 100) / 100;
+      break;
+    }
   }
 
-  return { maxProfit: Math.round(maxProfit * 100) / 100, maxLoss: Math.round(maxLoss * 100) / 100, cost: Math.round(cost * 100) / 100, breakeven: Math.round(breakeven * 100) / 100 };
+  return { maxProfit, maxLoss, cost: Math.round(cost * 100) / 100, breakeven };
 }
 
 // ── PayoffDiagram ────────────────────────────────────────────────────────
@@ -655,8 +671,64 @@ function MetricCell({ label, value, valueColor }: { label: string; value: string
   );
 }
 
+// ── Client-side P&L curve (uses actual modified legs + bsPrice) ───────────
+function computePnlClient(
+  legs: StrategyLeg[],
+  strategyExpirationDate: string,
+  targetPrice: number,
+  targetDate: string,
+  iv: number,
+  currentPrice: number,
+) {
+  const ivDecimal = Math.max(0.05, iv / 100);
+  const targetMs  = new Date(targetDate).getTime();
+
+  const evalAtPrice = (S: number): number =>
+    legs.reduce((total, leg) => {
+      if (leg.optionType === "stock") {
+        return total + (S - leg.strikePrice) * leg.quantity * (leg.action === "buy" ? 1 : -1);
+      }
+      // Use per-leg expiry if available (set by Modify), else fall back to strategy expiry
+      const legExpiry = (leg as any).expiration ?? strategyExpirationDate;
+      const legT = Math.max(0, (new Date(legExpiry).getTime() - targetMs) / (365 * 24 * 60 * 60 * 1000));
+      const optVal  = bsPrice(S, leg.strikePrice, legT, ivDecimal, leg.optionType as "call" | "put") * 100;
+      const openVal = leg.premium * 100;
+      return total + (optVal - openVal) * (leg.action === "buy" ? 1 : -1) * leg.quantity;
+    }, 0);
+
+  // Curve spanning ±30 % around current price, 80 points
+  const lo = currentPrice * 0.7;
+  const hi = currentPrice * 1.3;
+  const POINTS = 80;
+  const pnlCurve = Array.from({ length: POINTS + 1 }, (_, i) => {
+    const price = lo + (i / POINTS) * (hi - lo);
+    return { price: Math.round(price * 100) / 100, pnl: Math.round(evalAtPrice(price) * 100) / 100 };
+  });
+
+  const profitLoss = Math.round(evalAtPrice(targetPrice) * 100) / 100;
+
+  // Cost = net premium outflow (for % calculation)
+  const cost = legs.reduce((s, l) => {
+    if (l.optionType === "stock") return s;
+    return s + l.premium * 100 * (l.action === "buy" ? 1 : -1);
+  }, 0);
+  const profitLossPercent = cost !== 0 ? Math.round((profitLoss / Math.abs(cost)) * 10000) / 100 : 0;
+
+  // Breakeven (nearest zero crossing in curve)
+  let breakeven = currentPrice;
+  for (let i = 1; i < pnlCurve.length; i++) {
+    const a = pnlCurve[i - 1]!, b = pnlCurve[i]!;
+    if ((a.pnl < 0 && b.pnl >= 0) || (a.pnl > 0 && b.pnl <= 0)) {
+      breakeven = Math.round((a.price + (b.price - a.price) * (-a.pnl / (b.pnl - a.pnl))) * 100) / 100;
+      break;
+    }
+  }
+
+  return { profitLoss, profitLossPercent, breakeven, pnlCurve };
+}
+
 // ── P&L Simulator (collapsible, slider + typeable) ───────────────────────
-function PnlSimulator({ strategy, currentPrice, symbol }: { strategy: OptionsStrategy; currentPrice: number; symbol: string }) {
+function PnlSimulator({ strategy, currentPrice, symbol: _symbol }: { strategy: OptionsStrategy; currentPrice: number; symbol: string }) {
   const [targetPrice, setTargetPrice] = useState(currentPrice || 100);
   // targetDate tracks the exact date — syncs from strategy.expirationDate on change
   const [targetDate, setTargetDate] = useState(strategy.expirationDate);
@@ -666,6 +738,13 @@ function PnlSimulator({ strategy, currentPrice, symbol }: { strategy: OptionsStr
   useEffect(() => { setTargetDate(strategy.expirationDate); }, [strategy.expirationDate]);
   // Sync target price when stock loads
   useEffect(() => { if (currentPrice > 0 && targetPrice === 0) setTargetPrice(currentPrice); }, [currentPrice]);
+
+  // P&L computed entirely client-side using the actual strategy legs
+  // This is correct even after Modify because strategy.legs holds the modified premiums/expiry.
+  const pnlData = useMemo(
+    () => computePnlClient(strategy.legs, strategy.expirationDate, targetPrice, targetDate, iv, currentPrice),
+    [strategy.legs, strategy.expirationDate, targetPrice, targetDate, iv, currentPrice],
+  );
 
   // Date slider: position 0→1 across today…strategy expiry
   const todayMs = Date.now();
@@ -682,25 +761,6 @@ function PnlSimulator({ strategy, currentPrice, symbol }: { strategy: OptionsStr
     const ms = todayMs + pct * (stratExpiryMs - todayMs);
     setTargetDate(new Date(ms).toISOString().split("T")[0]!);
   };
-
-  const calculatePnl = useCalculatePnl();
-  const { data: pnlData, isLoading } = calculatePnl;
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      calculatePnl.mutate({
-        symbol,
-        data: {
-          strategyId: strategy.id,
-          targetPrice,
-          targetDate,
-          impliedVolatility: iv,
-          outlook: strategy.outlook,
-        },
-      });
-    }, 400);
-    return () => clearTimeout(timer);
-  }, [strategy.id, strategy.expirationDate, targetPrice, targetDate, iv, currentPrice, symbol]);
 
   const minP = currentPrice * 0.7;
   const maxP = currentPrice * 1.3;
@@ -745,61 +805,55 @@ function PnlSimulator({ strategy, currentPrice, symbol }: { strategy: OptionsStr
         <SimSlider label="Implied volatility" value={[iv]} min={10} max={150} step={1} suffix="%" onChange={([v]) => setIv(v!)} />
       </div>
 
-      {isLoading && !pnlData ? (
-        <div style={{ height: 50, borderRadius: 8, background: "rgba(255,255,255,0.04)", animation: "pulse 1.4s infinite" }} />
-      ) : pnlData ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
-            <div style={{
-              padding: "10px", borderRadius: 8, textAlign: "center",
-              border: pnlData.profitLoss >= 0 ? "1px solid hsl(var(--success) / 0.2)" : "1px solid hsl(var(--destructive) / 0.2)",
-              background: pnlData.profitLoss >= 0 ? "hsl(var(--success) / 0.06)" : "hsl(var(--destructive) / 0.06)",
-            }}>
-              <div style={{ fontSize: 10, color: "hsl(var(--muted-foreground))", marginBottom: 5 }}>P&L</div>
-              <div style={{ fontSize: 17, fontWeight: 700, letterSpacing: "-0.03em", color: pnlData.profitLoss >= 0 ? "hsl(var(--success))" : "hsl(var(--destructive))", fontVariantNumeric: "tabular-nums" }}>
-                {formatCurrency(pnlData.profitLoss)}
-              </div>
-              <div style={{ fontSize: 11, color: pnlData.profitLoss >= 0 ? "hsl(var(--success))" : "hsl(var(--destructive))", marginTop: 2, fontVariantNumeric: "tabular-nums" }}>
-                {formatPercent(pnlData.profitLossPercent)}
-              </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+          <div style={{
+            padding: "10px", borderRadius: 8, textAlign: "center",
+            border: pnlData.profitLoss >= 0 ? "1px solid hsl(var(--success) / 0.2)" : "1px solid hsl(var(--destructive) / 0.2)",
+            background: pnlData.profitLoss >= 0 ? "hsl(var(--success) / 0.06)" : "hsl(var(--destructive) / 0.06)",
+          }}>
+            <div style={{ fontSize: 10, color: "hsl(var(--muted-foreground))", marginBottom: 5 }}>P&L</div>
+            <div style={{ fontSize: 17, fontWeight: 700, letterSpacing: "-0.03em", color: pnlData.profitLoss >= 0 ? "hsl(var(--success))" : "hsl(var(--destructive))", fontVariantNumeric: "tabular-nums" }}>
+              {formatCurrency(pnlData.profitLoss)}
             </div>
-            <div style={{ padding: "10px", borderRadius: 8, textAlign: "center", border: "1px solid rgba(255,255,255,0.06)", background: "rgba(255,255,255,0.02)" }}>
-              <div style={{ fontSize: 10, color: "hsl(var(--muted-foreground))", marginBottom: 5 }}>Breakeven</div>
-              <div style={{ fontSize: 17, fontWeight: 700, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums" }}>{formatCurrency(pnlData.breakeven)}</div>
+            <div style={{ fontSize: 11, color: pnlData.profitLoss >= 0 ? "hsl(var(--success))" : "hsl(var(--destructive))", marginTop: 2, fontVariantNumeric: "tabular-nums" }}>
+              {formatPercent(pnlData.profitLossPercent)}
             </div>
           </div>
-
-          {pnlData.pnlCurve && pnlData.pnlCurve.length > 0 && (
-            <div style={{ height: 140, background: "rgba(255,255,255,0.02)", borderRadius: 8, border: "1px solid rgba(255,255,255,0.05)", padding: "10px 6px 6px" }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={pnlData.pnlCurve} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="pnlGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.18} />
-                      <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <XAxis dataKey="price" type="number" domain={["dataMin", "dataMax"]} tickFormatter={(v) => `$${v}`} stroke="rgba(255,255,255,0.2)" fontSize={9} tickMargin={4} minTickGap={24} axisLine={false} tickLine={false} />
-                  <YAxis hide domain={["dataMin", "dataMax"]} />
-                  <RechartsTooltip cursor={{ stroke: "rgba(255,255,255,0.15)", strokeWidth: 1, strokeDasharray: "4 4" }} content={({ active, payload }) => {
-                    if (!active || !payload?.length) return null;
-                    const d = payload[0]!.payload;
-                    return (
-                      <div style={{ background: "hsl(0 0% 10%)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6, padding: "6px 10px", fontSize: 11 }}>
-                        <div style={{ color: "hsl(var(--muted-foreground))", marginBottom: 3 }}>{formatCurrency(d.price)}</div>
-                        <div style={{ fontWeight: 600, color: d.pnl >= 0 ? "hsl(var(--success))" : "hsl(var(--destructive))" }}>{formatCurrency(d.pnl)}</div>
-                      </div>
-                    );
-                  }} />
-                  <ReferenceLine y={0} stroke="rgba(255,255,255,0.15)" strokeDasharray="3 3" />
-                  <ReferenceLine x={currentPrice} stroke="rgba(255,255,255,0.12)" strokeDasharray="3 3" />
-                  <Area type="monotone" dataKey="pnl" stroke="hsl(var(--primary))" strokeWidth={2} fillOpacity={1} fill="url(#pnlGrad)" animationDuration={400} />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          )}
+          <div style={{ padding: "10px", borderRadius: 8, textAlign: "center", border: "1px solid rgba(255,255,255,0.06)", background: "rgba(255,255,255,0.02)" }}>
+            <div style={{ fontSize: 10, color: "hsl(var(--muted-foreground))", marginBottom: 5 }}>Breakeven</div>
+            <div style={{ fontSize: 17, fontWeight: 700, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums" }}>{formatCurrency(pnlData.breakeven)}</div>
+          </div>
         </div>
-      ) : null}
+
+        <div style={{ height: 140, background: "rgba(255,255,255,0.02)", borderRadius: 8, border: "1px solid rgba(255,255,255,0.05)", padding: "10px 6px 6px" }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={pnlData.pnlCurve} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+              <defs>
+                <linearGradient id="pnlGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.18} />
+                  <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <XAxis dataKey="price" type="number" domain={["dataMin", "dataMax"]} tickFormatter={(v) => `$${v}`} stroke="rgba(255,255,255,0.2)" fontSize={9} tickMargin={4} minTickGap={24} axisLine={false} tickLine={false} />
+              <YAxis hide domain={["dataMin", "dataMax"]} />
+              <RechartsTooltip cursor={{ stroke: "rgba(255,255,255,0.15)", strokeWidth: 1, strokeDasharray: "4 4" }} content={({ active, payload }) => {
+                if (!active || !payload?.length) return null;
+                const d = payload[0]!.payload;
+                return (
+                  <div style={{ background: "hsl(0 0% 10%)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6, padding: "6px 10px", fontSize: 11 }}>
+                    <div style={{ color: "hsl(var(--muted-foreground))", marginBottom: 3 }}>{formatCurrency(d.price)}</div>
+                    <div style={{ fontWeight: 600, color: d.pnl >= 0 ? "hsl(var(--success))" : "hsl(var(--destructive))" }}>{formatCurrency(d.pnl)}</div>
+                  </div>
+                );
+              }} />
+              <ReferenceLine y={0} stroke="rgba(255,255,255,0.15)" strokeDasharray="3 3" />
+              <ReferenceLine x={currentPrice} stroke="rgba(255,255,255,0.12)" strokeDasharray="3 3" />
+              <Area type="monotone" dataKey="pnl" stroke="hsl(var(--primary))" strokeWidth={2} fillOpacity={1} fill="url(#pnlGrad)" animationDuration={400} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
     </div>
   );
 }
