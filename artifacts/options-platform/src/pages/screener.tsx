@@ -1,745 +1,654 @@
-import { useMemo, useState, useCallback, useRef } from "react";
-import { useListStocks } from "@workspace/api-client-react";
-import type { Stock } from "@workspace/api-client-react";
-import {
-  ArrowUpDown, ArrowUp, ArrowDown, ChevronDown, ChevronRight,
-  Download, SlidersHorizontal, X, Target, Zap, TrendingUp,
-  TrendingDown, Flame, DollarSign, BarChart2, Calendar,
-  Activity, Star, Search, RotateCcw, Filter, ArrowRight,
-} from "lucide-react";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Link } from "wouter";
+import { useState, useMemo, useRef } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { useQuery } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 
-// ── Types ─────────────────────────────────────────────────────────────────
-interface FilterConfig {
-  // Volatility & Options
-  ivRankMin: string; ivRankMax: string;
-  opportunityScoreMin: string; opportunityScoreMax: string;
-  // Technical
-  technicalStrengthMin: string; technicalStrengthMax: string;
-  changePercentMin: string; changePercentMax: string;
-  pctFrom52WHigh: string;   // max distance from 52W high (e.g. -20 = within 20% below)
-  pctFrom52WLow: string;    // min distance from 52W low  (e.g. 5 = at least 5% above)
-  supportDistPct: string;   // min % above support
-  resistDistPct: string;    // max % below resistance
-  // Fundamental
-  priceMin: string; priceMax: string;
-  marketCapMin: string; marketCapMax: string; // billions
-  peMin: string; peMax: string;
-  divYieldMin: string; divYieldMax: string;
-  // Categorical
-  sectors: string[];
-  outlooks: string[];
-  setupTypes: string[];
-  liquidities: string[];
-  // Earnings
-  daysToEarningsMax: string;
-  // Momentum composite
-  momentumScoreMin: string;
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+interface ScreenerRow {
+  symbol: string; name: string; price: number; change: number; changePercent: number;
+  volume: number; avgVolume: number; relVol: number; marketCap: number; sector: string;
+  beta: number; pe: number; forwardPE: number; eps: number; dividendYield: number;
+  shortRatio: number; priceTarget: number; recommendation: number;
+  fiftyTwoWeekHigh: number; fiftyTwoWeekLow: number;
+  pctFrom52High: number; pctFrom52Low: number; earningsDate: string;
+  technicalStrength: number; rsi14: number; macdHistogram: number; ivRank: number;
+  opportunityScore: number; setupType: string; recommendedOutlook: string;
+  supportPrice: number; resistancePrice: number; liquidity: string;
 }
 
-const BLANK: FilterConfig = {
-  ivRankMin: "", ivRankMax: "", opportunityScoreMin: "", opportunityScoreMax: "",
-  technicalStrengthMin: "", technicalStrengthMax: "", changePercentMin: "", changePercentMax: "",
-  pctFrom52WHigh: "", pctFrom52WLow: "", supportDistPct: "", resistDistPct: "",
-  priceMin: "", priceMax: "", marketCapMin: "", marketCapMax: "",
-  peMin: "", peMax: "", divYieldMin: "", divYieldMax: "",
-  sectors: [], outlooks: [], setupTypes: [], liquidities: [],
-  daysToEarningsMax: "", momentumScoreMin: "",
-};
-
-type SortKey = keyof ReturnType<typeof deriveRow>;
-interface SortConfig { key: SortKey; dir: "asc" | "desc" }
-
-// ── Presets ───────────────────────────────────────────────────────────────
-interface Preset {
-  id: string; label: string; description: string;
-  icon: React.ReactNode; color: string;
-  filters: Partial<FilterConfig>;
+interface FactoredRow extends ScreenerRow {
+  fMomentum: number; fValue: number; fQuality: number; fVolatility: number; fOptions: number;
+  alpha: number;
 }
 
-const PRESETS: Preset[] = [
-  { id: "iv_crush",       label: "IV Crush",           icon: <Target style={{ width: 12, height: 12 }} />,     color: "hsl(4 90% 63%)",         description: "High IV stocks with earnings in ≤14 days — sell premium before crush",           filters: { ivRankMin: "60", daysToEarningsMax: "14" } },
-  { id: "premium_sell",   label: "Premium Sellers",    icon: <Flame style={{ width: 12, height: 12 }} />,       color: "hsl(30 95% 60%)",        description: "Elevated IV, neutral outlook — Iron Condor and Strangle candidates",            filters: { ivRankMin: "65", outlooks: ["neutral"] } },
-  { id: "momentum",       label: "Momentum",           icon: <TrendingUp style={{ width: 12, height: 12 }} />,  color: "hsl(142 76% 52%)",       description: "Technically strong stocks within 10% of 52-week high",                         filters: { technicalStrengthMin: "7", pctFrom52WHigh: "-10" } },
-  { id: "oversold",       label: "Oversold Bounce",    icon: <TrendingDown style={{ width: 12, height: 12 }} />, color: "hsl(217 91% 60%)",      description: "Oversold technicals with bullish opportunity score — mean reversion",           filters: { technicalStrengthMax: "3", opportunityScoreMin: "50", outlooks: ["bullish"] } },
-  { id: "cheap_opts",     label: "Cheap Options",      icon: <DollarSign style={{ width: 12, height: 12 }} />,  color: "hsl(142 76% 52%)",       description: "Low IV rank — buy debit spreads before vol expansion",                         filters: { ivRankMax: "25" } },
-  { id: "high_conv",      label: "High Conviction",    icon: <Zap style={{ width: 12, height: 12 }} />,          color: "hsl(217 91% 60%)",       description: "Top scoring setups across the full universe",                                   filters: { opportunityScoreMin: "75" } },
-  { id: "earnings_plays", label: "Earnings Plays",     icon: <Calendar style={{ width: 12, height: 12 }} />,     color: "hsl(280 60% 65%)",       description: "Reporting in ≤7 days — elevated IV, straddle candidates",                      filters: { ivRankMin: "50", daysToEarningsMax: "7" } },
-  { id: "income",         label: "Income & Div",       icon: <Star style={{ width: 12, height: 12 }} />,          color: "hsl(50 95% 55%)",        description: "Dividend payers with elevated IV — wheel strategy candidates",                  filters: { divYieldMin: "1", ivRankMin: "30", outlooks: ["bullish", "neutral"] } },
-  { id: "large_bull",     label: "Large Cap Bull",     icon: <BarChart2 style={{ width: 12, height: 12 }} />,    color: "hsl(142 76% 52%)",       description: "Mega-cap bullish setups — institutional-grade momentum plays",                 filters: { marketCapMin: "50", outlooks: ["bullish"] } },
-  { id: "sr_squeeze",     label: "S/R Squeeze",        icon: <Activity style={{ width: 12, height: 12 }} />,     color: "hsl(30 95% 60%)",        description: "Near support with room to resistance — favorable risk/reward",                  filters: { supportDistPct: "0", resistDistPct: "20" } },
+type Weights = { momentum: number; value: number; quality: number; volatility: number; options: number };
+type ViewMode = "table" | "heatmap" | "scatter";
+
+// ─── Constants ───────────────────────────────────────────────────────────────
+
+const API_BASE = "/api";
+
+const ALPHA_STRATEGIES = [
+  { label: "Vol Crush Arb",      expr: "ivRank > 65 && opportunityScore > 60",                  desc: "High IV rank + earning setup" },
+  { label: "Momentum Quality",   expr: "fMomentum > 70 && fQuality > 60",                       desc: "Strong trend + large cap" },
+  { label: "Contrarian Value",   expr: "fMomentum < 35 && fValue > 70",                         desc: "Beaten down with value" },
+  { label: "Institutional Flow", expr: "relVol > 3 && volume > 1000000",                        desc: "3× unusual volume spike" },
+  { label: "Premium Seller",     expr: "ivRank > 70 && beta < 1.5",                             desc: "Sell premium in high vol" },
+  { label: "Gamma Squeeze",      expr: "relVol > 2 && ivRank > 60 && changePercent > 2",        desc: "Vol surge + price move" },
+  { label: "Short Squeeze",      expr: "shortRatio > 5 && changePercent > 1",                   desc: "High short + upward pressure" },
+  { label: "Analyst Upgrade",    expr: "recommendation < 2.5 && pctFrom52High < -10",           desc: "Buy rating + below high" },
 ];
 
-// ── Columns ───────────────────────────────────────────────────────────────
-interface ColDef { key: SortKey; label: string; defaultVisible: boolean; group: string; align?: "right" | "left" }
-
-const COLUMNS: ColDef[] = [
-  { key: "symbol",          label: "Symbol",      defaultVisible: true,  group: "identity", align: "left" },
-  { key: "name",            label: "Name",        defaultVisible: true,  group: "identity", align: "left" },
-  { key: "price",           label: "Price",       defaultVisible: true,  group: "price",    align: "right" },
-  { key: "changePercent",   label: "Day %",       defaultVisible: true,  group: "price",    align: "right" },
-  { key: "volume",          label: "Volume",      defaultVisible: true,  group: "price",    align: "right" },
-  { key: "marketCapB",      label: "Mkt Cap",     defaultVisible: true,  group: "fundamental", align: "right" },
-  { key: "sector",          label: "Sector",      defaultVisible: false, group: "fundamental", align: "left" },
-  { key: "pe",              label: "P/E",         defaultVisible: true,  group: "fundamental", align: "right" },
-  { key: "dividendYield",   label: "Div %",       defaultVisible: false, group: "fundamental", align: "right" },
-  { key: "ivRank",          label: "IV Rank",     defaultVisible: true,  group: "volatility",  align: "right" },
-  { key: "opportunityScore","label": "Score",     defaultVisible: true,  group: "options",  align: "right" },
-  { key: "technicalStrength","label": "Tech",     defaultVisible: true,  group: "technical",align: "right" },
-  { key: "momentumScore",   label: "Momentum",    defaultVisible: true,  group: "technical",align: "right" },
-  { key: "pctFrom52High",   label: "vs 52H",      defaultVisible: true,  group: "technical",align: "right" },
-  { key: "pctFrom52Low",    label: "vs 52L",      defaultVisible: false, group: "technical",align: "right" },
-  { key: "supportDist",     label: "vs Sup",      defaultVisible: false, group: "technical",align: "right" },
-  { key: "resistDist",      label: "vs Res",      defaultVisible: false, group: "technical",align: "right" },
-  { key: "recommendedOutlook","label":"Outlook",  defaultVisible: true,  group: "strategy", align: "left" },
-  { key: "setupType",       label: "Setup",       defaultVisible: true,  group: "strategy", align: "left" },
-  { key: "daysToEarnings",  label: "DTE Earn",    defaultVisible: true,  group: "events",   align: "right" },
-  { key: "liquidity",       label: "Liquidity",   defaultVisible: false, group: "micro",    align: "left" },
+const FACTOR_AXES = [
+  { key: "fMomentum",    label: "Momentum" },
+  { key: "fValue",       label: "Value" },
+  { key: "fQuality",     label: "Quality" },
+  { key: "fVolatility",  label: "Volatility" },
+  { key: "fOptions",     label: "Options Edge" },
+  { key: "alpha",        label: "Alpha Score" },
+  { key: "ivRank",       label: "IV Rank" },
+  { key: "changePercent",label: "1D Change %" },
+  { key: "relVol",       label: "Rel. Volume" },
+  { key: "beta",         label: "Beta" },
+  { key: "pe",           label: "P/E" },
+  { key: "shortRatio",   label: "Short Ratio" },
+  { key: "rsi14",        label: "RSI 14" },
 ];
 
-// ── Derived row type ──────────────────────────────────────────────────────
-function deriveRow(s: Stock & { pe?: number; dividendYield?: number; eps?: number }) {
-  const pctFrom52High = s.fiftyTwoWeekHigh ? ((s.price / s.fiftyTwoWeekHigh) - 1) * 100 : null;
-  const pctFrom52Low  = s.fiftyTwoWeekLow  ? ((s.price / s.fiftyTwoWeekLow)  - 1) * 100 : null;
-  const supportDist   = s.supportPrice     ? ((s.price / s.supportPrice)  - 1) * 100 : null;
-  const resistDist    = s.resistancePrice  ? ((s.resistancePrice / s.price) - 1) * 100 : null;
-  const dte = (() => {
-    if (!s.earningsDate) return null;
-    const d = new Date(s.earningsDate);
-    if (isNaN(d.getTime())) return null;
-    return Math.ceil((d.getTime() - Date.now()) / 86_400_000);
-  })();
-  // Composite momentum: weighted blend of technical strength (0–10) and 1-day change
-  const momentumScore = Math.round(
-    Math.min(10, Math.max(0,
-      s.technicalStrength * 0.7 + Math.min(3, Math.max(-3, s.changePercent / 2)) + 1.5
-    ))
-  );
-  return {
-    ...s,
-    pe:            (s as any).pe            as number | undefined,
-    dividendYield: (s as any).dividendYield as number | undefined,
-    marketCapB:    s.marketCap / 1e9,
-    pctFrom52High,
-    pctFrom52Low,
-    supportDist,
-    resistDist,
-    daysToEarnings: dte,
-    momentumScore,
-  };
-}
-type DerivedRow = ReturnType<typeof deriveRow>;
+const DEFAULT_WEIGHTS: Weights = { momentum: 20, value: 20, quality: 20, volatility: 20, options: 20 };
 
-// ── Filter logic ──────────────────────────────────────────────────────────
-function n(v: string) { const p = parseFloat(v); return isNaN(p) ? null : p; }
+// ─── Factor Engine (cross-sectional percentile ranking) ───────────────────────
 
-function passesFilters(r: DerivedRow, f: FilterConfig): boolean {
-  const ch = (v: number | null | undefined, min: string, max: string) => {
-    if (v == null) return true;
-    if (n(min) !== null && v < n(min)!) return false;
-    if (n(max) !== null && v > n(max)!) return false;
-    return true;
-  };
-  if (!ch(r.ivRank, f.ivRankMin, f.ivRankMax)) return false;
-  if (!ch(r.opportunityScore, f.opportunityScoreMin, f.opportunityScoreMax)) return false;
-  if (!ch(r.technicalStrength, f.technicalStrengthMin, f.technicalStrengthMax)) return false;
-  if (!ch(r.changePercent, f.changePercentMin, f.changePercentMax)) return false;
-  if (!ch(r.price, f.priceMin, f.priceMax)) return false;
-  if (!ch(r.marketCapB, f.marketCapMin, f.marketCapMax)) return false;
-  if (!ch(r.pe, f.peMin, f.peMax)) return false;
-  if (!ch(r.dividendYield, f.divYieldMin, f.divYieldMax)) return false;
-  if (!ch(r.momentumScore, f.momentumScoreMin, "")) return false;
-  // 52W high distance (negative = below high; filter = "within X% of high")
-  if (n(f.pctFrom52WHigh) !== null && r.pctFrom52High !== null && r.pctFrom52High < n(f.pctFrom52WHigh)!) return false;
-  if (n(f.pctFrom52WLow) !== null && r.pctFrom52Low !== null && r.pctFrom52Low < n(f.pctFrom52WLow)!) return false;
-  if (n(f.supportDistPct) !== null && r.supportDist !== null && r.supportDist < n(f.supportDistPct)!) return false;
-  if (n(f.resistDistPct) !== null && r.resistDist !== null && r.resistDist > n(f.resistDistPct)!) return false;
-  if (n(f.daysToEarningsMax) !== null) {
-    if (r.daysToEarnings === null) return false;
-    if (r.daysToEarnings < 0 || r.daysToEarnings > n(f.daysToEarningsMax)!) return false;
-  }
-  if (f.sectors.length && !f.sectors.includes(r.sector)) return false;
-  if (f.outlooks.length && !f.outlooks.includes(r.recommendedOutlook ?? "")) return false;
-  if (f.setupTypes.length && !f.setupTypes.includes(r.setupType ?? "")) return false;
-  if (f.liquidities.length && !f.liquidities.includes(r.liquidity ?? "")) return false;
-  return true;
+function pctRank(arr: number[], val: number): number {
+  if (arr.length === 0) return 50;
+  const below = arr.filter(v => v < val).length;
+  return Math.min(99, Math.round((below / arr.length) * 100));
 }
 
-function countActive(f: FilterConfig): number {
-  let c = 0;
-  const fields: (keyof FilterConfig)[] = [
-    "ivRankMin","ivRankMax","opportunityScoreMin","opportunityScoreMax",
-    "technicalStrengthMin","technicalStrengthMax","changePercentMin","changePercentMax",
-    "pctFrom52WHigh","pctFrom52WLow","supportDistPct","resistDistPct",
-    "priceMin","priceMax","marketCapMin","marketCapMax","peMin","peMax",
-    "divYieldMin","divYieldMax","daysToEarningsMax","momentumScoreMin",
-  ];
-  for (const k of fields) if ((f[k] as string) !== "") c++;
-  if (f.sectors.length) c++;
-  if (f.outlooks.length) c++;
-  if (f.setupTypes.length) c++;
-  if (f.liquidities.length) c++;
-  return c;
+function computeFactors(rows: ScreenerRow[], w: Weights): FactoredRow[] {
+  if (rows.length === 0) return [];
+
+  const chg    = rows.map(r => r.changePercent);
+  const tech   = rows.map(r => r.technicalStrength);
+  const rsi    = rows.map(r => r.rsi14);
+  const mcap   = rows.map(r => Math.log1p(r.marketCap));
+  const peLow  = rows.map(r => r.pe > 0 ? -r.pe : -999);
+  const fwdLow = rows.map(r => r.forwardPE > 0 ? -r.forwardPE : -999);
+  const divY   = rows.map(r => r.dividendYield);
+  const p52lo  = rows.map(r => r.pctFrom52Low);
+  const recInv = rows.map(r => -(r.recommendation));
+  const ivR    = rows.map(r => r.ivRank);
+  const opp    = rows.map(r => r.opportunityScore);
+  const rv     = rows.map(r => Math.min(r.relVol, 10));
+  const betaS  = rows.map(r => -r.beta);
+
+  return rows.map((r, i) => {
+    const fMomentum = Math.round(
+      pctRank(chg,  chg[i])  * 0.35 +
+      pctRank(tech, tech[i]) * 0.40 +
+      pctRank(rsi,  rsi[i])  * 0.25
+    );
+    const fValue = Math.round(
+      pctRank(peLow,  peLow[i])  * 0.35 +
+      pctRank(fwdLow, fwdLow[i]) * 0.25 +
+      pctRank(divY,   divY[i])   * 0.20 +
+      pctRank(p52lo,  p52lo[i])  * 0.20
+    );
+    const fQuality = Math.round(
+      pctRank(mcap,   mcap[i])   * 0.35 +
+      pctRank(recInv, recInv[i]) * 0.35 +
+      pctRank(betaS,  betaS[i])  * 0.30
+    );
+    const fVolatility = pctRank(ivR, ivR[i]);
+    const fOptions = Math.round(
+      pctRank(opp, opp[i]) * 0.60 +
+      pctRank(rv,  Math.min(r.relVol, 10)) * 0.40
+    );
+    const total = w.momentum + w.value + w.quality + w.volatility + w.options;
+    const alpha = total > 0
+      ? Math.round((fMomentum * w.momentum + fValue * w.value + fQuality * w.quality + fVolatility * w.volatility + fOptions * w.options) / total)
+      : 50;
+    return { ...r, fMomentum, fValue, fQuality, fVolatility, fOptions, alpha };
+  });
 }
 
-// ── Format helpers ────────────────────────────────────────────────────────
-const fmt = {
-  currency: (v: number | null) => v == null ? "—" : v >= 1000 ? `$${v.toFixed(0)}` : `$${v.toFixed(2)}`,
-  pct:      (v: number | null) => v == null ? "—" : `${v >= 0 ? "+" : ""}${v.toFixed(2)}%`,
-  pctSign:  (v: number | null) => v == null ? "—" : `${v >= 0 ? "+" : ""}${Math.abs(v).toFixed(1)}%`,
-  cap:      (v: number | null) => { if (v == null) return "—"; if (v >= 1000) return `$${(v/1000).toFixed(1)}T`; if (v >= 1) return `$${v.toFixed(1)}B`; return `$${(v*1000).toFixed(0)}M`; },
-  vol:      (v: number | null) => { if (v == null) return "—"; if (v >= 1e9) return `${(v/1e9).toFixed(1)}B`; if (v >= 1e6) return `${(v/1e6).toFixed(1)}M`; if (v >= 1e3) return `${(v/1e3).toFixed(0)}K`; return `${v}`; },
-  pe:       (v: number | null | undefined) => v == null || v <= 0 ? "—" : v.toFixed(1),
-  div:      (v: number | null | undefined) => v == null || v <= 0 ? "—" : `${v.toFixed(2)}%`,
-  ivRank:   (v: number | null | undefined) => v == null ? "—" : `${Math.round(v)}%`,
-  ts:       (v: number) => `${v}/10`,
-  dte:      (v: number | null) => v == null ? "—" : v === 0 ? "Today" : v === 1 ? "1d" : `${v}d`,
+// ─── Expression Evaluator ─────────────────────────────────────────────────────
+
+function evalExpr(expr: string, r: FactoredRow): boolean {
+  try {
+    const fn = new Function(
+      "price","changePercent","relVol","volume","avgVolume","marketCap","beta",
+      "pe","forwardPE","eps","dividendYield","shortRatio","priceTarget","recommendation",
+      "pctFrom52High","pctFrom52Low","ivRank","opportunityScore","rsi14",
+      "technicalStrength","macdHistogram","fMomentum","fValue","fQuality",
+      "fVolatility","fOptions","alpha",
+      `"use strict"; return !!(${expr});`
+    );
+    return fn(r.price,r.changePercent,r.relVol,r.volume,r.avgVolume,r.marketCap,r.beta,
+      r.pe,r.forwardPE,r.eps,r.dividendYield,r.shortRatio,r.priceTarget,r.recommendation,
+      r.pctFrom52High,r.pctFrom52Low,r.ivRank,r.opportunityScore,r.rsi14,
+      r.technicalStrength,r.macdHistogram,r.fMomentum,r.fValue,r.fQuality,
+      r.fVolatility,r.fOptions,r.alpha);
+  } catch { return false; }
+}
+
+// ─── Formatters ───────────────────────────────────────────────────────────────
+
+const fmtBig = (n: number) => {
+  if (n >= 1e12) return `$${(n/1e12).toFixed(1)}T`;
+  if (n >= 1e9)  return `$${(n/1e9).toFixed(1)}B`;
+  if (n >= 1e6)  return `$${(n/1e6).toFixed(0)}M`;
+  return `$${n.toFixed(0)}`;
+};
+const fmtVol = (n: number) => {
+  if (n >= 1e9) return `${(n/1e9).toFixed(1)}B`;
+  if (n >= 1e6) return `${(n/1e6).toFixed(1)}M`;
+  if (n >= 1e3) return `${(n/1e3).toFixed(0)}K`;
+  return String(n);
 };
 
-// ── Colors ────────────────────────────────────────────────────────────────
-const OL_COLOR: Record<string, string> = { bullish: "hsl(142 76% 52%)", bearish: "hsl(4 90% 63%)", neutral: "hsl(217 91% 60%)" };
-const OL_BG:    Record<string, string> = { bullish: "hsl(142 76% 52%/0.12)", bearish: "hsl(4 90% 63%/0.12)", neutral: "hsl(217 91% 60%/0.12)" };
+// ─── Mini components ──────────────────────────────────────────────────────────
 
-function ivColor(r: number | null | undefined) {
-  if (r == null) return "hsl(var(--muted-foreground))";
-  if (r >= 80) return "hsl(4 90% 63%)";
-  if (r >= 60) return "hsl(30 95% 60%)";
-  if (r >= 40) return "hsl(217 91% 60%)";
-  return "hsl(var(--muted-foreground))";
-}
-function scoreColor(s: number | null | undefined) {
-  if (s == null) return "hsl(var(--muted-foreground))";
-  if (s >= 70) return "hsl(142 76% 52%)";
-  if (s >= 50) return "hsl(217 91% 60%)";
-  return "hsl(var(--muted-foreground))";
-}
-function tsColor(v: number) {
-  if (v >= 8) return "hsl(142 76% 52%)";
-  if (v >= 6) return "hsl(217 91% 60%)";
-  if (v <= 2) return "hsl(4 90% 63%)";
-  if (v <= 4) return "hsl(30 95% 60%)";
-  return "hsl(var(--muted-foreground))";
-}
-function momColor(v: number) { return v >= 8 ? "hsl(142 76% 52%)" : v >= 6 ? "hsl(217 91% 60%)" : v <= 2 ? "hsl(4 90% 63%)" : "hsl(var(--muted-foreground))"; }
-
-// ── Sub-components ────────────────────────────────────────────────────────
-function FilterGroup({ title, icon, children, defaultOpen = true }: {
-  title: string; icon?: React.ReactNode; children: React.ReactNode; defaultOpen?: boolean;
-}) {
-  const [open, setOpen] = useState(defaultOpen);
+function FactorBar({ value, color }: { value: number; color: string }) {
   return (
-    <div style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
-      <button onClick={() => setOpen(o => !o)} style={{
-        width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
-        padding: "10px 16px", background: "transparent", border: "none", cursor: "pointer",
-        color: "hsl(var(--foreground))",
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 600, letterSpacing: "0.04em", color: "hsl(var(--muted-foreground))" }}>
-          {icon}{title}
-        </div>
-        {open ? <ChevronDown style={{ width: 11, height: 11, color: "hsl(var(--muted-foreground))" }} /> : <ChevronRight style={{ width: 11, height: 11, color: "hsl(var(--muted-foreground))" }} />}
-      </button>
-      {open && <div style={{ padding: "0 16px 14px", display: "flex", flexDirection: "column", gap: 10 }}>{children}</div>}
-    </div>
-  );
-}
-
-function RangeRow({ label, minK, maxK, unit, f, setF, placeholder }: {
-  label: string; minK: keyof FilterConfig; maxK: keyof FilterConfig;
-  unit?: string; f: FilterConfig; setF: (v: FilterConfig) => void; placeholder?: [string, string];
-}) {
-  return (
-    <div>
-      <div style={{ fontSize: 10.5, color: "hsl(var(--muted-foreground))", marginBottom: 5 }}>{label}{unit && <span style={{ color: "rgba(255,255,255,0.25)", marginLeft: 4 }}>{unit}</span>}</div>
-      <div style={{ display: "flex", gap: 5 }}>
-        {(["min","max"] as const).map((side, i) => {
-          const k = side === "min" ? minK : maxK;
-          return (
-            <input key={side}
-              type="number"
-              value={f[k] as string}
-              onChange={e => setF({ ...f, [k]: e.target.value })}
-              placeholder={placeholder?.[i] ?? (side === "min" ? "Min" : "Max")}
-              style={{
-                flex: 1, padding: "5px 8px", borderRadius: 5, border: "1px solid rgba(255,255,255,0.1)",
-                background: "rgba(255,255,255,0.04)", color: "hsl(var(--foreground))", fontSize: 11,
-                outline: "none",
-              }}
-            />
-          );
-        })}
+    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+      <div style={{ width: 44, height: 3, background: "rgba(255,255,255,0.08)", borderRadius: 2, overflow: "hidden" }}>
+        <div style={{ width: `${value}%`, height: "100%", background: color, borderRadius: 2 }} />
       </div>
+      <span style={{ fontSize: 10, fontVariantNumeric: "tabular-nums", color: "rgba(255,255,255,0.5)", width: 22, textAlign: "right" }}>{value}</span>
     </div>
   );
 }
 
-function SingleRow({ label, fieldK, unit, f, setF, placeholder }: {
-  label: string; fieldK: keyof FilterConfig; unit?: string;
-  f: FilterConfig; setF: (v: FilterConfig) => void; placeholder?: string;
-}) {
+function AlphaBadge({ v }: { v: number }) {
+  const c = v >= 70 ? "#30d158" : v >= 50 ? "#ffd60a" : v >= 30 ? "#ff9f0a" : "#ff453a";
   return (
-    <div>
-      <div style={{ fontSize: 10.5, color: "hsl(var(--muted-foreground))", marginBottom: 5 }}>{label}{unit && <span style={{ color: "rgba(255,255,255,0.25)", marginLeft: 4 }}>{unit}</span>}</div>
-      <input
-        type="number" value={f[fieldK] as string}
-        onChange={e => setF({ ...f, [fieldK]: e.target.value })}
-        placeholder={placeholder ?? "Any"}
-        style={{ width: "100%", padding: "5px 8px", borderRadius: 5, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.04)", color: "hsl(var(--foreground))", fontSize: 11, outline: "none", boxSizing: "border-box" }}
-      />
-    </div>
+    <div style={{
+      display:"inline-flex",alignItems:"center",justifyContent:"center",
+      width:38,height:22,borderRadius:6,fontWeight:700,fontSize:12,
+      fontVariantNumeric:"tabular-nums",
+      background:`${c}22`,border:`1px solid ${c}44`,color:c,
+    }}>{v}</div>
   );
 }
 
-function MultiToggle({ label, options, selected, onToggle }: {
-  label: string; options: string[]; selected: string[]; onToggle: (v: string) => void;
-}) {
+function RadarMini({ r }: { r: FactoredRow }) {
+  const vals = [r.fMomentum, r.fValue, r.fQuality, r.fVolatility, r.fOptions];
+  const S = 28, cx = 14, cy = 14, rad = 11;
+  const pts = vals.map((v,i) => {
+    const a = (i/vals.length)*Math.PI*2 - Math.PI/2;
+    const rr = (v/100)*rad;
+    return `${cx+rr*Math.cos(a)},${cy+rr*Math.sin(a)}`;
+  }).join(" ");
   return (
-    <div>
-      <div style={{ fontSize: 10.5, color: "hsl(var(--muted-foreground))", marginBottom: 6 }}>{label}</div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-        {options.map(o => {
-          const on = selected.includes(o);
-          return (
-            <button key={o} onClick={() => onToggle(o)} style={{
-              padding: "3px 9px", borderRadius: 4, fontSize: 10.5, fontWeight: 500, cursor: "pointer",
-              border: on ? "1px solid hsl(var(--primary)/0.5)" : "1px solid rgba(255,255,255,0.1)",
-              background: on ? "hsl(var(--primary)/0.12)" : "rgba(255,255,255,0.03)",
-              color: on ? "hsl(var(--primary))" : "hsl(var(--muted-foreground))",
-              transition: "all 0.1s",
-            }}>{o}</button>
-          );
-        })}
-      </div>
-    </div>
+    <svg width={S} height={S}>
+      {[0.33,0.66,1].map(f => (
+        <polygon key={f} fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth={0.5}
+          points={vals.map((_,i) => {
+            const a=(i/vals.length)*Math.PI*2-Math.PI/2;
+            return `${cx+rad*f*Math.cos(a)},${cy+rad*f*Math.sin(a)}`;
+          }).join(" ")} />
+      ))}
+      <polygon points={pts} fill="rgba(10,132,255,0.2)" stroke="#0a84ff" strokeWidth={0.8}/>
+    </svg>
   );
 }
 
-function SortIcon({ colKey, sort }: { colKey: SortKey; sort: SortConfig }) {
-  if (sort.key !== colKey) return <ArrowUpDown style={{ width: 9, height: 9, opacity: 0.3 }} />;
-  return sort.dir === "asc"
-    ? <ArrowUp style={{ width: 9, height: 9, color: "hsl(var(--primary))" }} />
-    : <ArrowDown style={{ width: 9, height: 9, color: "hsl(var(--primary))" }} />;
+// ─── Hooks ────────────────────────────────────────────────────────────────────
+
+function useScreenerData() {
+  return useQuery<ScreenerRow[]>({
+    queryKey: ["screener-v2"],
+    queryFn: async () => {
+      const res = await fetch(`${API_BASE}/screener`);
+      if (!res.ok) throw new Error("screener fetch failed");
+      return res.json();
+    },
+    staleTime: 3*60*1000, gcTime: 10*60*1000, retry: 2,
+  });
 }
 
-function MiniBar({ value, max, color }: { value: number; max: number; color: string }) {
-  return (
-    <div style={{ width: 36, height: 3, borderRadius: 99, background: "rgba(255,255,255,0.08)", overflow: "hidden", display: "inline-block", verticalAlign: "middle", marginLeft: 4 }}>
-      <div style={{ width: `${Math.min(100, (value / max) * 100)}%`, height: "100%", borderRadius: 99, background: color }} />
-    </div>
-  );
-}
+// ─── Main ─────────────────────────────────────────────────────────────────────
 
-// ── Main Screener Page ────────────────────────────────────────────────────
-export default function ScreenerPage() {
-  const { data: rawStocks = [], isLoading } = useListStocks();
-  const [filters, setFilters] = useState<FilterConfig>(BLANK);
-  const [sort, setSort] = useState<SortConfig>({ key: "opportunityScore", dir: "desc" });
-  const [visibleCols, setVisibleCols] = useState<Set<string>>(
-    new Set(COLUMNS.filter(c => c.defaultVisible).map(c => c.key as string))
-  );
-  const [showColPicker, setShowColPicker] = useState(false);
-  const [search, setSearch] = useState("");
-  const [activePreset, setActivePreset] = useState<string | null>(null);
+export default function Screener() {
+  const [, setLocation] = useLocation();
+  const navigate = setLocation;
+  const { data: raw = [], isLoading, isFetching, error } = useScreenerData();
 
-  const stocks = useMemo(() => rawStocks.map(s => deriveRow(s as any)), [rawStocks]);
+  const [view,        setView]        = useState<ViewMode>("table");
+  const [weights,     setWeights]     = useState<Weights>(DEFAULT_WEIGHTS);
+  const [sortKey,     setSortKey]     = useState("alpha");
+  const [sortDir,     setSortDir]     = useState<"desc"|"asc">("desc");
+  const [sector,      setSector]      = useState("");
+  const [expression,  setExpression]  = useState("");
+  const [exprErr,     setExprErr]     = useState(false);
+  const [showWeights, setShowWeights] = useState(false);
+  const [xAxis,       setXAxis]       = useState("fMomentum");
+  const [yAxis,       setYAxis]       = useState("fValue");
+  const [heatFactor,  setHeatFactor]  = useState("alpha");
 
-  // Available distinct values for multi-toggles
-  const allSectors    = useMemo(() => [...new Set(stocks.map(s => s.sector).filter(Boolean))].sort(), [stocks]);
-  const allSetupTypes = useMemo(() => [...new Set(stocks.map(s => s.setupType).filter(Boolean))].sort(), [stocks]);
+  const factored = useMemo(() => computeFactors(raw, weights), [raw, weights]);
 
-  // Apply filters + search + sort
+  const sectors = useMemo(() => {
+    const s = new Set(factored.map(r => r.sector).filter(Boolean));
+    return [...s].sort();
+  }, [factored]);
+
   const filtered = useMemo(() => {
-    let rows = stocks.filter(r => passesFilters(r, filters));
-    if (search) {
-      const q = search.toLowerCase();
-      rows = rows.filter(r => r.symbol.toLowerCase().includes(q) || r.name?.toLowerCase().includes(q));
+    let rows = factored;
+    if (sector) rows = rows.filter(r => r.sector === sector);
+    if (expression.trim()) {
+      try {
+        new Function(`"use strict"; return !!(${expression});`);
+        rows = rows.filter(r => evalExpr(expression, r));
+        setExprErr(false);
+      } catch { setExprErr(true); }
     }
-    const dir = sort.dir === "asc" ? 1 : -1;
-    rows = [...rows].sort((a, b) => {
-      const av = a[sort.key] as any;
-      const bv = b[sort.key] as any;
-      if (av == null && bv == null) return 0;
-      if (av == null) return 1;
-      if (bv == null) return -1;
-      if (typeof av === "string") return av.localeCompare(bv) * dir;
-      return (av - bv) * dir;
-    });
     return rows;
-  }, [stocks, filters, search, sort]);
+  }, [factored, sector, expression]);
 
-  // Aggregate stats for factor bar
-  const aggStats = useMemo(() => {
-    if (!filtered.length) return null;
-    const avg = (vals: (number | null | undefined)[]) => {
-      const v = vals.filter(x => x != null) as number[];
-      return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
-    };
-    return {
-      count:       filtered.length,
-      bullish:     filtered.filter(r => r.recommendedOutlook === "bullish").length,
-      neutral:     filtered.filter(r => r.recommendedOutlook === "neutral").length,
-      bearish:     filtered.filter(r => r.recommendedOutlook === "bearish").length,
-      avgIvRank:   avg(filtered.map(r => r.ivRank)),
-      avgScore:    avg(filtered.map(r => r.opportunityScore)),
-      avgTs:       avg(filtered.map(r => r.technicalStrength)),
-      avgMom:      avg(filtered.map(r => r.momentumScore)),
-      highIv:      filtered.filter(r => (r.ivRank ?? 0) >= 60).length,
-      withEarnings:filtered.filter(r => r.daysToEarnings != null && r.daysToEarnings >= 0 && r.daysToEarnings <= 14).length,
-    };
-  }, [filtered]);
+  const sorted = useMemo(() => {
+    return [...filtered].sort((a,b) => {
+      const va = (a as any)[sortKey] ?? 0, vb = (b as any)[sortKey] ?? 0;
+      return sortDir === "desc" ? vb - va : va - vb;
+    });
+  }, [filtered, sortKey, sortDir]);
 
-  const toggleSort = (key: SortKey) => {
-    setSort(s => s.key === key ? { key, dir: s.dir === "desc" ? "asc" : "desc" } : { key, dir: "desc" });
+  const onSort = (k: string) => {
+    if (sortKey === k) setSortDir(d => d==="desc"?"asc":"desc");
+    else { setSortKey(k); setSortDir("desc"); }
   };
 
-  const applyPreset = useCallback((p: Preset) => {
-    if (activePreset === p.id) { setFilters(BLANK); setActivePreset(null); return; }
-    setFilters({ ...BLANK, ...p.filters });
-    setActivePreset(p.id);
-  }, [activePreset]);
-
-  const toggleCatFilter = (cat: keyof Pick<FilterConfig, "sectors" | "outlooks" | "setupTypes" | "liquidities">, val: string) => {
-    const cur = filters[cat];
-    const next = cur.includes(val) ? cur.filter(x => x !== val) : [...cur, val];
-    setFilters({ ...filters, [cat]: next });
-    setActivePreset(null);
-  };
-
-  const resetAll = () => { setFilters(BLANK); setActivePreset(null); setSearch(""); };
-
-  const activeCount = countActive(filters) + (search ? 1 : 0);
-
-  // Export CSV
-  const exportCsv = () => {
-    const visCols = COLUMNS.filter(c => visibleCols.has(c.key as string));
-    const header = visCols.map(c => c.label).join(",");
-    const rows = filtered.map(r => visCols.map(c => {
-      const v = r[c.key];
-      if (v == null) return "";
-      if (typeof v === "string") return `"${v.replace(/"/g, '""')}"`;
-      return v;
-    }).join(",")).join("\n");
-    const blob = new Blob([header + "\n" + rows], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = "screener.csv"; a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const visCols = COLUMNS.filter(c => visibleCols.has(c.key as string));
+  const totalW = weights.momentum + weights.value + weights.quality + weights.volatility + weights.options;
 
   return (
-    <div style={{ display: "flex", height: "100%", background: "hsl(0 0% 4%)", overflow: "hidden" }}>
+    <div style={{ display:"flex",flexDirection:"column",height:"100%",background:"#0a0a0a",color:"#fff",fontFamily:"Inter,system-ui,sans-serif",overflow:"hidden" }}>
 
-      {/* ── Filter Sidebar ── */}
-      <div style={{ width: 230, flexShrink: 0, borderRight: "1px solid rgba(255,255,255,0.06)", background: "rgba(255,255,255,0.01)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        <div style={{ padding: "12px 16px", borderBottom: "1px solid rgba(255,255,255,0.06)", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 600, letterSpacing: "-0.01em" }}>
-            <SlidersHorizontal style={{ width: 12, height: 12, color: "hsl(var(--primary))" }} />
-            Filters
-            {activeCount > 0 && <span style={{ background: "hsl(var(--primary))", color: "#000", borderRadius: 99, fontSize: 9, fontWeight: 700, padding: "1px 5px" }}>{activeCount}</span>}
+      {/* ── Header ── */}
+      <div style={{ display:"flex",alignItems:"center",gap:12,padding:"10px 20px",borderBottom:"1px solid rgba(255,255,255,0.06)",flexShrink:0,flexWrap:"wrap" }}>
+        <div>
+          <div style={{ fontSize:15,fontWeight:700,letterSpacing:"-0.02em" }}>Factor Alpha Screener</div>
+          <div style={{ fontSize:11,color:"rgba(255,255,255,0.38)",marginTop:1 }}>
+            {isLoading ? "Loading universe…" :
+              error ? "Error loading — retrying" :
+              `${filtered.length.toLocaleString()} of ${factored.length.toLocaleString()} stocks · S&P 500 + NASDAQ 100 · ${isFetching?"Refreshing…":"Live"}`}
           </div>
-          {activeCount > 0 && (
-            <button onClick={resetAll} style={{ fontSize: 10, color: "hsl(var(--muted-foreground))", background: "transparent", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 3 }}>
-              <RotateCcw style={{ width: 9, height: 9 }} /> Clear
+        </div>
+        <div style={{ flex:1 }} />
+
+        {/* View toggle */}
+        <div style={{ display:"flex",background:"rgba(255,255,255,0.05)",borderRadius:8,padding:2,gap:1 }}>
+          {(["table","heatmap","scatter"] as ViewMode[]).map(v => (
+            <button key={v} onClick={() => setView(v)} style={{
+              padding:"5px 13px",borderRadius:6,border:"none",
+              background:view===v?"rgba(10,132,255,0.25)":"transparent",
+              color:view===v?"#0a84ff":"rgba(255,255,255,0.45)",
+              fontSize:11,fontWeight:600,cursor:"pointer",
+            }}>
+              {v==="table"?"Factor Table":v==="heatmap"?"Sector Map":"Scatter Plot"}
             </button>
-          )}
+          ))}
         </div>
 
-        <ScrollArea className="flex-1">
-          {/* Volatility & Options */}
-          <FilterGroup title="VOLATILITY & OPTIONS" icon={<Flame style={{ width: 10, height: 10 }} />}>
-            <RangeRow label="IV Rank" minK="ivRankMin" maxK="ivRankMax" unit="%" f={filters} setF={f => { setFilters(f); setActivePreset(null); }} placeholder={["0","100"]} />
-            <RangeRow label="Opportunity Score" minK="opportunityScoreMin" maxK="opportunityScoreMax" f={filters} setF={f => { setFilters(f); setActivePreset(null); }} placeholder={["0","200"]} />
-          </FilterGroup>
-
-          {/* Technical */}
-          <FilterGroup title="TECHNICAL" icon={<Activity style={{ width: 10, height: 10 }} />}>
-            <RangeRow label="Technical Strength" minK="technicalStrengthMin" maxK="technicalStrengthMax" unit="/10" f={filters} setF={f => { setFilters(f); setActivePreset(null); }} placeholder={["1","10"]} />
-            <SingleRow label="Momentum Score ≥" fieldK="momentumScoreMin" unit="/10" f={filters} setF={f => { setFilters(f); setActivePreset(null); }} />
-            <RangeRow label="Day Change" minK="changePercentMin" maxK="changePercentMax" unit="%" f={filters} setF={f => { setFilters(f); setActivePreset(null); }} placeholder={["-20","+20"]} />
-            <SingleRow label="Within % of 52W High" fieldK="pctFrom52WHigh" f={filters} setF={f => { setFilters(f); setActivePreset(null); }} placeholder="e.g. -10" />
-            <SingleRow label="% Above 52W Low ≥" fieldK="pctFrom52WLow" f={filters} setF={f => { setFilters(f); setActivePreset(null); }} placeholder="e.g. 5" />
-            <SingleRow label="% Above Support ≥" fieldK="supportDistPct" f={filters} setF={f => { setFilters(f); setActivePreset(null); }} placeholder="e.g. 0" />
-            <SingleRow label="% Below Resistance ≤" fieldK="resistDistPct" f={filters} setF={f => { setFilters(f); setActivePreset(null); }} placeholder="e.g. 15" />
-          </FilterGroup>
-
-          {/* Fundamental */}
-          <FilterGroup title="FUNDAMENTAL" icon={<DollarSign style={{ width: 10, height: 10 }} />}>
-            <RangeRow label="Price" minK="priceMin" maxK="priceMax" unit="$" f={filters} setF={f => { setFilters(f); setActivePreset(null); }} />
-            <RangeRow label="Market Cap" minK="marketCapMin" maxK="marketCapMax" unit="$B" f={filters} setF={f => { setFilters(f); setActivePreset(null); }} />
-            <RangeRow label="P/E Ratio" minK="peMin" maxK="peMax" f={filters} setF={f => { setFilters(f); setActivePreset(null); }} />
-            <RangeRow label="Dividend Yield" minK="divYieldMin" maxK="divYieldMax" unit="%" f={filters} setF={f => { setFilters(f); setActivePreset(null); }} />
-          </FilterGroup>
-
-          {/* Categorical */}
-          <FilterGroup title="STRATEGY" icon={<Target style={{ width: 10, height: 10 }} />}>
-            <MultiToggle label="Outlook" options={["bullish","neutral","bearish"]} selected={filters.outlooks}
-              onToggle={v => toggleCatFilter("outlooks", v)} />
-            <MultiToggle label="Setup Type" options={allSetupTypes} selected={filters.setupTypes}
-              onToggle={v => toggleCatFilter("setupTypes", v)} />
-          </FilterGroup>
-
-          {/* Events */}
-          <FilterGroup title="EVENTS" icon={<Calendar style={{ width: 10, height: 10 }} />} defaultOpen={false}>
-            <SingleRow label="Earnings within (days)" fieldK="daysToEarningsMax" f={filters} setF={f => { setFilters(f); setActivePreset(null); }} placeholder="e.g. 14" />
-          </FilterGroup>
-
-          {/* Sector */}
-          <FilterGroup title="SECTOR" icon={<BarChart2 style={{ width: 10, height: 10 }} />} defaultOpen={false}>
-            <MultiToggle label="Sector" options={allSectors} selected={filters.sectors}
-              onToggle={v => toggleCatFilter("sectors", v)} />
-          </FilterGroup>
-
-          {/* Liquidity */}
-          <FilterGroup title="LIQUIDITY" icon={<Activity style={{ width: 10, height: 10 }} />} defaultOpen={false}>
-            <MultiToggle label="Liquidity" options={["Liquid","Illiquid"]} selected={filters.liquidities}
-              onToggle={v => toggleCatFilter("liquidities", v)} />
-          </FilterGroup>
-        </ScrollArea>
+        <button onClick={() => setShowWeights(p=>!p)} style={{
+          padding:"5px 13px",borderRadius:8,cursor:"pointer",fontSize:11,fontWeight:600,
+          background:showWeights?"rgba(10,132,255,0.18)":"rgba(255,255,255,0.06)",
+          border:showWeights?"1px solid rgba(10,132,255,0.35)":"1px solid transparent",
+          color:showWeights?"#0a84ff":"rgba(255,255,255,0.6)",
+        }}>⚖ Factor Weights</button>
       </div>
 
-      {/* ── Right: Results ── */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
-
-        {/* Top bar */}
-        <div style={{ padding: "10px 16px", borderBottom: "1px solid rgba(255,255,255,0.06)", flexShrink: 0, display: "flex", flexDirection: "column", gap: 10 }}>
-
-          {/* Presets */}
-          <div style={{ display: "flex", gap: 6, flexWrap: "nowrap", overflowX: "auto", paddingBottom: 2 }}>
-            <span style={{ fontSize: 10, color: "hsl(var(--muted-foreground))", flexShrink: 0, display: "flex", alignItems: "center", gap: 4, marginRight: 2 }}>
-              <Filter style={{ width: 10, height: 10 }} /> Presets:
-            </span>
-            {PRESETS.map(p => {
-              const on = activePreset === p.id;
-              return (
-                <button key={p.id} onClick={() => applyPreset(p)} title={p.description} style={{
-                  padding: "4px 10px", borderRadius: 5, fontSize: 10.5, fontWeight: 500,
-                  border: on ? `1px solid ${p.color}50` : "1px solid rgba(255,255,255,0.1)",
-                  background: on ? `${p.color}18` : "rgba(255,255,255,0.03)",
-                  color: on ? p.color : "hsl(var(--muted-foreground))",
-                  cursor: "pointer", whiteSpace: "nowrap", transition: "all 0.1s",
-                  display: "flex", alignItems: "center", gap: 5,
-                }}>
-                  {p.icon}{p.label}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Search + controls + count */}
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <div style={{ position: "relative", flex: 1, maxWidth: 240 }}>
-              <Search style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", width: 12, height: 12, color: "hsl(var(--muted-foreground))" }} />
-              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search symbol or name…"
-                style={{ width: "100%", paddingLeft: 28, paddingRight: 8, paddingTop: 6, paddingBottom: 6, borderRadius: 6, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.04)", color: "hsl(var(--foreground))", fontSize: 11.5, outline: "none", boxSizing: "border-box" }} />
-              {search && <button onClick={() => setSearch("")} style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "transparent", border: "none", cursor: "pointer", color: "hsl(var(--muted-foreground))", display: "flex" }}><X style={{ width: 11, height: 11 }} /></button>}
+      {/* ── Weight panel ── */}
+      <AnimatePresence>
+        {showWeights && (
+          <motion.div initial={{height:0,opacity:0}} animate={{height:"auto",opacity:1}} exit={{height:0,opacity:0}} transition={{duration:0.18}} style={{overflow:"hidden",flexShrink:0}}>
+            <div style={{ padding:"10px 20px",borderBottom:"1px solid rgba(255,255,255,0.06)",display:"flex",gap:20,flexWrap:"wrap",alignItems:"flex-end",background:"rgba(10,132,255,0.03)" }}>
+              <div style={{ fontSize:10,fontWeight:700,color:"#0a84ff",letterSpacing:"0.06em",textTransform:"uppercase",alignSelf:"center" }}>Alpha Composite Weights</div>
+              {(Object.keys(weights) as (keyof Weights)[]).map(k => (
+                <div key={k} style={{ display:"flex",flexDirection:"column",gap:3,minWidth:90 }}>
+                  <div style={{ display:"flex",justifyContent:"space-between",fontSize:10 }}>
+                    <span style={{ color:"rgba(255,255,255,0.45)",textTransform:"capitalize" }}>{k==="options"?"Options Edge":k}</span>
+                    <span style={{ color:"#fff",fontWeight:600,fontVariantNumeric:"tabular-nums" }}>{weights[k]}</span>
+                  </div>
+                  <input type="range" min={0} max={60} step={5} value={weights[k]}
+                    onChange={e => setWeights(w => ({...w,[k]:+e.target.value}))}
+                    style={{ width:"100%",accentColor:"#0a84ff" }} />
+                </div>
+              ))}
+              <button onClick={() => setWeights(DEFAULT_WEIGHTS)} style={{ padding:"4px 10px",borderRadius:6,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",color:"rgba(255,255,255,0.55)",fontSize:10,cursor:"pointer" }}>Reset</button>
+              <span style={{ fontSize:10,color:totalW!==100?"#ff453a":"rgba(255,255,255,0.3)",alignSelf:"center" }}>Σ={totalW}%{totalW!==100?" (≠100%)":""}</span>
             </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-            <div style={{ fontSize: 12, color: "hsl(var(--muted-foreground))", display: "flex", alignItems: "center", gap: 5 }}>
-              <span style={{ fontWeight: 700, color: "hsl(var(--foreground))", fontVariantNumeric: "tabular-nums" }}>{filtered.length}</span>
-              <span>of {stocks.length} stocks</span>
-            </div>
+      {/* ── Filter bar ── */}
+      <div style={{ display:"flex",gap:8,padding:"8px 20px",borderBottom:"1px solid rgba(255,255,255,0.06)",flexShrink:0,flexWrap:"wrap",alignItems:"center" }}>
+        <select value={sector} onChange={e => setSector(e.target.value)} style={{
+          background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.09)",
+          color:sector?"#fff":"rgba(255,255,255,0.4)",borderRadius:7,padding:"4px 8px",fontSize:11,cursor:"pointer",
+        }}>
+          <option value="">All Sectors</option>
+          {sectors.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
 
-            <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
-              {/* Column picker */}
-              <div style={{ position: "relative" }}>
-                <button onClick={() => setShowColPicker(o => !o)} style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.04)", color: "hsl(var(--muted-foreground))", fontSize: 11, cursor: "pointer" }}>
-                  <SlidersHorizontal style={{ width: 11, height: 11 }} /> Columns
-                </button>
-                {showColPicker && (
-                  <>
-                    <div onClick={() => setShowColPicker(false)} style={{ position: "fixed", inset: 0, zIndex: 49 }} />
-                    <div style={{ position: "absolute", right: 0, top: "calc(100% + 6px)", zIndex: 50, background: "hsl(0 0% 10%)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 8, padding: 12, width: 200, boxShadow: "0 8px 32px rgba(0,0,0,0.5)" }}>
-                      {["identity","price","fundamental","volatility","options","technical","strategy","events","micro"].map(grp => {
-                        const cols = COLUMNS.filter(c => c.group === grp);
-                        if (!cols.length) return null;
-                        return (
-                          <div key={grp} style={{ marginBottom: 10 }}>
-                            <div style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: "0.06em", color: "hsl(var(--muted-foreground))", marginBottom: 5, textTransform: "uppercase" }}>{grp}</div>
-                            {cols.map(col => (
-                              <label key={col.key as string} style={{ display: "flex", alignItems: "center", gap: 7, padding: "3px 0", cursor: "pointer" }}>
-                                <input type="checkbox" checked={visibleCols.has(col.key as string)}
-                                  onChange={e => setVisibleCols(s => {
-                                    const n = new Set(s);
-                                    if (e.target.checked) n.add(col.key as string); else n.delete(col.key as string);
-                                    return n;
-                                  })} />
-                                <span style={{ fontSize: 11.5 }}>{col.label}</span>
-                              </label>
-                            ))}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </>
-                )}
-              </div>
-              <button onClick={exportCsv} style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.04)", color: "hsl(var(--muted-foreground))", fontSize: 11, cursor: "pointer" }}>
-                <Download style={{ width: 11, height: 11 }} /> Export
-              </button>
-            </div>
-          </div>
+        <input value={expression} onChange={e => { setExpression(e.target.value); setExprErr(false); }}
+          placeholder="Expression: ivRank > 65 && fMomentum > 60 && relVol > 1.5"
+          style={{
+            flex:1,minWidth:220,background:"rgba(255,255,255,0.06)",
+            border:`1px solid ${exprErr?"#ff453a":expression?"rgba(10,132,255,0.35)":"rgba(255,255,255,0.09)"}`,
+            borderRadius:7,padding:"4px 10px",color:"#fff",fontSize:11,
+            fontFamily:"ui-monospace,monospace",
+          }} />
+        {expression && <button onClick={() => { setExpression(""); setExprErr(false); }} style={{ padding:"4px 8px",borderRadius:6,background:"rgba(255,255,255,0.06)",border:"none",color:"rgba(255,255,255,0.5)",fontSize:11,cursor:"pointer" }}>✕</button>}
+
+        <div style={{ display:"flex",gap:4,flexWrap:"wrap" }}>
+          {ALPHA_STRATEGIES.map(s => (
+            <button key={s.label} onClick={() => { setExpression(s.expr); setExprErr(false); }} title={s.desc} style={{
+              padding:"3px 9px",borderRadius:5,fontSize:10,fontWeight:600,cursor:"pointer",
+              background:expression===s.expr?"rgba(10,132,255,0.18)":"rgba(255,255,255,0.05)",
+              border:expression===s.expr?"1px solid rgba(10,132,255,0.35)":"1px solid transparent",
+              color:expression===s.expr?"#0a84ff":"rgba(255,255,255,0.5)",
+            }}>{s.label}</button>
+          ))}
         </div>
+      </div>
 
-        {/* Factor analysis bar */}
-        {aggStats && (
-          <div style={{ padding: "8px 16px", borderBottom: "1px solid rgba(255,255,255,0.04)", background: "rgba(255,255,255,0.015)", display: "flex", gap: 20, flexShrink: 0, flexWrap: "wrap" }}>
-            {[
-              { label: "Bullish", value: `${aggStats.bullish}`, color: "hsl(142 76% 52%)" },
-              { label: "Neutral", value: `${aggStats.neutral}`, color: "hsl(217 91% 60%)" },
-              { label: "Bearish", value: `${aggStats.bearish}`, color: "hsl(4 90% 63%)" },
-              { label: "Avg IV Rank", value: aggStats.avgIvRank != null ? `${aggStats.avgIvRank.toFixed(0)}%` : "—", color: ivColor(aggStats.avgIvRank) },
-              { label: "Avg Score", value: aggStats.avgScore != null ? aggStats.avgScore.toFixed(0) : "—", color: scoreColor(aggStats.avgScore) },
-              { label: "Avg Tech", value: aggStats.avgTs != null ? `${aggStats.avgTs.toFixed(1)}/10` : "—", color: tsColor(Math.round(aggStats.avgTs ?? 5)) },
-              { label: "High IV", value: `${aggStats.highIv}`, color: "hsl(30 95% 60%)" },
-              { label: "Near Earnings", value: `${aggStats.withEarnings}`, color: "hsl(280 60% 65%)" },
-            ].map(stat => (
-              <div key={stat.label} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <span style={{ fontSize: 10, color: "hsl(var(--muted-foreground))" }}>{stat.label}</span>
-                <span style={{ fontSize: 12, fontWeight: 700, color: stat.color, fontVariantNumeric: "tabular-nums" }}>{stat.value}</span>
-              </div>
+      {/* ── Loading ── */}
+      {isLoading && (
+        <div style={{ flex:1,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:12 }}>
+          <div style={{ width:36,height:36,borderRadius:"50%",border:"2px solid rgba(10,132,255,0.2)",borderTopColor:"#0a84ff",animation:"spin 0.9s linear infinite" }} />
+          <div style={{ color:"rgba(255,255,255,0.4)",fontSize:13 }}>Loading full S&P 500 + NASDAQ 100 universe…</div>
+          <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+        </div>
+      )}
+
+      {/* ── Content ── */}
+      {!isLoading && (
+        <div style={{ flex:1,overflow:"hidden" }}>
+          {view === "table"   && <TableView   rows={sorted}   sortKey={sortKey} sortDir={sortDir} onSort={onSort}       navigate={navigate} />}
+          {view === "heatmap" && <HeatmapView rows={filtered} factor={heatFactor}                 setFactor={setHeatFactor} navigate={navigate} />}
+          {view === "scatter" && <ScatterView rows={filtered} xAxis={xAxis} yAxis={yAxis}         setXAxis={setXAxis} setYAxis={setYAxis}   navigate={navigate} />}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Table View ───────────────────────────────────────────────────────────────
+
+function TableView({ rows, sortKey, sortDir, onSort, navigate }: {
+  rows: FactoredRow[]; sortKey: string; sortDir:"asc"|"desc"; onSort:(k:string)=>void; navigate:(p:string)=>void;
+}) {
+  const TH = ({ k, label, r }: { k:string; label:string; r?:boolean }) => (
+    <th onClick={() => onSort(k)} style={{
+      padding:"7px 10px",fontSize:10,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",
+      color:sortKey===k?"#0a84ff":"rgba(255,255,255,0.35)",textAlign:r?"right":"left",
+      cursor:"pointer",userSelect:"none",whiteSpace:"nowrap",
+      position:"sticky",top:0,background:"#111",zIndex:2,
+      borderBottom:"1px solid rgba(255,255,255,0.07)",
+    }}>
+      {label}{sortKey===k?(sortDir==="desc"?" ↓":" ↑"):""}
+    </th>
+  );
+
+  return (
+    <div style={{ height:"100%",overflow:"auto" }}>
+      <table style={{ width:"100%",borderCollapse:"collapse",fontSize:12 }}>
+        <thead>
+          <tr>
+            <TH k="symbol"       label="Symbol" />
+            <TH k="price"        label="Price"    r />
+            <TH k="changePercent"label="1D %"     r />
+            <TH k="relVol"       label="Rel Vol"  r />
+            <TH k="marketCap"    label="Mkt Cap"  r />
+            <TH k="ivRank"       label="IV Rank"  r />
+            <TH k="beta"         label="Beta"     r />
+            <TH k="pe"           label="P/E"      r />
+            <TH k="shortRatio"   label="Short Ratio" r />
+            <TH k="fMomentum"   label="Momentum" />
+            <TH k="fValue"      label="Value" />
+            <TH k="fQuality"    label="Quality" />
+            <TH k="fVolatility" label="Volatility" />
+            <TH k="fOptions"    label="Options" />
+            <TH k="alpha"       label="α Score"  r />
+            <TH k="setupType"   label="Setup" />
+          </tr>
+        </thead>
+        <tbody>
+          {rows.slice(0, 300).map((r, i) => {
+            const up = r.changePercent >= 0;
+            return (
+              <tr key={r.symbol}
+                onClick={() => navigate(`/scanner?symbol=${r.symbol}`)}
+                style={{ borderBottom:"1px solid rgba(255,255,255,0.04)",background:i%2?"rgba(255,255,255,0.015)":"transparent",cursor:"pointer" }}
+                onMouseEnter={e => (e.currentTarget.style.background = "rgba(10,132,255,0.06)")}
+                onMouseLeave={e => (e.currentTarget.style.background = i%2?"rgba(255,255,255,0.015)":"transparent")}
+              >
+                <td style={{ padding:"6px 10px",whiteSpace:"nowrap" }}>
+                  <div style={{ display:"flex",alignItems:"center",gap:6 }}>
+                    <RadarMini r={r} />
+                    <div>
+                      <div style={{ fontWeight:700,fontSize:13 }}>{r.symbol}</div>
+                      <div style={{ fontSize:10,color:"rgba(255,255,255,0.3)",maxWidth:110,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{r.name}</div>
+                    </div>
+                  </div>
+                </td>
+                <td style={{ padding:"6px 10px",textAlign:"right",fontVariantNumeric:"tabular-nums",fontWeight:600 }}>${r.price.toFixed(2)}</td>
+                <td style={{ padding:"6px 10px",textAlign:"right",fontVariantNumeric:"tabular-nums",fontWeight:600,color:up?"#30d158":"#ff453a" }}>{up?"+":""}{r.changePercent.toFixed(2)}%</td>
+                <td style={{ padding:"6px 10px",textAlign:"right",fontVariantNumeric:"tabular-nums",color:r.relVol>3?"#ff9f0a":r.relVol>2?"#ffd60a":"rgba(255,255,255,0.65)" }}>{r.relVol.toFixed(2)}×</td>
+                <td style={{ padding:"6px 10px",textAlign:"right",fontVariantNumeric:"tabular-nums",color:"rgba(255,255,255,0.55)" }}>{fmtBig(r.marketCap)}</td>
+                <td style={{ padding:"6px 10px",textAlign:"right",fontVariantNumeric:"tabular-nums",color:r.ivRank>70?"#ff9f0a":r.ivRank>50?"#ffd60a":"rgba(255,255,255,0.55)" }}>{r.ivRank.toFixed(0)}</td>
+                <td style={{ padding:"6px 10px",textAlign:"right",fontVariantNumeric:"tabular-nums",color:"rgba(255,255,255,0.55)" }}>{r.beta.toFixed(2)}</td>
+                <td style={{ padding:"6px 10px",textAlign:"right",fontVariantNumeric:"tabular-nums",color:"rgba(255,255,255,0.55)" }}>{r.pe>0?r.pe.toFixed(1):"—"}</td>
+                <td style={{ padding:"6px 10px",textAlign:"right",fontVariantNumeric:"tabular-nums",color:r.shortRatio>7?"#ff453a":r.shortRatio>4?"#ff9f0a":"rgba(255,255,255,0.55)" }}>{r.shortRatio>0?r.shortRatio.toFixed(1)+"d":"—"}</td>
+                <td style={{ padding:"6px 10px" }}><FactorBar value={r.fMomentum} color="#0a84ff" /></td>
+                <td style={{ padding:"6px 10px" }}><FactorBar value={r.fValue}    color="#30d158" /></td>
+                <td style={{ padding:"6px 10px" }}><FactorBar value={r.fQuality}  color="#bf5af2" /></td>
+                <td style={{ padding:"6px 10px" }}><FactorBar value={r.fVolatility} color="#ff9f0a" /></td>
+                <td style={{ padding:"6px 10px" }}><FactorBar value={r.fOptions}  color="#ff375f" /></td>
+                <td style={{ padding:"6px 10px",textAlign:"right" }}><AlphaBadge v={r.alpha} /></td>
+                <td style={{ padding:"6px 10px" }}>
+                  <span style={{
+                    padding:"2px 6px",borderRadius:4,fontSize:10,fontWeight:600,
+                    background:r.recommendedOutlook==="bullish"?"rgba(48,209,88,0.15)":r.recommendedOutlook==="bearish"?"rgba(255,69,58,0.15)":"rgba(255,255,255,0.06)",
+                    color:r.recommendedOutlook==="bullish"?"#30d158":r.recommendedOutlook==="bearish"?"#ff453a":"rgba(255,255,255,0.45)",
+                  }}>{r.setupType}</span>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      {rows.length > 300 && (
+        <div style={{ padding:"12px 20px",color:"rgba(255,255,255,0.3)",fontSize:11,textAlign:"center" }}>
+          Showing top 300 of {rows.length.toLocaleString()} matches. Refine the expression filter to narrow results.
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Heatmap View ─────────────────────────────────────────────────────────────
+
+function HeatmapView({ rows, factor, setFactor, navigate }: {
+  rows: FactoredRow[]; factor: string; setFactor:(f:string)=>void; navigate:(p:string)=>void;
+}) {
+  const bySector = useMemo(() => {
+    const map = new Map<string, FactoredRow[]>();
+    for (const r of rows) {
+      const s = r.sector || "Other";
+      if (!map.has(s)) map.set(s, []);
+      map.get(s)!.push(r);
+    }
+    return [...map.entries()].sort((a,b) => b[1].length - a[1].length);
+  }, [rows]);
+
+  const getV = (r: FactoredRow) => (r as any)[factor] ?? 50;
+
+  const heatColor = (v: number) => {
+    const signed = ["changePercent","macdHistogram","pctFrom52High","pctFrom52Low"];
+    if (signed.includes(factor)) {
+      if (v > 0) return `rgba(48,209,88,${Math.min(0.8, Math.abs(v)*0.12)})`;
+      return `rgba(255,69,58,${Math.min(0.8, Math.abs(v)*0.12)})`;
+    }
+    const p = Math.max(0, Math.min(100, v));
+    if (p >= 75) return "rgba(48,209,88,0.55)";
+    if (p >= 60) return "rgba(48,209,88,0.28)";
+    if (p >= 40) return "rgba(255,255,255,0.04)";
+    if (p >= 25) return "rgba(255,69,58,0.22)";
+    return "rgba(255,69,58,0.48)";
+  };
+
+  return (
+    <div style={{ height:"100%",display:"flex",flexDirection:"column" }}>
+      <div style={{ padding:"8px 20px",display:"flex",gap:6,flexShrink:0,flexWrap:"wrap",borderBottom:"1px solid rgba(255,255,255,0.06)",alignItems:"center" }}>
+        <span style={{ fontSize:10,color:"rgba(255,255,255,0.35)",marginRight:4 }}>Color by:</span>
+        {FACTOR_AXES.map(a => (
+          <button key={a.key} onClick={() => setFactor(a.key)} style={{
+            padding:"3px 9px",borderRadius:5,fontSize:10,fontWeight:600,cursor:"pointer",
+            background:factor===a.key?"rgba(10,132,255,0.18)":"rgba(255,255,255,0.05)",
+            border:factor===a.key?"1px solid rgba(10,132,255,0.35)":"1px solid transparent",
+            color:factor===a.key?"#0a84ff":"rgba(255,255,255,0.45)",
+          }}>{a.label}</button>
+        ))}
+      </div>
+      <div style={{ flex:1,overflow:"auto",padding:"14px 20px" }}>
+        {bySector.map(([sec, stocks]) => (
+          <div key={sec} style={{ marginBottom:18 }}>
+            <div style={{ fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.35)",letterSpacing:"0.07em",textTransform:"uppercase",marginBottom:7 }}>
+              {sec} <span style={{ fontWeight:400,opacity:0.6 }}>({stocks.length})</span>
+            </div>
+            <div style={{ display:"flex",flexWrap:"wrap",gap:3 }}>
+              {stocks.sort((a,b) => Math.abs(getV(b))-Math.abs(getV(a))).slice(0,60).map(r => {
+                const v = getV(r);
+                const area = Math.max(36, Math.min(80, 36 + (r.marketCap/6e11)*44));
+                return (
+                  <div key={r.symbol} onClick={() => navigate(`/scanner?symbol=${r.symbol}`)}
+                    title={`${r.name}\n${FACTOR_AXES.find(a=>a.key===factor)?.label}: ${typeof v==="number"?v.toFixed(1):v}`}
+                    style={{
+                      width:area,height:area,background:heatColor(v),borderRadius:5,
+                      display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
+                      cursor:"pointer",border:"1px solid rgba(255,255,255,0.05)",transition:"transform 0.1s",
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.transform="scale(1.1)"; e.currentTarget.style.zIndex="5"; e.currentTarget.style.borderColor="rgba(10,132,255,0.5)"; }}
+                    onMouseLeave={e => { e.currentTarget.style.transform="scale(1)"; e.currentTarget.style.zIndex="1"; e.currentTarget.style.borderColor="rgba(255,255,255,0.05)"; }}>
+                    <span style={{ fontSize:Math.max(8,Math.min(11,area/7)),fontWeight:700 }}>{r.symbol}</span>
+                    <span style={{ fontSize:9,opacity:0.65,fontVariantNumeric:"tabular-nums" }}>
+                      {typeof v==="number"?(Math.abs(v)<100?v.toFixed(1):v.toFixed(0)):v}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Scatter View ─────────────────────────────────────────────────────────────
+
+function ScatterView({ rows, xAxis, yAxis, setXAxis, setYAxis, navigate }: {
+  rows: FactoredRow[]; xAxis:string; yAxis:string;
+  setXAxis:(s:string)=>void; setYAxis:(s:string)=>void; navigate:(p:string)=>void;
+}) {
+  const [tip, setTip] = useState<{x:number;y:number;row:FactoredRow}|null>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
+
+  const M = { t:16, r:16, b:38, l:44 };
+  const W = 860, H = 500;
+  const iW = W-M.l-M.r, iH = H-M.t-M.b;
+
+  const gv = (r: FactoredRow, k: string) => { const v=(r as any)[k]; return typeof v==="number"?v:0; };
+
+  const xVals = rows.map(r => gv(r, xAxis));
+  const yVals = rows.map(r => gv(r, yAxis));
+  const xMin = Math.min(...xVals,0), xMax = Math.max(...xVals,1);
+  const yMin = Math.min(...yVals,0), yMax = Math.max(...yVals,1);
+
+  const sx = (v:number) => ((v-xMin)/(xMax-xMin||1))*iW;
+  const sy = (v:number) => iH - ((v-yMin)/(yMax-yMin||1))*iH;
+
+  const xLbl = FACTOR_AXES.find(a=>a.key===xAxis)?.label ?? xAxis;
+  const yLbl = FACTOR_AXES.find(a=>a.key===yAxis)?.label ?? yAxis;
+
+  const dotC = (r:FactoredRow) => r.recommendedOutlook==="bullish"?"#30d158":r.recommendedOutlook==="bearish"?"#ff453a":"#0a84ff";
+  const dotR = (r:FactoredRow) => Math.max(3, Math.min(9, Math.log10(r.marketCap/1e8+1)*2.2));
+
+  return (
+    <div style={{ height:"100%",display:"flex",flexDirection:"column" }}>
+      <div style={{ padding:"8px 20px",display:"flex",gap:14,alignItems:"center",flexShrink:0,borderBottom:"1px solid rgba(255,255,255,0.06)",flexWrap:"wrap" }}>
+        <div style={{ display:"flex",gap:6,alignItems:"center" }}>
+          <span style={{ fontSize:10,color:"rgba(255,255,255,0.35)" }}>X:</span>
+          <select value={xAxis} onChange={e=>setXAxis(e.target.value)} style={{ background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.09)",color:"#fff",borderRadius:6,padding:"3px 7px",fontSize:10,cursor:"pointer" }}>
+            {FACTOR_AXES.map(a=><option key={a.key} value={a.key}>{a.label}</option>)}
+          </select>
+        </div>
+        <div style={{ display:"flex",gap:6,alignItems:"center" }}>
+          <span style={{ fontSize:10,color:"rgba(255,255,255,0.35)" }}>Y:</span>
+          <select value={yAxis} onChange={e=>setYAxis(e.target.value)} style={{ background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.09)",color:"#fff",borderRadius:6,padding:"3px 7px",fontSize:10,cursor:"pointer" }}>
+            {FACTOR_AXES.map(a=><option key={a.key} value={a.key}>{a.label}</option>)}
+          </select>
+        </div>
+        <div style={{ marginLeft:"auto",display:"flex",gap:14,fontSize:10,color:"rgba(255,255,255,0.35)" }}>
+          <span><span style={{ color:"#30d158" }}>●</span> Bullish</span>
+          <span><span style={{ color:"#ff453a" }}>●</span> Bearish</span>
+          <span><span style={{ color:"#0a84ff" }}>●</span> Neutral</span>
+          <span>Size = market cap</span>
+          <span style={{ color:"rgba(255,255,255,0.2)" }}>{rows.length} stocks</span>
+        </div>
+      </div>
+      <div style={{ flex:1,overflow:"hidden",padding:"6px 10px",position:"relative" }}>
+        <svg ref={svgRef} width="100%" height="100%" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet">
+          <g transform={`translate(${M.l},${M.t})`}>
+            {[0,.25,.5,.75,1].map(f => (
+              <g key={f}>
+                <line x1={0} x2={iW} y1={f*iH} y2={f*iH} stroke="rgba(255,255,255,0.04)" strokeWidth={1}/>
+                <line x1={f*iW} x2={f*iW} y1={0} y2={iH} stroke="rgba(255,255,255,0.04)" strokeWidth={1}/>
+                <text x={f*iW} y={iH+14} textAnchor="middle" fill="rgba(255,255,255,0.25)" fontSize={8}>{(xMin+f*(xMax-xMin)).toFixed(1)}</text>
+                <text x={-5} y={iH-f*iH+3} textAnchor="end" fill="rgba(255,255,255,0.25)" fontSize={8}>{(yMin+f*(yMax-yMin)).toFixed(1)}</text>
+              </g>
             ))}
+            <text x={iW/2} y={iH+28} textAnchor="middle" fill="rgba(255,255,255,0.35)" fontSize={10}>{xLbl}</text>
+            <text x={-iH/2} y={-32} textAnchor="middle" fill="rgba(255,255,255,0.35)" fontSize={10} transform="rotate(-90)">{yLbl}</text>
+            {rows.slice(0,500).map(r => (
+              <circle key={r.symbol}
+                cx={sx(gv(r,xAxis))} cy={sy(gv(r,yAxis))} r={dotR(r)}
+                fill={dotC(r)} fillOpacity={0.65} stroke="rgba(0,0,0,0.3)" strokeWidth={0.5}
+                style={{ cursor:"pointer" }}
+                onMouseEnter={e => {
+                  const rect = svgRef.current?.getBoundingClientRect();
+                  if (rect) setTip({ x:e.clientX-rect.left, y:e.clientY-rect.top, row:r });
+                }}
+                onMouseLeave={() => setTip(null)}
+                onClick={() => navigate(`/scanner?symbol=${r.symbol}`)}
+              />
+            ))}
+          </g>
+        </svg>
+        {tip && (
+          <div style={{
+            position:"absolute",left:tip.x+14,top:tip.y-8,
+            background:"#1c1c1e",border:"1px solid rgba(255,255,255,0.12)",
+            borderRadius:10,padding:"10px 14px",minWidth:170,pointerEvents:"none",zIndex:10,
+          }}>
+            <div style={{ fontWeight:700,fontSize:13 }}>{tip.row.symbol}</div>
+            <div style={{ fontSize:10,color:"rgba(255,255,255,0.45)",marginBottom:7 }}>{tip.row.name}</div>
+            <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:"2px 10px",fontSize:10 }}>
+              <span style={{ color:"rgba(255,255,255,0.4)" }}>{xLbl}</span><span style={{ fontVariantNumeric:"tabular-nums" }}>{gv(tip.row,xAxis).toFixed(1)}</span>
+              <span style={{ color:"rgba(255,255,255,0.4)" }}>{yLbl}</span><span style={{ fontVariantNumeric:"tabular-nums" }}>{gv(tip.row,yAxis).toFixed(1)}</span>
+              <span style={{ color:"rgba(255,255,255,0.4)" }}>α Score</span><span style={{ fontVariantNumeric:"tabular-nums",color:"#0a84ff",fontWeight:700 }}>{tip.row.alpha}</span>
+              <span style={{ color:"rgba(255,255,255,0.4)" }}>Price</span><span style={{ fontVariantNumeric:"tabular-nums" }}>${tip.row.price.toFixed(2)}</span>
+              <span style={{ color:"rgba(255,255,255,0.4)" }}>IV Rank</span><span style={{ fontVariantNumeric:"tabular-nums" }}>{tip.row.ivRank.toFixed(0)}</span>
+              <span style={{ color:"rgba(255,255,255,0.4)" }}>Rel Vol</span><span style={{ fontVariantNumeric:"tabular-nums" }}>{tip.row.relVol.toFixed(2)}×</span>
+            </div>
+            <div style={{ marginTop:6,fontSize:9,color:"rgba(10,132,255,0.7)" }}>Click → open in Analysis</div>
           </div>
         )}
-
-        {/* Table */}
-        <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
-          <ScrollArea className="h-full">
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11.5 }}>
-              <thead>
-                <tr style={{ position: "sticky", top: 0, zIndex: 10, background: "hsl(0 0% 6%)", borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
-                  {visCols.map(col => (
-                    <th key={col.key as string}
-                      onClick={() => toggleSort(col.key)}
-                      style={{
-                        padding: "8px 10px", textAlign: col.align ?? "right", fontSize: 10, fontWeight: 600,
-                        letterSpacing: "0.04em", color: sort.key === col.key ? "hsl(var(--primary))" : "hsl(var(--muted-foreground))",
-                        cursor: "pointer", whiteSpace: "nowrap", userSelect: "none",
-                        borderBottom: sort.key === col.key ? "1px solid hsl(var(--primary)/0.4)" : "1px solid transparent",
-                      }}>
-                      <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
-                        {col.label} <SortIcon colKey={col.key} sort={sort} />
-                      </span>
-                    </th>
-                  ))}
-                  <th style={{ width: 32 }} />
-                </tr>
-              </thead>
-              <tbody>
-                {isLoading && (
-                  <tr><td colSpan={visCols.length + 1} style={{ padding: 32, textAlign: "center", color: "hsl(var(--muted-foreground))" }}>Loading universe…</td></tr>
-                )}
-                {!isLoading && filtered.length === 0 && (
-                  <tr><td colSpan={visCols.length + 1} style={{ padding: 40, textAlign: "center", color: "hsl(var(--muted-foreground))", fontSize: 13 }}>No stocks match the current filters.</td></tr>
-                )}
-                {filtered.map((r, i) => (
-                  <tr key={r.symbol}
-                    style={{ borderBottom: "1px solid rgba(255,255,255,0.035)", background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.008)", cursor: "pointer", transition: "background 0.08s" }}
-                    onMouseEnter={e => (e.currentTarget as HTMLTableRowElement).style.background = "rgba(255,255,255,0.035)"}
-                    onMouseLeave={e => (e.currentTarget as HTMLTableRowElement).style.background = i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.008)"}>
-                    {visCols.map(col => (
-                      <td key={col.key as string} style={{ padding: "7px 10px", textAlign: col.align ?? "right", whiteSpace: "nowrap" }}>
-                        {renderCell(col.key, r)}
-                      </td>
-                    ))}
-                    <td style={{ padding: "7px 6px 7px 0" }}>
-                      <Link href={`/scanner?symbol=${r.symbol}`}>
-                        <button style={{ padding: "3px 7px", borderRadius: 4, border: "1px solid rgba(255,255,255,0.1)", background: "transparent", cursor: "pointer", color: "hsl(var(--muted-foreground))", display: "flex", alignItems: "center" }}>
-                          <ArrowRight style={{ width: 10, height: 10 }} />
-                        </button>
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </ScrollArea>
-        </div>
       </div>
     </div>
   );
-}
-
-function renderCell(key: SortKey, r: DerivedRow): React.ReactNode {
-  switch (key) {
-    case "symbol": return (
-      <span style={{ fontWeight: 700, fontSize: 12, letterSpacing: "-0.01em" }}>{r.symbol}</span>
-    );
-    case "name": return (
-      <span style={{ color: "hsl(var(--muted-foreground))", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", display: "block" }}>{r.name}</span>
-    );
-    case "price": return (
-      <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>{fmt.currency(r.price)}</span>
-    );
-    case "changePercent": {
-      const up = r.changePercent >= 0;
-      return (
-        <span style={{ color: up ? "hsl(142 76% 52%)" : "hsl(4 90% 63%)", fontVariantNumeric: "tabular-nums", fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 2 }}>
-          {up ? <ArrowUp style={{ width: 9, height: 9 }} /> : <ArrowDown style={{ width: 9, height: 9 }} />}
-          {Math.abs(r.changePercent).toFixed(2)}%
-        </span>
-      );
-    }
-    case "volume": return <span style={{ color: "hsl(var(--muted-foreground))", fontVariantNumeric: "tabular-nums" }}>{fmt.vol(r.volume)}</span>;
-    case "marketCapB": return <span style={{ fontVariantNumeric: "tabular-nums" }}>{fmt.cap(r.marketCapB)}</span>;
-    case "sector": return <span style={{ color: "hsl(var(--muted-foreground))", fontSize: 10.5 }}>{r.sector ?? "—"}</span>;
-    case "pe": return <span style={{ fontVariantNumeric: "tabular-nums", color: r.pe && r.pe < 15 ? "hsl(142 76% 52%)" : r.pe && r.pe > 50 ? "hsl(4 90% 63%)" : "hsl(var(--foreground))" }}>{fmt.pe(r.pe)}</span>;
-    case "dividendYield": return <span style={{ fontVariantNumeric: "tabular-nums", color: (r.dividendYield ?? 0) > 0 ? "hsl(142 76% 52%)" : "hsl(var(--muted-foreground))" }}>{fmt.div(r.dividendYield)}</span>;
-    case "ivRank": {
-      const c = ivColor(r.ivRank);
-      return (
-        <span style={{ color: c, fontWeight: 600, fontVariantNumeric: "tabular-nums", display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 2 }}>
-          {fmt.ivRank(r.ivRank)}
-          <MiniBar value={r.ivRank ?? 0} max={100} color={c} />
-        </span>
-      );
-    }
-    case "opportunityScore": {
-      const c = scoreColor(r.opportunityScore);
-      return (
-        <span style={{ color: c, fontWeight: 700, fontVariantNumeric: "tabular-nums", display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 2 }}>
-          {r.opportunityScore ?? "—"}
-          <MiniBar value={r.opportunityScore ?? 0} max={200} color={c} />
-        </span>
-      );
-    }
-    case "technicalStrength": {
-      const c = tsColor(r.technicalStrength);
-      return <span style={{ color: c, fontWeight: 600 }}>{fmt.ts(r.technicalStrength)}</span>;
-    }
-    case "momentumScore": {
-      const c = momColor(r.momentumScore);
-      return <span style={{ color: c, fontWeight: 600 }}>{r.momentumScore}/10</span>;
-    }
-    case "pctFrom52High": {
-      const v = r.pctFrom52High;
-      return <span style={{ fontVariantNumeric: "tabular-nums", color: v != null && v >= -5 ? "hsl(142 76% 52%)" : "hsl(var(--muted-foreground))" }}>{v != null ? `${v.toFixed(1)}%` : "—"}</span>;
-    }
-    case "pctFrom52Low": {
-      const v = r.pctFrom52Low;
-      return <span style={{ fontVariantNumeric: "tabular-nums", color: v != null && v <= 10 ? "hsl(4 90% 63%)" : "hsl(var(--muted-foreground))" }}>{v != null ? `+${v.toFixed(1)}%` : "—"}</span>;
-    }
-    case "supportDist": {
-      const v = r.supportDist;
-      return <span style={{ fontVariantNumeric: "tabular-nums", color: v != null && v < 3 ? "hsl(30 95% 60%)" : "hsl(var(--muted-foreground))" }}>{v != null ? `+${v.toFixed(1)}%` : "—"}</span>;
-    }
-    case "resistDist": {
-      const v = r.resistDist;
-      return <span style={{ fontVariantNumeric: "tabular-nums", color: v != null && v < 5 ? "hsl(4 90% 63%)" : "hsl(var(--muted-foreground))" }}>{v != null ? `${v.toFixed(1)}%` : "—"}</span>;
-    }
-    case "recommendedOutlook": {
-      const ol = r.recommendedOutlook ?? "neutral";
-      return <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 6px", borderRadius: 3, background: OL_BG[ol], color: OL_COLOR[ol], textTransform: "capitalize" }}>{ol}</span>;
-    }
-    case "setupType": return <span style={{ fontSize: 10.5, color: "hsl(var(--muted-foreground))" }}>{r.setupType ?? "—"}</span>;
-    case "daysToEarnings": {
-      const v = r.daysToEarnings;
-      const urgent = v != null && v >= 0 && v <= 7;
-      const soon   = v != null && v >= 0 && v <= 14;
-      return <span style={{ fontVariantNumeric: "tabular-nums", color: urgent ? "hsl(4 90% 63%)" : soon ? "hsl(30 95% 60%)" : "hsl(var(--muted-foreground))", fontWeight: urgent ? 700 : 400 }}>{fmt.dte(v != null && v < 0 ? null : v)}</span>;
-    }
-    case "liquidity": return <span style={{ fontSize: 10.5, color: r.liquidity === "Liquid" ? "hsl(142 76% 52%)" : "hsl(var(--muted-foreground))" }}>{r.liquidity ?? "—"}</span>;
-    default: return <span>—</span>;
-  }
 }

@@ -4,6 +4,7 @@ import stocksRouter from "./stocks";
 import watchlistRouter from "./watchlist";
 import strategiesRouter from "./strategies";
 import dashboardRouter from "./dashboard";
+import screenerRouter from "./screener";
 
 const router: IRouter = Router();
 
@@ -12,5 +13,6 @@ router.use(stocksRouter);
 router.use(watchlistRouter);
 router.use(strategiesRouter);
 router.use(dashboardRouter);
+router.use(screenerRouter);
 
 export default router;

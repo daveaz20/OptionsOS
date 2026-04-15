@@ -25,6 +25,8 @@ const QUOTE_TTL = 5 * 60 * 1000;      // 5 min
 const HISTORY_TTL = 30 * 60 * 1000;   // 30 min
 const OPTIONS_TTL = 15 * 60 * 1000;   // 15 min
 
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
 // ─── Quote ────────────────────────────────────────────────────────────────────
 
 export interface MarketQuote {
@@ -41,9 +43,14 @@ export interface MarketQuote {
   fiftyTwoWeekLow: number;
   eps: number;
   pe: number;
+  forwardPE: number;
   dividendYield: number;
   earningsDate: string;
   beta: number;
+  relVol: number;         // volume / avgVolume
+  shortRatio: number;     // days to cover short interest
+  priceTarget: number;    // analyst mean target price
+  recommendation: number; // 1=Strong Buy … 5=Strong Sell (raw analyst mean)
 }
 
 export async function getQuote(symbol: string): Promise<MarketQuote> {
@@ -53,25 +60,32 @@ export async function getQuote(symbol: string): Promise<MarketQuote> {
 
   const q = await yahooFinance.quote(symbol, {}, { validateResult: false });
 
+  const avgVol = q.averageDailyVolume3Month ?? q.regularMarketVolume ?? 1;
+  const vol    = q.regularMarketVolume ?? 0;
   const data: MarketQuote = {
     symbol: q.symbol ?? symbol,
     name: q.longName ?? q.shortName ?? symbol,
     price: q.regularMarketPrice ?? 0,
     change: q.regularMarketChange ?? 0,
     changePercent: q.regularMarketChangePercent ?? 0,
-    volume: q.regularMarketVolume ?? 0,
-    avgVolume: q.averageDailyVolume3Month ?? q.regularMarketVolume ?? 0,
+    volume: vol,
+    avgVolume: avgVol,
     marketCap: q.marketCap ?? 0,
     sector: (q as any).sector ?? "Equity",
     fiftyTwoWeekHigh: q.fiftyTwoWeekHigh ?? 0,
     fiftyTwoWeekLow: q.fiftyTwoWeekLow ?? 0,
     eps: q.epsTrailingTwelveMonths ?? 0,
     pe: q.trailingPE ?? 0,
+    forwardPE: (q as any).forwardPE ?? 0,
     dividendYield: q.trailingAnnualDividendYield ?? 0,
     earningsDate: q.earningsTimestamp
       ? new Date(q.earningsTimestamp * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
       : "TBD",
     beta: (q as any).beta ?? 1,
+    relVol: avgVol > 0 ? round2(vol / avgVol) : 1,
+    shortRatio: (q as any).shortRatio ?? 0,
+    priceTarget: (q as any).targetMeanPrice ?? 0,
+    recommendation: (q as any).recommendationMean ?? 3,
   };
 
   // Enrich with summary detail for sector if not available
@@ -106,26 +120,35 @@ export async function getQuotes(symbols: string[]): Promise<MarketQuote[]> {
     // yahoo-finance2 accepts an array — returns QuoteResult[]
     const raw = await (yahooFinance.quote as any)(missing, {}, { validateResult: false });
     const results: any[] = Array.isArray(raw) ? raw : [raw];
-    const fetched: MarketQuote[] = results.map((q: any) => ({
-      symbol:          q.symbol ?? "",
-      name:            q.longName ?? q.shortName ?? q.symbol ?? "",
-      price:           q.regularMarketPrice ?? 0,
-      change:          q.regularMarketChange ?? 0,
-      changePercent:   q.regularMarketChangePercent ?? 0,
-      volume:          q.regularMarketVolume ?? 0,
-      avgVolume:       q.averageDailyVolume3Month ?? q.regularMarketVolume ?? 0,
-      marketCap:       q.marketCap ?? 0,
-      sector:          q.sector ?? "Equity",
-      fiftyTwoWeekHigh: q.fiftyTwoWeekHigh ?? 0,
-      fiftyTwoWeekLow:  q.fiftyTwoWeekLow ?? 0,
-      eps:              q.epsTrailingTwelveMonths ?? 0,
-      pe:               q.trailingPE ?? 0,
-      dividendYield:    q.trailingAnnualDividendYield ?? 0,
-      earningsDate:     q.earningsTimestamp
-        ? new Date(q.earningsTimestamp * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
-        : "TBD",
-      beta:             q.beta ?? 1,
-    })).filter((q) => q.symbol && q.price > 0);
+    const fetched: MarketQuote[] = results.map((q: any) => {
+      const avgVol2 = q.averageDailyVolume3Month ?? q.regularMarketVolume ?? 1;
+      const vol2    = q.regularMarketVolume ?? 0;
+      return {
+        symbol:          q.symbol ?? "",
+        name:            q.longName ?? q.shortName ?? q.symbol ?? "",
+        price:           q.regularMarketPrice ?? 0,
+        change:          q.regularMarketChange ?? 0,
+        changePercent:   q.regularMarketChangePercent ?? 0,
+        volume:          vol2,
+        avgVolume:       avgVol2,
+        marketCap:       q.marketCap ?? 0,
+        sector:          q.sector ?? "Equity",
+        fiftyTwoWeekHigh: q.fiftyTwoWeekHigh ?? 0,
+        fiftyTwoWeekLow:  q.fiftyTwoWeekLow ?? 0,
+        eps:              q.epsTrailingTwelveMonths ?? 0,
+        pe:               q.trailingPE ?? 0,
+        forwardPE:        q.forwardPE ?? 0,
+        dividendYield:    q.trailingAnnualDividendYield ?? 0,
+        earningsDate:     q.earningsTimestamp
+          ? new Date(q.earningsTimestamp * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+          : "TBD",
+        beta:             q.beta ?? 1,
+        relVol:           avgVol2 > 0 ? round2(vol2 / avgVol2) : 1,
+        shortRatio:       q.shortRatio ?? 0,
+        priceTarget:      q.targetMeanPrice ?? 0,
+        recommendation:   q.recommendationMean ?? 3,
+      };
+    }).filter((q) => q.symbol && q.price > 0);
 
     // Warm individual caches
     for (const q of fetched) setCache(`quote:${q.symbol}`, q, QUOTE_TTL);
@@ -232,29 +255,70 @@ export async function getHistoricalVolatility(symbol: string): Promise<{ hv30: n
   return out;
 }
 
-// ─── Helpers ───────────────────────────────────────────────────────────────
-
-function round2(n: number) { return Math.round(n * 100) / 100; }
-
 // Default scanner universe — 100 liquid, optionable stocks
 export const DEFAULT_UNIVERSE = [
-  // Mega-cap tech
-  "AAPL","MSFT","NVDA","GOOGL","AMZN","META","TSLA","AMD","NFLX","INTC",
-  // Software / Cloud
-  "CRM","ORCL","ADBE","NOW","SNOW","PLTR","MSTR","WDAY","TEAM","DDOG",
-  "MDB","ZS","CRWD","NET","OKTA","HCP","GTLB","TTD","HUBS",
-  // Semis
-  "QCOM","AVGO","MU","ARM","AMAT","LRCX","KLAC","TXN","MRVL","SMCI",
-  // Financials
-  "JPM","BAC","GS","MS","V","MA","PYPL","COIN","AXP","BLK","SCHW","WFC",
-  // Healthcare / Biotech
-  "UNH","JNJ","PFE","ABBV","LLY","MRK","MRNA","GILD","BIIB","REGN","BMY",
-  // Consumer / Retail
-  "COST","WMT","TGT","HD","LOW","MCD","SBUX","NKE","DIS","AMGN",
-  // Industrials / Defense
-  "CAT","DE","GE","HON","RTX","BA","LMT","NOC","UPS","FDX",
-  // Energy
-  "XOM","CVX","SLB","COP","OXY",
-  // ETFs (broad, high-vol)
-  "SPY","QQQ","IWM","GLD","TLT","VXX","XLE","XLF","XLK","ARKK",
+  // ── Mega-Cap Tech ──────────────────────────────────────────────────────────
+  "AAPL","MSFT","NVDA","GOOGL","GOOG","AMZN","META","TSLA","AVGO","ORCL",
+  // ── Software / Cloud ───────────────────────────────────────────────────────
+  "CRM","ADBE","NOW","INTU","SNOW","PLTR","WDAY","TEAM","DDOG","MDB",
+  "ZS","CRWD","NET","OKTA","FTNT","PANW","HUBS","TTD","GDDY","DOCN",
+  "CFLT","GTLB","U","RBLX","APP","AI","BBAI","SOUN","ASAN","ZI",
+  // ── Semiconductors ─────────────────────────────────────────────────────────
+  "AMD","INTC","QCOM","MU","ARM","AMAT","LRCX","KLAC","MCHP","TXN",
+  "MRVL","SMCI","ADI","SWKS","MPWR","NXPI","ON","WOLF","ENPH","FSLR",
+  "ANET","KEYS","NTAP","SNPS","CDNS","ANSS","EPAM","CTSH","ACN","IBM",
+  "HPQ","HPE","CSCO","TEL","GLW","JNPR","FFIV","AKAM","CDW","LDOS",
+  // ── Financials ─────────────────────────────────────────────────────────────
+  "JPM","BAC","WFC","GS","MS","C","AXP","V","MA","BLK","SCHW","BK",
+  "COF","USB","PNC","TFC","SPGI","MCO","ICE","CME","CBOE","MSCI",
+  "FIS","FISV","DFS","SYF","ALLY","MTB","CFG","RF","FITB","HBAN","KEY",
+  "PRU","MET","AFL","ALL","MMC","AJG","PGR","HIG","CB","TRV","CINF",
+  "PYPL","COIN","SQ","HOOD","SOFI","NDAQ","MKTX","RJF","SEIC","LPLA",
+  // ── Healthcare / Biotech ───────────────────────────────────────────────────
+  "UNH","JNJ","LLY","ABBV","MRK","TMO","ABT","DHR","ISRG","BSX",
+  "MDT","SYK","BMY","GILD","VRTX","AMGN","REGN","PFE","MRNA","BIIB",
+  "CI","CVS","HCA","ELV","MCK","IQV","BDX","ZTS","IDXX","DGX",
+  "PODD","INCY","ALNY","ILMN","EXAS","HOLX","VRTX","GEHC","BAX","EW",
+  "HUM","MOH","CNC","WBA","RMD","DXCM","ALGN","STE","BIO","PKI",
+  // ── Consumer Discretionary ─────────────────────────────────────────────────
+  "AMZN","TSLA","HD","MCD","NKE","SBUX","TGT","LOW","BKNG","ABNB",
+  "CMG","DHI","LEN","PHM","MAR","HLT","RCL","CCL","NCLH","LYV",
+  "EA","TTWO","F","GM","ROST","TJX","ULTA","LULU","RL","TPR",
+  "CPRI","VFC","GAP","BBWI","BBY","AZO","ORLY","GPC","KMX","AN",
+  "DIS","NFLX","CHWY","W","ETSY","EBAY","EXPE","VRSK","YELP","TRIP",
+  // ── Consumer Staples ───────────────────────────────────────────────────────
+  "WMT","COST","PG","KO","PEP","PM","MO","MDLZ","CL","GIS",
+  "K","KMB","CLX","EL","HRL","CAG","MKC","SJM","CHD","HSY",
+  "MNST","KDP","KHC","STZ","TAP","BG","ADM","MOS","INGR","SFM",
+  // ── Energy ─────────────────────────────────────────────────────────────────
+  "XOM","CVX","COP","SLB","EOG","MPC","PSX","VLO","HAL","OXY",
+  "DVN","HES","APA","MRO","CTRA","EQT","RRC","AR","FANG","BKR",
+  "NOV","CHK","WMB","OKE","KMI","LNG","ET","EPD","MPLX","PAA",
+  // ── Industrials / Defense ──────────────────────────────────────────────────
+  "GE","RTX","HON","UPS","BA","CAT","DE","MMM","ITW","EMR",
+  "LMT","NOC","GD","TDG","LHX","PH","ETN","ROK","AME","GWW",
+  "FAST","IR","FTV","ROP","CTAS","SWK","XYL","TRMB","PCAR","ODFL",
+  "CHRW","EXPD","JBHT","NSC","CSX","UNP","CP","WAB","TT","CARR",
+  "OTIS","MAS","SNA","PNR","GNRC","AOS","LII","FDX","DAL","UAL",
+  "AAL","LUV","ALK","HA","SAVE","JBLU","UBER","LYFT","DKNG","PENN",
+  // ── Materials ──────────────────────────────────────────────────────────────
+  "LIN","APD","ECL","DD","NEM","FCX","CTVA","CF","ALB","PKG",
+  "IP","PPG","SHW","RPM","EMN","HUN","CE","WRK","SON","SEE",
+  "BALL","ATR","ARW","AVY","GEF","FMC","IFF","NUE","STLD","RS",
+  // ── Real Estate ────────────────────────────────────────────────────────────
+  "AMT","PLD","CCI","EQIX","SBAC","DLR","PSA","EXR","VICI","SPG",
+  "AVB","EQR","ESS","MAA","UDR","CPT","INVH","AMH","WY","WPC",
+  "NNN","VNO","BXP","WELL","MPW","OHI","NHI","LTC","HR","CBRE",
+  // ── Utilities ──────────────────────────────────────────────────────────────
+  "NEE","DUK","SO","D","EXC","XEL","AEE","ES","FE","ETR",
+  "PPL","WEC","AWK","CMS","PNW","AES","EIX","PCG","PEG","DTE",
+  "CNP","NRG","VST","BEP","EVA","BEPC","AQN","CWEN","OGE","EVRG",
+  // ── Communication Services ─────────────────────────────────────────────────
+  "CMCSA","T","VZ","TMUS","WBD","PARA","FOXA","DISH","OMC","IPG",
+  "MTCH","SNAP","PINS","RDDT","SPOT","BIDU","NTES","MSTR","LUMN","IDT",
+  // ── ETFs / Volatility Products ─────────────────────────────────────────────
+  "SPY","QQQ","IWM","DIA","GLD","SLV","TLT","HYG","VXX","UVXY",
+  "XLE","XLF","XLK","XLV","XLI","XLP","XLY","XLC","XLRE","XLU","XLB",
+  "SMH","SOXX","IBB","XBI","GDX","GDXJ","USO","UNG","FXI","EEM","EFA",
+  "ARKK","TNA","TQQQ","SQQQ","SPXU","UVIX","SVXY",
 ];
