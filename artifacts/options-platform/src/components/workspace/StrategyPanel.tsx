@@ -634,30 +634,49 @@ function MetricCell({ label, value, valueColor }: { label: string; value: string
 // ── P&L Simulator (collapsible, slider + typeable) ───────────────────────
 function PnlSimulator({ strategy, currentPrice, symbol }: { strategy: OptionsStrategy; currentPrice: number; symbol: string }) {
   const [targetPrice, setTargetPrice] = useState(currentPrice || 100);
-  const [daysToExpiry, setDaysToExpiry] = useState(30);
+  // targetDate tracks the exact date — syncs from strategy.expirationDate on change
+  const [targetDate, setTargetDate] = useState(strategy.expirationDate);
   const [iv, setIv] = useState(30);
+
+  // Sync when strategy expiry changes (e.g. after Modify → Apply)
+  useEffect(() => { setTargetDate(strategy.expirationDate); }, [strategy.expirationDate]);
+  // Sync target price when stock loads
+  useEffect(() => { if (currentPrice > 0 && targetPrice === 0) setTargetPrice(currentPrice); }, [currentPrice]);
+
+  // Date slider: position 0→1 across today…strategy expiry
+  const todayMs = Date.now();
+  const stratExpiryMs = new Date(strategy.expirationDate).getTime();
+  const targetMs = new Date(targetDate).getTime();
+  const dateSliderPct = stratExpiryMs > todayMs
+    ? Math.min(1, Math.max(0, (targetMs - todayMs) / (stratExpiryMs - todayMs)))
+    : 1;
+  const totalDays = Math.max(1, Math.round((stratExpiryMs - todayMs) / 86_400_000));
+  const dte = Math.max(1, Math.round((new Date(targetDate).getTime() - todayMs) / 86_400_000));
+  const todayStr = new Date().toISOString().split("T")[0]!;
+
+  const setDateFromSlider = (pct: number) => {
+    const ms = todayMs + pct * (stratExpiryMs - todayMs);
+    setTargetDate(new Date(ms).toISOString().split("T")[0]!);
+  };
 
   const calculatePnl = useCalculatePnl();
   const { data: pnlData, isLoading } = calculatePnl;
 
   useEffect(() => {
-    if (currentPrice > 0 && targetPrice === 0) setTargetPrice(currentPrice);
-    const targetDate = new Date();
-    targetDate.setDate(targetDate.getDate() + daysToExpiry);
     const timer = setTimeout(() => {
       calculatePnl.mutate({
         symbol,
         data: {
           strategyId: strategy.id,
           targetPrice,
-          targetDate: targetDate.toISOString().split("T")[0]!,
+          targetDate,
           impliedVolatility: iv,
           outlook: strategy.outlook,
         },
       });
     }, 400);
     return () => clearTimeout(timer);
-  }, [strategy.id, targetPrice, daysToExpiry, iv, currentPrice, symbol]);
+  }, [strategy.id, strategy.expirationDate, targetPrice, targetDate, iv, currentPrice, symbol]);
 
   const minP = currentPrice * 0.7;
   const maxP = currentPrice * 1.3;
@@ -665,9 +684,41 @@ function PnlSimulator({ strategy, currentPrice, symbol }: { strategy: OptionsStr
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       <div style={{ background: "rgba(255,255,255,0.03)", borderRadius: 8, border: "1px solid rgba(255,255,255,0.06)", padding: "12px", display: "flex", flexDirection: "column", gap: 12 }}>
-        <SimSlider label="Target price"      value={[targetPrice]}    min={minP} max={maxP} step={0.5} prefix="$" onChange={([v]) => setTargetPrice(v!)} />
-        <SimSlider label="Days to expiry"    value={[daysToExpiry]}   min={0}    max={90}  step={1}   suffix="d" onChange={([v]) => setDaysToExpiry(v!)} />
-        <SimSlider label="Implied volatility" value={[iv]}            min={10}   max={150} step={1}   suffix="%" onChange={([v]) => setIv(v!)} />
+        <SimSlider label="Goes to this price" value={[targetPrice]} min={minP} max={maxP} step={0.5} prefix="$" onChange={([v]) => setTargetPrice(v!)} />
+
+        {/* Date row — date input + Today→Expiry slider */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <span style={{ fontSize: 10, color: "hsl(var(--muted-foreground))", fontWeight: 500 }}>By this date</span>
+            <input
+              type="date"
+              value={targetDate}
+              min={todayStr}
+              max={strategy.expirationDate}
+              onChange={e => { if (e.target.value) setTargetDate(e.target.value); }}
+              style={{
+                padding: "2px 6px", borderRadius: 5, fontSize: 10, fontWeight: 600,
+                border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.06)",
+                color: "hsl(var(--foreground))", outline: "none", cursor: "pointer",
+                colorScheme: "dark",
+              }}
+            />
+          </div>
+          {/* Today → Expiry scrubber */}
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ fontSize: 9, color: "hsl(var(--muted-foreground))", flexShrink: 0 }}>Today</span>
+            <input
+              type="range" min={0} max={1000} step={1}
+              value={Math.round(dateSliderPct * 1000)}
+              onChange={e => setDateFromSlider(Number(e.target.value) / 1000)}
+              style={{ flex: 1, accentColor: "hsl(var(--primary))", cursor: "pointer", height: 4 }}
+            />
+            <span style={{ fontSize: 9, color: "hsl(var(--muted-foreground))", flexShrink: 0 }}>Expiry · {totalDays}d</span>
+          </div>
+          <div style={{ fontSize: 9, color: "hsl(var(--muted-foreground))", textAlign: "center" }}>{dte}d to target</div>
+        </div>
+
+        <SimSlider label="Implied volatility" value={[iv]} min={10} max={150} step={1} suffix="%" onChange={([v]) => setIv(v!)} />
       </div>
 
       {isLoading && !pnlData ? (
