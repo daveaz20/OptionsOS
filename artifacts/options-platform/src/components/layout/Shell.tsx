@@ -1,6 +1,5 @@
 import { Link, useLocation } from "wouter";
 import { Activity, Settings } from "lucide-react";
-import { cn } from "@/lib/utils";
 
 interface ShellProps {
   children: React.ReactNode;
@@ -8,6 +7,11 @@ interface ShellProps {
 
 export function Shell({ children }: ShellProps) {
   const [location] = useLocation();
+
+  const navItems = [
+    { href: "/", label: "Dashboard" },
+    { href: "/scanner", label: "Scanner" },
+  ];
 
   return (
     <div className="flex h-[100dvh] w-full flex-col overflow-hidden bg-background text-foreground font-sans">
@@ -33,28 +37,28 @@ export function Shell({ children }: ShellProps) {
           </Link>
 
           <nav style={{ display: "flex", gap: 2 }}>
-            {[
-              { href: "/", label: "Workspace" },
-              { href: "/dashboard", label: "Dashboard" },
-            ].map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                style={{
-                  padding: "4px 12px",
-                  borderRadius: 6,
-                  fontSize: 13,
-                  fontWeight: location === item.href ? 500 : 400,
-                  color: location === item.href ? "hsl(var(--foreground))" : "hsl(var(--muted-foreground))",
-                  background: location === item.href ? "rgba(255,255,255,0.07)" : "transparent",
-                  textDecoration: "none",
-                  transition: "all 0.12s",
-                  letterSpacing: "-0.01em",
-                }}
-              >
-                {item.label}
-              </Link>
-            ))}
+            {navItems.map((item) => {
+              const active = location === item.href;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  style={{
+                    padding: "4px 12px",
+                    borderRadius: 6,
+                    fontSize: 13,
+                    fontWeight: active ? 500 : 400,
+                    color: active ? "hsl(var(--foreground))" : "hsl(var(--muted-foreground))",
+                    background: active ? "rgba(255,255,255,0.07)" : "transparent",
+                    textDecoration: "none",
+                    transition: "all 0.12s",
+                    letterSpacing: "-0.01em",
+                  }}
+                >
+                  {item.label}
+                </Link>
+              );
+            })}
           </nav>
         </div>
 

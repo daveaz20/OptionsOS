@@ -6,7 +6,7 @@ import { StockDetailPanel } from "@/components/workspace/StockDetailPanel";
 import { StrategyPanel } from "@/components/workspace/StrategyPanel";
 import { useGetStock } from "@workspace/api-client-react";
 
-export default function WorkspacePage() {
+export default function ScannerPage() {
   const [location] = useLocation();
   const initialSymbol = (() => {
     try {
@@ -17,7 +17,6 @@ export default function WorkspacePage() {
 
   const [selectedSymbol, setSelectedSymbol] = useState<string>(initialSymbol);
 
-  // If the URL changes (e.g. navigating from dashboard with ?symbol=XYZ), update selection
   useEffect(() => {
     try {
       const params = new URLSearchParams(window.location.search);

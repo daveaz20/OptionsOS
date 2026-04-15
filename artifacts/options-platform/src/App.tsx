@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "next-themes";
-import WorkspacePage from "@/pages/workspace";
+import ScannerPage from "@/pages/workspace";
 import DashboardPage from "@/pages/dashboard";
 import NotFound from "@/pages/not-found";
 import { Shell } from "@/components/layout/Shell";
@@ -21,8 +21,8 @@ function Router() {
   return (
     <Shell>
       <Switch>
-        <Route path="/" component={WorkspacePage} />
-        <Route path="/dashboard" component={DashboardPage} />
+        <Route path="/" component={DashboardPage} />
+        <Route path="/scanner" component={ScannerPage} />
         <Route component={NotFound} />
       </Switch>
     </Shell>
