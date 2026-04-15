@@ -5,6 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "next-themes";
 import ScannerPage from "@/pages/workspace";
 import DashboardPage from "@/pages/dashboard";
+import ScreenerPage from "@/pages/screener";
 import NotFound from "@/pages/not-found";
 import { Shell } from "@/components/layout/Shell";
 
@@ -23,6 +24,7 @@ function Router() {
       <Switch>
         <Route path="/" component={DashboardPage} />
         <Route path="/scanner" component={ScannerPage} />
+        <Route path="/screener" component={ScreenerPage} />
         <Route component={NotFound} />
       </Switch>
     </Shell>
