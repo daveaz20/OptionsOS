@@ -1,4 +1,5 @@
-import { useMemo, useState, useCallback } from "react";
+import { useMemo, useState, useCallback, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   useGetDashboardSummary, useGetTopMovers, useGetWatchlist,
   useListStocks, getGetWatchlistQueryKey, useRemoveFromWatchlist,
@@ -124,32 +125,121 @@ function Skeleton({ h = 44, cols = 1 }: { h?: number; cols?: number }) {
   );
 }
 
+// ── Market status pill ────────────────────────────────────────────────────
+
+function useMarketOpen() {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    function check() {
+      try {
+        const etStr = new Date().toLocaleString("en-US", { timeZone: "America/New_York" });
+        const et = new Date(etStr);
+        const day = et.getDay();
+        if (day === 0 || day === 6) { setOpen(false); return; }
+        const totalMin = et.getHours() * 60 + et.getMinutes();
+        setOpen(totalMin >= 9 * 60 + 30 && totalMin < 16 * 60);
+      } catch { setOpen(false); }
+    }
+    check();
+    const t = setInterval(check, 60_000);
+    return () => clearInterval(t);
+  }, []);
+  return open;
+}
+
+function MarketStatusPill() {
+  const open = useMarketOpen();
+  const color = open ? "hsl(var(--success))" : "hsl(var(--muted-foreground))";
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 12px", borderRadius: 99,
+      background: open ? "hsl(var(--success)/0.1)" : "rgba(255,255,255,0.04)",
+      border: `1px solid ${open ? "hsl(var(--success)/0.2)" : "rgba(255,255,255,0.08)"}` }}>
+      <div style={{ width: 6, height: 6, borderRadius: "50%", background: color,
+        boxShadow: open ? `0 0 6px ${color}` : "none" }} />
+      <span style={{ fontSize: 11, fontWeight: 600, color }}>{open ? "Market Open" : "Market Closed"}</span>
+    </div>
+  );
+}
+
+// ── Market stats hook (full-universe, accurate) ────────────────────────────
+
+interface MarketStats {
+  total: number; bull: number; bear: number; neutral: number;
+  breadth: number; highConviction: number; technicalsCount: number;
+  highIv: number; avgIv: number; bestScore: number; marketOpen: boolean;
+  source: string; cachedAt: number;
+}
+
+function useMarketStats() {
+  return useQuery<MarketStats>({
+    queryKey: ["screener-stats"],
+    queryFn: async () => {
+      const res = await fetch("/api/screener/stats");
+      if (!res.ok) throw new Error("failed");
+      return res.json();
+    },
+    staleTime: 60 * 1000,
+    refetchInterval: 60 * 1000,
+  });
+}
+
 // ── Module components ─────────────────────────────────────────────────────
 
-function StatsModule({ stocks, loadingStocks }: { stocks: Stock[]; loadingStocks: boolean }) {
-  const bull = stocks.filter(s => s.changePercent > 0).length;
-  const bear = stocks.filter(s => s.changePercent < 0).length;
-  const neutral = stocks.filter(s => s.changePercent === 0).length;
-  const sentiment = bull > bear ? "bullish" : bear > bull ? "bearish" : "neutral";
-  const highConv = stocks.filter(s => (s.opportunityScore ?? 0) >= 65).length;
-  const highIv = stocks.filter(s => (s.ivRank ?? 0) >= 50).length;
-  const avgIv = stocks.length > 0 ? Math.round(stocks.reduce((a, s) => a + (s.ivRank ?? 0), 0) / stocks.length) : 0;
-  const bestScore = stocks.reduce((mx, s) => Math.max(mx, s.opportunityScore ?? 0), 0);
+function StatsModule({ stocks: _stocks, loadingStocks: _loadingStocks }: { stocks: Stock[]; loadingStocks: boolean }) {
+  const { data: mkt, isLoading: loadingStats } = useMarketStats();
+  const loading = loadingStats;
+
+  const bull    = mkt?.bull    ?? 0;
+  const bear    = mkt?.bear    ?? 0;
+  const neutral = mkt?.neutral ?? 0;
+  const total   = mkt?.total   ?? 0;
+  const breadth = mkt?.breadth ?? 50;
+
+  const breadthColor = breadth >= 60 ? "hsl(var(--success))" : breadth <= 40 ? "hsl(var(--destructive))" : "hsl(var(--primary))";
+  const breadthLabel = breadth >= 60 ? "Advancing" : breadth <= 40 ? "Declining" : "Mixed";
 
   const stats = [
-    { label: "SENTIMENT",    value: <span style={{ color: OUTLOOK_COLOR[sentiment], textTransform: "capitalize" }}>{sentiment}</span>,                    sub: `${stocks.length} stocks` },
-    { label: "TRACKED",      value: stocks.length,                                                                                                         sub: "in universe" },
-    { label: "SETUPS FOUND", value: <span style={{ color: "hsl(var(--success))" }}>{highConv}</span>,                                                      sub: "high conviction ≥ 65" },
-    { label: "HIGH IV",      value: <span style={{ color: "hsl(30 95% 60%)" }}>{highIv}</span>,                                                            sub: "IV rank ≥ 50" },
-    { label: "AVG IV RANK",  value: `${avgIv}%`,                                                                                                           sub: "across universe" },
-    { label: "BEST SCORE",   value: <span style={{ color: "hsl(var(--success))" }}>{bestScore}</span>,                                                     sub: "top opportunity" },
-    { label: "BREADTH",      value: <span style={{ fontSize: 16, display: "flex", gap: 5, alignItems: "baseline" }}>
-      <span style={{ color: "hsl(var(--success))" }}>{bull}</span>
-      <span style={{ color: "rgba(255,255,255,0.2)", fontSize: 11 }}>·</span>
-      <span style={{ color: "hsl(var(--muted-foreground))" }}>{neutral}</span>
-      <span style={{ color: "rgba(255,255,255,0.2)", fontSize: 11 }}>·</span>
-      <span style={{ color: "hsl(var(--destructive))" }}>{bear}</span>
-    </span>,                                                                                                                                                sub: "bull · neutral · bear" },
+    {
+      label: "BREADTH",
+      value: <span style={{ color: breadthColor }}>{breadthLabel}</span>,
+      sub: `${breadth}% advancing · ${total.toLocaleString()} stocks`,
+    },
+    {
+      label: "UNIVERSE",
+      value: total.toLocaleString(),
+      sub: mkt?.source === "polygon" ? "Polygon universe" : "Yahoo universe",
+    },
+    {
+      label: "SETUPS FOUND",
+      value: <span style={{ color: "hsl(var(--success))" }}>{mkt?.highConviction ?? 0}</span>,
+      sub: `high conviction ≥ 75 · of ${mkt?.technicalsCount ?? 0} scored`,
+    },
+    {
+      label: "HIGH IV",
+      value: <span style={{ color: "hsl(30 95% 60%)" }}>{mkt?.highIv ?? 0}</span>,
+      sub: "IV rank ≥ 50",
+    },
+    {
+      label: "AVG IV RANK",
+      value: `${mkt?.avgIv ?? 0}%`,
+      sub: "across scored universe",
+    },
+    {
+      label: "BEST SCORE",
+      value: <span style={{ color: "hsl(var(--success))" }}>{mkt?.bestScore ?? 0}</span>,
+      sub: "top opportunity score",
+    },
+    {
+      label: "ADVANCES / DECLINES",
+      value: <span style={{ fontSize: 16, display: "flex", gap: 5, alignItems: "baseline" }}>
+        <span style={{ color: "hsl(var(--success))" }}>{bull}</span>
+        <span style={{ color: "rgba(255,255,255,0.2)", fontSize: 11 }}>·</span>
+        <span style={{ color: "hsl(var(--muted-foreground))" }}>{neutral}</span>
+        <span style={{ color: "rgba(255,255,255,0.2)", fontSize: 11 }}>·</span>
+        <span style={{ color: "hsl(var(--destructive))" }}>{bear}</span>
+      </span>,
+      sub: "up · flat · down",
+    },
   ];
 
   return (
@@ -157,7 +247,7 @@ function StatsModule({ stocks, loadingStocks }: { stocks: Stock[]; loadingStocks
       {stats.map((s, i) => (
         <div key={i} style={{ padding: "13px 14px", borderRadius: 9, border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.02)" }}>
           <div style={{ fontSize: 9.5, letterSpacing: "0.05em", color: "hsl(var(--muted-foreground))", marginBottom: 7, fontWeight: 500 }}>{s.label}</div>
-          {loadingStocks
+          {loading
             ? <div style={{ height: 26, borderRadius: 4, background: "rgba(255,255,255,0.06)", animation: "pulse 1.4s infinite", marginBottom: 4 }} />
             : <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums", marginBottom: 3 }}>{s.value}</div>
           }
@@ -842,10 +932,7 @@ export default function DashboardPage() {
             <p style={{ fontSize: 12.5, color: "hsl(var(--muted-foreground))" }}>{dateStr}</p>
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 12px", borderRadius: 99, background: "hsl(var(--success)/0.1)", border: "1px solid hsl(var(--success)/0.2)" }}>
-              <div style={{ width: 6, height: 6, borderRadius: "50%", background: "hsl(var(--success))", boxShadow: "0 0 6px hsl(var(--success))" }} />
-              <span style={{ fontSize: 11, fontWeight: 600, color: "hsl(var(--success))" }}>Market Open</span>
-            </div>
+            <MarketStatusPill />
             <button onClick={() => setCustomizing(true)} style={{
               display: "flex", alignItems: "center", gap: 6, padding: "6px 14px", borderRadius: 7,
               border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.05)",

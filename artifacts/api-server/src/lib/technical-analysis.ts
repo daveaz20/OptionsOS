@@ -1,7 +1,7 @@
 /**
  * Technical Analysis Engine
- * Computes RSI, MACD, moving averages, support/resistance,
- * volume signals, and the composite OptionsPlay-style strength score (0-10).
+ * Computes RSI (Wilder's), MACD (proper EMA series), moving averages,
+ * support/resistance, volume signals, and the composite strength score (0–10).
  */
 
 import type { OHLCV } from "./market-data.js";
@@ -33,16 +33,16 @@ export function computeSignals(candles: OHLCV[], currentPrice: number): Technica
   const vols   = candles.map((c) => c.volume);
 
   // ── Indicators ──────────────────────────────────────────────────────────
-  const rsi14   = calcRSI(closes, 14);
-  const macd    = calcMACD(closes);
-  const sma20   = sma(closes, 20);
-  const sma50   = sma(closes, 50);
-  const sma200  = sma(closes, 200);
-  const atr14   = calcATR(highs, lows, closes, 14);
-  const volAvg  = avg(vols.slice(-20));
+  const rsi14  = calcRSI(closes, 14);
+  const macd   = calcMACD(closes);
+  const sma20  = sma(closes, 20);
+  const sma50  = sma(closes, 50);
+  const sma200 = sma(closes, 200);
+  const atr14  = calcATR(highs, lows, closes, 14);
+  const volAvg = avg(vols.slice(-20));
   const volRatio = volAvg > 0 ? vols[vols.length - 1] / volAvg : 1;
 
-  // ── Support / Resistance (swing pivots over last 30 bars) ─────────────
+  // ── Support / Resistance (swing pivots over last 60 bars) ─────────────
   const { support, resistance } = findSupportResistance(highs, lows, currentPrice);
 
   // ── Trend ────────────────────────────────────────────────────────────
@@ -59,46 +59,43 @@ export function computeSignals(candles: OHLCV[], currentPrice: number): Technica
   else if (!aboveSma50 && !aboveSma200) trend = "bearish";
 
   // ── Composite Strength Score (0–10) ──────────────────────────────────
-  // Each factor contributes a partial score; max = 10
   let score = 0;
 
-  // RSI zone (0-2 pts): 40-70 bullish range
+  // RSI zone (0–2 pts): 40–70 bullish range
   if (rsi14 >= 55 && rsi14 <= 70) score += 2;
   else if (rsi14 >= 45 && rsi14 < 55) score += 1.2;
-  else if (rsi14 > 70) score += 0.8; // overbought — less ideal
+  else if (rsi14 > 70) score += 0.8;
   else if (rsi14 >= 35 && rsi14 < 45) score += 0.5;
-  // <35 or >70 = 0 additional
 
-  // MACD (0-2 pts)
+  // MACD (0–2 pts)
   if (macd.histogram > 0 && macd.value > macd.signal) score += 2;
   else if (macd.histogram > 0) score += 1;
   else if (macd.histogram < 0 && macd.value < macd.signal) score += 0;
   else score += 0.5;
 
-  // Moving average stack (0-3 pts)
-  if (aboveSma20) score += 0.8;
-  if (aboveSma50) score += 1;
+  // Moving average stack (0–3 pts)
+  if (aboveSma20)  score += 0.8;
+  if (aboveSma50)  score += 1;
   if (aboveSma200) score += 0.8;
-  if (bullStack) score += 0.4;
+  if (bullStack)   score += 0.4;
 
-  // Volume confirmation (0-1.5 pts): high volume on up days
+  // Volume confirmation (0–1.5 pts): high volume on up days
   const last5 = candles.slice(-5);
   const upOnVolume = last5.filter((c) => c.close > c.open && c.volume > volAvg).length;
   score += (upOnVolume / 5) * 1.5;
 
-  // Price action vs support (0-1.5 pts): near support = opportunity
+  // Price action vs support (0–1.5 pts): near support = opportunity
   const range = resistance - support;
   if (range > 0) {
-    const pos = (currentPrice - support) / range; // 0=at support, 1=at resistance
+    const pos = (currentPrice - support) / range;
     if (pos >= 0.1 && pos <= 0.5) score += 1.5;
-    else if (pos < 0.1) score += 0.8; // right at support
+    else if (pos < 0.1) score += 0.8;
     else if (pos <= 0.7) score += 1;
-    else score += 0.3; // near resistance
+    else score += 0.3;
   }
 
   const strength = Math.min(10, Math.max(1, Math.round(score * 10) / 10));
 
-  // ── Price Action Description ─────────────────────────────────────────
   const priceAction = buildPriceAction(trend, rsi14, macd, aboveSma50, volRatio, atr14, currentPrice);
 
   return {
@@ -118,85 +115,116 @@ export function computeSignals(candles: OHLCV[], currentPrice: number): Technica
   };
 }
 
-// ─── Individual Indicator Implementations ─────────────────────────────────
+// ─── RSI — Wilder's Smoothed Moving Average (industry standard) ───────────────
 
-function calcRSI(closes: number[], period: number): number {
+function calcRSI(closes: number[], period: number = 14): number {
   if (closes.length < period + 1) return 50;
-  let gains = 0, losses = 0;
-  for (let i = closes.length - period; i < closes.length; i++) {
+
+  // Seed: simple average of first `period` changes
+  let sumGain = 0, sumLoss = 0;
+  for (let i = 1; i <= period; i++) {
     const diff = closes[i] - closes[i - 1];
-    if (diff > 0) gains += diff; else losses -= diff;
+    if (diff > 0) sumGain += diff; else sumLoss -= diff;
   }
-  const avgGain = gains / period;
-  const avgLoss = losses / period;
+  let avgGain = sumGain / period;
+  let avgLoss = sumLoss / period;
+
+  // Wilder's smoothing for the remaining bars
+  for (let i = period + 1; i < closes.length; i++) {
+    const diff = closes[i] - closes[i - 1];
+    const gain = diff > 0 ? diff : 0;
+    const loss = diff < 0 ? -diff : 0;
+    avgGain = (avgGain * (period - 1) + gain) / period;
+    avgLoss = (avgLoss * (period - 1) + loss) / period;
+  }
+
   if (avgLoss === 0) return 100;
+  if (avgGain === 0) return 0;
   const rs = avgGain / avgLoss;
   return 100 - 100 / (1 + rs);
 }
 
+// ─── MACD — proper EMA(12,26,9) implementation ────────────────────────────────
+
 function calcMACD(closes: number[]): { value: number; signal: number; histogram: number } {
-  const ema12 = emaOf(closes, 12);
-  const ema26 = emaOf(closes, 26);
-  if (!ema12 || !ema26) return { value: 0, signal: 0, histogram: 0 };
+  if (closes.length < 35) return { value: 0, signal: 0, histogram: 0 };
 
-  // Build MACD line series then EMA9 of it
-  const macdLine: number[] = [];
-  const len = Math.min(closes.length - 12, closes.length - 26);
-  if (len <= 0) return { value: 0, signal: 0, histogram: 0 };
+  const ema12 = emaSeries(closes, 12); // length: closes.length - 11
+  const ema26 = emaSeries(closes, 26); // length: closes.length - 25
 
-  // Simplified: just use current EMAs
-  const macdVal = ema12 - ema26;
-  const signal = emaOf([...Array(9).fill(macdVal * 0.9), macdVal], 9) ?? macdVal;
-  return { value: macdVal, signal, histogram: macdVal - signal };
-}
+  // Align: offset ema12 so indices match ema26
+  const offset = ema12.length - ema26.length; // = 14
+  const macdLine = ema26.map((e26, i) => ema12[i + offset]! - e26);
 
-function emaOf(closes: number[], period: number): number | null {
-  if (closes.length < period) return null;
-  const k = 2 / (period + 1);
-  let ema = closes.slice(0, period).reduce((s, v) => s + v, 0) / period;
-  for (let i = period; i < closes.length; i++) {
-    ema = closes[i] * k + ema * (1 - k);
+  if (macdLine.length < 9) {
+    const v = macdLine[macdLine.length - 1] ?? 0;
+    return { value: v, signal: v, histogram: 0 };
   }
-  return ema;
+
+  const signalLine = emaSeries(macdLine, 9);
+
+  const value  = macdLine[macdLine.length - 1]!;
+  const signal = signalLine[signalLine.length - 1]!;
+
+  return { value, signal, histogram: value - signal };
 }
+
+// Incremental EMA series (returns array of EMA values starting from bar `period`)
+function emaSeries(data: number[], period: number): number[] {
+  if (data.length < period) return [];
+  const k = 2 / (period + 1);
+  const result: number[] = [];
+  let ema = data.slice(0, period).reduce((s, v) => s + v, 0) / period;
+  result.push(ema);
+  for (let i = period; i < data.length; i++) {
+    ema = data[i]! * k + ema * (1 - k);
+    result.push(ema);
+  }
+  return result;
+}
+
+// ─── Moving average ────────────────────────────────────────────────────────────
 
 function sma(closes: number[], period: number): number {
   if (closes.length < period) return closes[closes.length - 1] ?? 0;
   return avg(closes.slice(-period));
 }
 
+// ─── ATR ──────────────────────────────────────────────────────────────────────
+
 function calcATR(highs: number[], lows: number[], closes: number[], period: number): number {
   const trs: number[] = [];
   for (let i = 1; i < highs.length; i++) {
-    const hl = highs[i] - lows[i];
-    const hcp = Math.abs(highs[i] - closes[i - 1]);
-    const lcp = Math.abs(lows[i] - closes[i - 1]);
+    const hl  = highs[i]! - lows[i]!;
+    const hcp = Math.abs(highs[i]! - closes[i - 1]!);
+    const lcp = Math.abs(lows[i]!  - closes[i - 1]!);
     trs.push(Math.max(hl, hcp, lcp));
   }
   return avg(trs.slice(-period));
 }
+
+// ─── Support / Resistance (5-bar swing pivots) ────────────────────────────────
 
 function findSupportResistance(highs: number[], lows: number[], currentPrice: number) {
   const window = Math.min(60, highs.length);
   const recentHighs = highs.slice(-window);
   const recentLows  = lows.slice(-window);
 
-  // Find swing highs/lows using a 5-bar pivot
   const pivotHighs: number[] = [];
-  const pivotLows: number[]  = [];
+  const pivotLows:  number[] = [];
 
   for (let i = 2; i < recentHighs.length - 2; i++) {
-    if (recentHighs[i] > recentHighs[i-1] && recentHighs[i] > recentHighs[i-2] &&
-        recentHighs[i] > recentHighs[i+1] && recentHighs[i] > recentHighs[i+2]) {
-      pivotHighs.push(recentHighs[i]);
-    }
-    if (recentLows[i] < recentLows[i-1] && recentLows[i] < recentLows[i-2] &&
-        recentLows[i] < recentLows[i+1] && recentLows[i] < recentLows[i+2]) {
-      pivotLows.push(recentLows[i]);
-    }
+    if (
+      recentHighs[i]! > recentHighs[i - 1]! && recentHighs[i]! > recentHighs[i - 2]! &&
+      recentHighs[i]! > recentHighs[i + 1]! && recentHighs[i]! > recentHighs[i + 2]!
+    ) pivotHighs.push(recentHighs[i]!);
+
+    if (
+      recentLows[i]! < recentLows[i - 1]! && recentLows[i]! < recentLows[i - 2]! &&
+      recentLows[i]! < recentLows[i + 1]! && recentLows[i]! < recentLows[i + 2]!
+    ) pivotLows.push(recentLows[i]!);
   }
 
-  // Find nearest support below price and resistance above
   const supports    = pivotLows.filter((l) => l < currentPrice).sort((a, b) => b - a);
   const resistances = pivotHighs.filter((h) => h > currentPrice).sort((a, b) => a - b);
 
@@ -206,29 +234,35 @@ function findSupportResistance(highs: number[], lows: number[], currentPrice: nu
   return { support, resistance };
 }
 
+// ─── Price action description ─────────────────────────────────────────────────
+
 function buildPriceAction(
-  trend: string, rsi: number, macd: { histogram: number }, aboveSma50: boolean,
-  volRatio: number, atr: number, price: number
+  trend: string, rsi: number, macd: { histogram: number; value: number },
+  aboveSma50: boolean, volRatio: number, atr: number, price: number
 ): string {
   const parts: string[] = [];
 
   if (trend === "bullish") parts.push("Bullish trend");
   else if (trend === "bearish") parts.push("Bearish trend");
-  else parts.push("Neutral trend");
+  else parts.push("Consolidating");
 
-  if (rsi > 70) parts.push("overbought on RSI");
-  else if (rsi < 30) parts.push("oversold on RSI");
-  else if (rsi > 55) parts.push("RSI confirming strength");
-  else if (rsi < 45) parts.push("RSI showing weakness");
+  if (rsi > 70) parts.push("overbought RSI");
+  else if (rsi < 30) parts.push("oversold RSI");
+  else if (rsi > 58) parts.push("RSI confirming momentum");
+  else if (rsi < 42) parts.push("RSI showing weakness");
 
-  if (macd.histogram > 0) parts.push("MACD bullish crossover");
-  else parts.push("MACD below signal");
+  if (macd.histogram > 0 && macd.value > 0) parts.push("MACD bullish");
+  else if (macd.histogram < 0 && macd.value < 0) parts.push("MACD bearish");
+  else if (macd.histogram > 0) parts.push("MACD turning bullish");
+  else parts.push("MACD turning bearish");
 
   if (volRatio > 1.5) parts.push("elevated volume");
-  else if (volRatio < 0.7) parts.push("below-average volume");
+  else if (volRatio < 0.7) parts.push("low volume");
 
   return parts.slice(0, 3).join(", ") + ".";
 }
+
+// ─── Utilities ────────────────────────────────────────────────────────────────
 
 function avg(arr: number[]): number {
   if (!arr.length) return 0;
@@ -240,13 +274,15 @@ function round2(n: number) { return Math.round(n * 100) / 100; }
 
 function fallback(price: number): TechnicalSignals {
   return {
-    rsi14: 50, macd: { value: 0, signal: 0, histogram: 0 },
+    rsi14: 50,
+    macd: { value: 0, signal: 0, histogram: 0 },
     sma20: price, sma50: price, sma200: price,
-    volumeRatio: 1, atr14: price * 0.015,
+    volumeRatio: 1,
+    atr14: price * 0.015,
     support: round2(price * 0.94),
     resistance: round2(price * 1.06),
     trend: "neutral",
-    priceAction: "Neutral trend, insufficient data for full analysis.",
+    priceAction: "Insufficient data for full technical analysis.",
     strength: 5,
     relativeStrength: "5/10",
   };

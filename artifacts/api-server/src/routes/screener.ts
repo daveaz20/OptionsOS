@@ -309,6 +309,62 @@ router.get("/screener/source", (_req, res) => {
   });
 });
 
+// ─── Accurate stats across the full universe ──────────────────────────────────
+
+router.get("/screener/stats", (_req, res) => {
+  const rows = cache.data;
+
+  const bull    = rows.filter(r => r.changePercent > 0).length;
+  const bear    = rows.filter(r => r.changePercent < 0).length;
+  const neutral = rows.filter(r => r.changePercent === 0).length;
+  const total   = rows.length;
+
+  // High conviction: only count rows with real technical analysis (not polygon-only defaults)
+  const withTechnicals = rows.filter(r => r.source !== "polygon" || r.rsi14 !== 50);
+  const highConviction = withTechnicals.filter(r => r.opportunityScore >= 75).length;
+
+  const ivVals = rows.map(r => r.ivRank).filter(v => v > 0);
+  const avgIv  = ivVals.length > 0
+    ? Math.round(ivVals.reduce((a, b) => a + b, 0) / ivVals.length)
+    : 0;
+
+  const bestScore = rows.reduce((mx, r) => Math.max(mx, r.opportunityScore), 0);
+
+  const highIv = rows.filter(r => r.ivRank >= 50).length;
+
+  // US market hours check (Eastern Time)
+  const marketOpen = isUSMarketOpen();
+
+  res.json({
+    total,
+    bull, bear, neutral,
+    breadth: total > 0 ? Math.round((bull / total) * 100) : 50,
+    highConviction,
+    technicalsCount: withTechnicals.length,
+    highIv,
+    avgIv,
+    bestScore,
+    marketOpen,
+    source: isPolygonEnabled() ? "polygon" : "yahoo",
+    cachedAt: cache.at,
+  });
+});
+
+function isUSMarketOpen(): boolean {
+  try {
+    const now = new Date();
+    // Convert to Eastern Time
+    const etStr = now.toLocaleString("en-US", { timeZone: "America/New_York" });
+    const et = new Date(etStr);
+    const day = et.getDay(); // 0=Sun, 6=Sat
+    if (day === 0 || day === 6) return false;
+    const totalMin = et.getHours() * 60 + et.getMinutes();
+    return totalMin >= 9 * 60 + 30 && totalMin < 16 * 60;
+  } catch {
+    return false;
+  }
+}
+
 function r2(n: number) { return Math.round(n * 100) / 100; }
 
 export default router;

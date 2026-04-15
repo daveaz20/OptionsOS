@@ -573,7 +573,7 @@ function StockTable({ rows, tab, sortKey, sortDir, onSort, navigate }: {
       baseCol, priceCol, changeCol,
       { key:"volume",    label:"Volume",    right:true, render:r=><span style={{ color:"rgba(255,255,255,0.55)", fontVariantNumeric:"tabular-nums" }}>{fmtVol(r.volume)}</span> },
       { key:"relVol",    label:"Rel Vol",   right:true, render:r=><span style={{ color:r.relVol>3?"#ff9f0a":r.relVol>2?"#ffd60a":"rgba(255,255,255,0.55)", fontVariantNumeric:"tabular-nums" }}>{r.relVol.toFixed(2)}×</span> },
-      { key:"marketCap", label:"Mkt Cap",   right:true, render:r=><span style={{ color:"rgba(255,255,255,0.55)", fontVariantNumeric:"tabular-nums" }}>{fmtBig(r.marketCap)}</span> },
+      { key:"marketCap", label:"Mkt Cap",   right:true, render:r=><span style={{ color:"rgba(255,255,255,0.55)", fontVariantNumeric:"tabular-nums" }}>{r.marketCap > 0 ? fmtBig(r.marketCap) : "—"}</span> },
       { key:"sector",    label:"Sector",               render:r=><span style={{ fontSize:10, color:"rgba(255,255,255,0.45)" }}>{r.sector}</span> },
       { key:"beta",      label:"Beta",      right:true, render:r=><span style={{ color:"rgba(255,255,255,0.55)", fontVariantNumeric:"tabular-nums" }}>{r.beta.toFixed(2)}</span> },
       { key:"recommendedOutlook", label:"Outlook", render:r=>(
@@ -597,7 +597,7 @@ function StockTable({ rows, tab, sortKey, sortDir, onSort, navigate }: {
       { key:"fiftyTwoWeekLow",  label:"52W Low",  right:true, render:r=><span style={{ color:"rgba(255,255,255,0.55)", fontVariantNumeric:"tabular-nums" }}>${r.fiftyTwoWeekLow.toFixed(2)}</span> },
       { key:"volume",    label:"Volume",    right:true, render:r=><span style={{ color:"rgba(255,255,255,0.55)", fontVariantNumeric:"tabular-nums" }}>{fmtVol(r.volume)}</span> },
       { key:"relVol",    label:"Rel Vol",   right:true, render:r=><span style={{ color:r.relVol>3?"#ff9f0a":r.relVol>2?"#ffd60a":"rgba(255,255,255,0.55)", fontVariantNumeric:"tabular-nums" }}>{r.relVol.toFixed(2)}×</span> },
-      { key:"marketCap", label:"Mkt Cap",   right:true, render:r=><span style={{ color:"rgba(255,255,255,0.55)", fontVariantNumeric:"tabular-nums" }}>{fmtBig(r.marketCap)}</span> },
+      { key:"marketCap", label:"Mkt Cap",   right:true, render:r=><span style={{ color:"rgba(255,255,255,0.55)", fontVariantNumeric:"tabular-nums" }}>{r.marketCap > 0 ? fmtBig(r.marketCap) : "—"}</span> },
       { key:"beta",      label:"Beta",      right:true, render:r=><span style={{ color:"rgba(255,255,255,0.55)", fontVariantNumeric:"tabular-nums" }}>{r.beta.toFixed(2)}</span> },
     ],
     technicals: [
