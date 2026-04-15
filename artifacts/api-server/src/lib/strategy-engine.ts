@@ -562,10 +562,14 @@ export function calcPnlCurve(
   impliedVolatility: number,
   riskFreeRate = 0.045
 ): { profitLoss: number; profitLossPercent: number; breakeven: number; maxProfit: number; maxLoss: number; pnlCurve: PnlPoint[] } {
-  const today = new Date();
-  const target = targetDate ? new Date(targetDate) : new Date(Date.now() + 45 * 24 * 60 * 60 * 1000);
-  const dte = Math.max(0, (target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-  const T = dte / 365;
+  // Default target date: use earliest leg expiry (or 45 DTE if no legs have expiration)
+  const firstLegExpiry = legs.find(l => l.optionType !== "stock")?.expiration;
+  const target = targetDate
+    ? new Date(targetDate)
+    : firstLegExpiry
+    ? new Date(firstLegExpiry)
+    : new Date(Date.now() + 45 * 24 * 60 * 60 * 1000);
+
   const iv = impliedVolatility / 100;
 
   // Build a range that always covers both current price and target price
@@ -580,7 +584,14 @@ export function calcPnlCurve(
       if (leg.optionType === "stock") {
         value += (p - leg.strikePrice) * leg.quantity * (leg.action === "buy" ? 1 : -1);
       } else {
-        const optVal = bsCall(p, leg.strikePrice, riskFreeRate, iv, T, leg.optionType as "call" | "put") * 100;
+        // T = time remaining FROM the target date TO the option's expiry
+        // (not today→target, which was the original bug — that computed how long until we check,
+        //  not how much time value the option has left on that date)
+        const legExpiryMs = leg.expiration
+          ? new Date(leg.expiration).getTime()
+          : target.getTime() + 45 * 24 * 60 * 60 * 1000;
+        const legT = Math.max(0, (legExpiryMs - target.getTime()) / (365 * 24 * 60 * 60 * 1000));
+        const optVal = bsCall(p, leg.strikePrice, riskFreeRate, iv, legT, leg.optionType as "call" | "put") * 100;
         const openVal = leg.premium * 100;
         value += (optVal - openVal) * (leg.action === "buy" ? 1 : -1);
       }
