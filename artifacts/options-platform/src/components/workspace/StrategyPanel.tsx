@@ -174,9 +174,9 @@ function StrategyCard({ strategy, isSelected, onClick }: { strategy: OptionsStra
 
 function MetricCell({ label, value, valueColor }: { label: string; value: string; valueColor?: string }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-      <span style={{ fontSize: 9, color: "hsl(var(--muted-foreground))", letterSpacing: "0.06em", textTransform: "uppercase", fontWeight: 500 }}>{label}</span>
-      <span style={{ fontSize: 12, fontWeight: 600, letterSpacing: "-0.02em", color: valueColor ?? "hsl(var(--foreground))", fontVariantNumeric: "tabular-nums" }}>{value}</span>
+    <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+      <span style={{ fontSize: 10, color: "hsl(var(--muted-foreground))", letterSpacing: "0.03em", fontWeight: 500 }}>{label}</span>
+      <span style={{ fontSize: 13, fontWeight: 600, letterSpacing: "-0.02em", color: valueColor ?? "hsl(var(--foreground))", fontVariantNumeric: "tabular-nums" }}>{value}</span>
     </div>
   );
 }
@@ -229,7 +229,7 @@ function PnlSimulator({ strategy, symbol, currentPrice }: { strategy: OptionsStr
               background: pnlData.profitLoss >= 0 ? "hsl(var(--success) / 0.07)" : "hsl(var(--destructive) / 0.07)",
               textAlign: "center",
             }}>
-              <div style={{ fontSize: 9, color: "hsl(var(--muted-foreground))", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 6, fontWeight: 500 }}>P&L</div>
+              <div style={{ fontSize: 10.5, color: "hsl(var(--muted-foreground))", marginBottom: 6, fontWeight: 400 }}>P&L</div>
               <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: "-0.03em", color: pnlData.profitLoss >= 0 ? "hsl(var(--success))" : "hsl(var(--destructive))", fontVariantNumeric: "tabular-nums" }}>
                 {formatCurrency(pnlData.profitLoss)}
               </div>
@@ -244,7 +244,7 @@ function PnlSimulator({ strategy, symbol, currentPrice }: { strategy: OptionsStr
               background: "rgba(255,255,255,0.025)",
               textAlign: "center",
             }}>
-              <div style={{ fontSize: 9, color: "hsl(var(--muted-foreground))", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 6, fontWeight: 500 }}>Breakeven</div>
+              <div style={{ fontSize: 10.5, color: "hsl(var(--muted-foreground))", marginBottom: 6, fontWeight: 400 }}>Breakeven</div>
               <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums" }}>
                 {formatCurrency(pnlData.breakeven)}
               </div>
@@ -297,8 +297,8 @@ function SimSlider({ label, display, value, min, max, step, onChange }: {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <span style={{ fontSize: 11, color: "hsl(var(--muted-foreground))", fontWeight: 500 }}>{label}</span>
-        <span style={{ fontSize: 12, fontWeight: 600, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums" }}>{display}</span>
+        <span style={{ fontSize: 12, color: "hsl(var(--muted-foreground))", fontWeight: 400 }}>{label}</span>
+        <span style={{ fontSize: 13, fontWeight: 600, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums" }}>{display}</span>
       </div>
       <Slider value={value} min={min} max={max} step={step} onValueChange={onChange} className="py-0.5" />
     </div>

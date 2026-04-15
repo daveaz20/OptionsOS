@@ -176,10 +176,10 @@ export function StockListPanel({ selectedSymbol, onSelect }: StockListPanelProps
 
         {/* Column headers */}
         <div style={{ display: "flex", justifyContent: "space-between", paddingBottom: 8, paddingTop: 2 }}>
-          <span style={{ fontSize: 10, color: "hsl(var(--muted-foreground))", letterSpacing: "0.06em", textTransform: "uppercase", fontWeight: 500 }}>
-            {tab === "ideas" ? "Scanner" : tab === "watchlist" ? "Watchlist" : "Portfolio"} · {items.length}
+          <span style={{ fontSize: 11, color: "hsl(var(--muted-foreground))", fontWeight: 400 }}>
+            {tab === "ideas" ? "Ideas" : tab === "watchlist" ? "Watchlist" : "Portfolio"} · <span style={{ fontVariantNumeric: "tabular-nums" }}>{items.length}</span>
           </span>
-          <span style={{ fontSize: 10, color: "hsl(var(--muted-foreground))", letterSpacing: "0.06em", textTransform: "uppercase", fontWeight: 500 }}>
+          <span style={{ fontSize: 11, color: "hsl(var(--muted-foreground))", fontWeight: 400 }}>
             {sortLabels[sortKey]}
           </span>
         </div>
@@ -260,7 +260,7 @@ export function StockListPanel({ selectedSymbol, onSelect }: StockListPanelProps
                           {strategy.label}
                         </span>
                       </div>
-                      <div style={{ fontSize: 11, color: "hsl(var(--muted-foreground))", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 140 }}>
+                      <div style={{ fontSize: 12, color: "hsl(var(--muted-foreground))", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 140, lineHeight: 1.3 }}>
                         {item.name}
                       </div>
                     </div>
@@ -299,13 +299,13 @@ export function StockListPanel({ selectedSymbol, onSelect }: StockListPanelProps
                         }}
                       />
                     </div>
-                    <span style={{ fontSize: 9, color: "hsl(var(--muted-foreground))", letterSpacing: "0.03em", flexShrink: 0 }}>
+                    <span style={{ fontSize: 11, color: "hsl(var(--muted-foreground))", flexShrink: 0 }}>
                       {item.technicalStrength}/10
                     </span>
                     <span style={{
-                      fontSize: 12,
-                      fontWeight: 600,
-                      letterSpacing: "-0.02em",
+                      fontSize: 14,
+                      fontWeight: 700,
+                      letterSpacing: "-0.03em",
                       fontVariantNumeric: "tabular-nums",
                       color: score >= 130 ? "hsl(var(--success))" : score <= 75 ? "hsl(var(--destructive))" : "hsl(var(--primary))",
                     }}>

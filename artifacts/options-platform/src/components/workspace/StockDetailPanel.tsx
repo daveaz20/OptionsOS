@@ -99,13 +99,12 @@ export function StockDetailPanel({ symbol }: StockDetailPanelProps) {
                   {stock.symbol}
                 </h1>
                 <span style={{
-                  fontSize: 10,
+                  fontSize: 11,
                   fontWeight: 500,
-                  letterSpacing: "0.05em",
-                  textTransform: "uppercase",
-                  padding: "3px 7px",
+                  letterSpacing: "0",
+                  padding: "2px 8px",
                   borderRadius: 4,
-                  border: "1px solid rgba(255,255,255,0.08)",
+                  border: "1px solid rgba(255,255,255,0.09)",
                   color: "hsl(var(--muted-foreground))",
                 }}>
                   {stock.sector}
@@ -214,8 +213,8 @@ export function StockDetailPanel({ symbol }: StockDetailPanelProps) {
                 { label: "IV Rank", value: `${stock.ivRank}%`, color: stock.ivRank >= 40 ? "hsl(var(--primary))" : "hsl(var(--muted-foreground))" },
               ].map((s, i) => (
                 <div key={i} style={{ padding: "10px 16px", borderRight: i < 3 ? "1px solid rgba(255,255,255,0.05)" : undefined }}>
-                  <div style={{ fontSize: 9, color: "hsl(var(--muted-foreground))", letterSpacing: "0.06em", textTransform: "uppercase", fontWeight: 500, marginBottom: 3 }}>{s.label}</div>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: s.color, fontVariantNumeric: "tabular-nums" }}>{s.value}</div>
+                  <div style={{ fontSize: 10.5, color: "hsl(var(--muted-foreground))", fontWeight: 400, marginBottom: 4 }}>{s.label}</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: s.color, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.01em" }}>{s.value}</div>
                 </div>
               ))}
             </div>
@@ -387,10 +386,10 @@ function StatCard({ label, value, valueColor }: { label: string; value: ReactNod
       background: "rgba(255,255,255,0.02)",
       display: "flex",
       flexDirection: "column",
-      gap: 4,
+      gap: 5,
     }}>
-      <span style={{ fontSize: 9, color: "hsl(var(--muted-foreground))", letterSpacing: "0.06em", textTransform: "uppercase", fontWeight: 500 }}>{label}</span>
-      <span style={{ fontSize: 14, fontWeight: 600, letterSpacing: "-0.02em", color: valueColor ?? "hsl(var(--foreground))", fontVariantNumeric: "tabular-nums" }}>{value}</span>
+      <span style={{ fontSize: 11, color: "hsl(var(--muted-foreground))", fontWeight: 400, lineHeight: 1.2 }}>{label}</span>
+      <span style={{ fontSize: 15, fontWeight: 600, letterSpacing: "-0.02em", color: valueColor ?? "hsl(var(--foreground))", fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>{value}</span>
     </div>
   );
 }
@@ -403,9 +402,9 @@ function InfoCard({ label, value, sub }: { label: string; value: string; sub?: s
       border: "1px solid rgba(255,255,255,0.06)",
       background: "rgba(255,255,255,0.02)",
     }}>
-      <div style={{ fontSize: 9, color: "hsl(var(--muted-foreground))", letterSpacing: "0.06em", textTransform: "uppercase", fontWeight: 500, marginBottom: 6 }}>{label}</div>
-      <div style={{ fontSize: 13, fontWeight: 500, letterSpacing: "-0.01em", color: "hsl(var(--foreground))" }}>{value}</div>
-      {sub && <div style={{ fontSize: 11, color: "hsl(var(--muted-foreground))", marginTop: 3, fontVariantNumeric: "tabular-nums" }}>{sub}</div>}
+      <div style={{ fontSize: 11, color: "hsl(var(--muted-foreground))", fontWeight: 400, marginBottom: 5 }}>{label}</div>
+      <div style={{ fontSize: 13, fontWeight: 500, letterSpacing: "-0.01em", color: "hsl(var(--foreground))", lineHeight: 1.5 }}>{value}</div>
+      {sub && <div style={{ fontSize: 12, color: "hsl(var(--muted-foreground))", marginTop: 4, fontVariantNumeric: "tabular-nums" }}>{sub}</div>}
     </div>
   );
 }
