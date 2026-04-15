@@ -1,0 +1,40 @@
+import { useState } from "react";
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
+import { StockListPanel } from "@/components/workspace/StockListPanel";
+import { StockDetailPanel } from "@/components/workspace/StockDetailPanel";
+import { StrategyPanel } from "@/components/workspace/StrategyPanel";
+import { useGetStock } from "@workspace/api-client-react";
+
+export default function WorkspacePage() {
+  const [selectedSymbol, setSelectedSymbol] = useState<string>("AAPL"); // Default selection
+
+  const { data: stock } = useGetStock(selectedSymbol, { query: { enabled: !!selectedSymbol } });
+
+  return (
+    <div className="h-full w-full flex flex-col">
+      <ResizablePanelGroup direction="horizontal" className="h-full w-full rounded-none">
+        <ResizablePanel defaultSize={20} minSize={15} maxSize={30} className="h-full">
+          <StockListPanel 
+            selectedSymbol={selectedSymbol} 
+            onSelect={setSelectedSymbol} 
+          />
+        </ResizablePanel>
+        
+        <ResizableHandle className="w-1 bg-border hover:bg-primary/50 transition-colors" />
+        
+        <ResizablePanel defaultSize={50} minSize={40} className="h-full">
+          <StockDetailPanel symbol={selectedSymbol} />
+        </ResizablePanel>
+        
+        <ResizableHandle className="w-1 bg-border hover:bg-primary/50 transition-colors" />
+        
+        <ResizablePanel defaultSize={30} minSize={25} maxSize={40} className="h-full">
+          <StrategyPanel 
+            symbol={selectedSymbol} 
+            currentPrice={stock?.price} 
+          />
+        </ResizablePanel>
+      </ResizablePanelGroup>
+    </div>
+  );
+}

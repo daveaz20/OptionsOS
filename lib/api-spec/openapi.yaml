@@ -3,20 +3,28 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Options trading platform API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: stocks
+    description: Stock data operations
+  - name: watchlist
+    description: Watchlist management
+  - name: strategies
+    description: Options strategy operations
+  - name: dashboard
+    description: Dashboard aggregations
+
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +32,203 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /stocks:
+    get:
+      operationId: listStocks
+      tags: [stocks]
+      summary: List available stocks
+      parameters:
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        "200":
+          description: List of stocks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Stock"
+
+  /stocks/{symbol}:
+    get:
+      operationId: getStock
+      tags: [stocks]
+      summary: Get stock detail with price history
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Stock detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StockDetail"
+
+  /stocks/{symbol}/price-history:
+    get:
+      operationId: getStockPriceHistory
+      tags: [stocks]
+      summary: Get stock price history for charting
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: period
+          in: query
+          schema:
+            type: string
+            enum: [1D, 1W, 1M, 3M, 6M, 1Y]
+            default: 3M
+      responses:
+        "200":
+          description: Price history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PricePoint"
+
+  /watchlist:
+    get:
+      operationId: getWatchlist
+      tags: [watchlist]
+      summary: Get user watchlist
+      responses:
+        "200":
+          description: Watchlist items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WatchlistItem"
+    post:
+      operationId: addToWatchlist
+      tags: [watchlist]
+      summary: Add stock to watchlist
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddToWatchlistBody"
+      responses:
+        "201":
+          description: Added to watchlist
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WatchlistItem"
+
+  /watchlist/{id}:
+    delete:
+      operationId: removeFromWatchlist
+      tags: [watchlist]
+      summary: Remove stock from watchlist
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Removed
+
+  /stocks/{symbol}/strategies:
+    get:
+      operationId: getStrategies
+      tags: [strategies]
+      summary: Get options strategies for a stock
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: outlook
+          in: query
+          schema:
+            type: string
+            enum: [bullish, bearish, neutral]
+            default: bullish
+      responses:
+        "200":
+          description: Strategy recommendations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/OptionsStrategy"
+
+  /stocks/{symbol}/pnl:
+    post:
+      operationId: calculatePnl
+      tags: [strategies]
+      summary: Calculate P&L for a strategy
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PnlRequest"
+      responses:
+        "200":
+          description: P&L calculation result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PnlResult"
+
+  /dashboard/summary:
+    get:
+      operationId: getDashboardSummary
+      tags: [dashboard]
+      summary: Dashboard summary with market overview
+      responses:
+        "200":
+          description: Dashboard summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+
+  /dashboard/top-movers:
+    get:
+      operationId: getTopMovers
+      tags: [dashboard]
+      summary: Top gaining and losing stocks
+      responses:
+        "200":
+          description: Top movers
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TopMovers"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +239,338 @@ components:
       required:
         - status
 
+    Stock:
+      type: object
+      properties:
+        id:
+          type: integer
+        symbol:
+          type: string
+        name:
+          type: string
+        price:
+          type: number
+        change:
+          type: number
+        changePercent:
+          type: number
+        volume:
+          type: number
+        marketCap:
+          type: number
+        sector:
+          type: string
+        technicalStrength:
+          type: integer
+          minimum: 1
+          maximum: 10
+      required:
+        - id
+        - symbol
+        - name
+        - price
+        - change
+        - changePercent
+        - volume
+        - marketCap
+        - sector
+        - technicalStrength
+
+    StockDetail:
+      type: object
+      properties:
+        id:
+          type: integer
+        symbol:
+          type: string
+        name:
+          type: string
+        price:
+          type: number
+        change:
+          type: number
+        changePercent:
+          type: number
+        volume:
+          type: number
+        marketCap:
+          type: number
+        sector:
+          type: string
+        technicalStrength:
+          type: integer
+        fiftyTwoWeekHigh:
+          type: number
+        fiftyTwoWeekLow:
+          type: number
+        eps:
+          type: number
+        pe:
+          type: number
+        dividendYield:
+          type: number
+        ivRank:
+          type: number
+        relativeStrength:
+          type: string
+        supportPrice:
+          type: number
+        resistancePrice:
+          type: number
+        earningsDate:
+          type: string
+        liquidity:
+          type: string
+          enum: [Very Liquid, Liquid, Moderate, Low]
+        priceAction:
+          type: string
+      required:
+        - id
+        - symbol
+        - name
+        - price
+        - change
+        - changePercent
+        - volume
+        - marketCap
+        - sector
+        - technicalStrength
+        - fiftyTwoWeekHigh
+        - fiftyTwoWeekLow
+        - eps
+        - pe
+        - dividendYield
+        - ivRank
+        - relativeStrength
+        - supportPrice
+        - resistancePrice
+        - earningsDate
+        - liquidity
+        - priceAction
+
+    PricePoint:
+      type: object
+      properties:
+        date:
+          type: string
+        open:
+          type: number
+        high:
+          type: number
+        low:
+          type: number
+        close:
+          type: number
+        volume:
+          type: number
+      required:
+        - date
+        - open
+        - high
+        - low
+        - close
+        - volume
+
+    WatchlistItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        symbol:
+          type: string
+        name:
+          type: string
+        price:
+          type: number
+        change:
+          type: number
+        changePercent:
+          type: number
+        technicalStrength:
+          type: integer
+        addedAt:
+          type: string
+      required:
+        - id
+        - symbol
+        - name
+        - price
+        - change
+        - changePercent
+        - technicalStrength
+        - addedAt
+
+    AddToWatchlistBody:
+      type: object
+      properties:
+        symbol:
+          type: string
+      required:
+        - symbol
+
+    OptionsStrategy:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        type:
+          type: string
+          enum: [trade, income]
+        outlook:
+          type: string
+          enum: [bullish, bearish, neutral]
+        description:
+          type: string
+        legs:
+          type: array
+          items:
+            $ref: "#/components/schemas/OptionLeg"
+        tradeCost:
+          type: number
+        maxProfit:
+          type: number
+        maxLoss:
+          type: number
+        returnPercent:
+          type: number
+        breakeven:
+          type: number
+        score:
+          type: integer
+          minimum: 0
+          maximum: 200
+        expirationDate:
+          type: string
+      required:
+        - id
+        - name
+        - type
+        - outlook
+        - description
+        - legs
+        - tradeCost
+        - maxProfit
+        - maxLoss
+        - returnPercent
+        - breakeven
+        - score
+        - expirationDate
+
+    OptionLeg:
+      type: object
+      properties:
+        action:
+          type: string
+          enum: [buy, sell]
+        optionType:
+          type: string
+          enum: [call, put]
+        strikePrice:
+          type: number
+        premium:
+          type: number
+        quantity:
+          type: integer
+        expiration:
+          type: string
+      required:
+        - action
+        - optionType
+        - strikePrice
+        - premium
+        - quantity
+        - expiration
+
+    PnlRequest:
+      type: object
+      properties:
+        strategyId:
+          type: integer
+        targetPrice:
+          type: number
+        targetDate:
+          type: string
+        impliedVolatility:
+          type: number
+      required:
+        - strategyId
+        - targetPrice
+        - targetDate
+        - impliedVolatility
+
+    PnlResult:
+      type: object
+      properties:
+        profitLoss:
+          type: number
+        profitLossPercent:
+          type: number
+        breakeven:
+          type: number
+        maxProfit:
+          type: number
+        maxLoss:
+          type: number
+        pnlCurve:
+          type: array
+          items:
+            type: object
+            properties:
+              price:
+                type: number
+              pnl:
+                type: number
+            required:
+              - price
+              - pnl
+      required:
+        - profitLoss
+        - profitLossPercent
+        - breakeven
+        - maxProfit
+        - maxLoss
+        - pnlCurve
+
+    DashboardSummary:
+      type: object
+      properties:
+        totalStocks:
+          type: integer
+        watchlistCount:
+          type: integer
+        avgTechnicalStrength:
+          type: number
+        bullishCount:
+          type: integer
+        bearishCount:
+          type: integer
+        neutralCount:
+          type: integer
+        marketSentiment:
+          type: string
+          enum: [bullish, bearish, neutral]
+      required:
+        - totalStocks
+        - watchlistCount
+        - avgTechnicalStrength
+        - bullishCount
+        - bearishCount
+        - neutralCount
+        - marketSentiment
+
+    TopMovers:
+      type: object
+      properties:
+        gainers:
+          type: array
+          items:
+            $ref: "#/components/schemas/Stock"
+        losers:
+          type: array
+          items:
+            $ref: "#/components/schemas/Stock"
+      required:
+        - gainers
+        - losers
