@@ -169,9 +169,15 @@ function StrategyDetail({
   onModify: () => void;
 }) {
   const { toast } = useToast();
+  const [contracts, setContracts] = useState(1);
+  // Reset contracts when the strategy changes (different expiry/type)
+  useEffect(() => { setContracts(1); }, [strategy.id, strategy.expirationDate]);
 
   const exp = strategy.expirationDate;
   const dte = Math.max(0, Math.round((new Date(exp).getTime() - Date.now()) / 86_400_000));
+
+  const hasStockLeg = strategy.legs.some(l => l.optionType === "stock");
+  const isCredit = strategy.type === "income" && strategy.tradeCost > 0 && !hasStockLeg;
 
   // POP approximation — credit spreads: credit / width; debit: 1 - debit/width
   const pop = strategy.type === "income"
@@ -198,9 +204,13 @@ function StrategyDetail({
       {/* Metrics grid */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 0, borderTop: "1px solid rgba(255,255,255,0.05)" }}>
         {[
-          { label: "Cost",        value: formatCurrency(strategy.tradeCost), color: strategy.tradeCost < 0 ? "hsl(var(--destructive))" : "hsl(var(--success))" },
-          { label: "Max reward",  value: formatCurrency(strategy.maxProfit), color: strategy.maxProfit >= 0 ? "hsl(var(--success))" : "hsl(var(--destructive))" },
-          { label: "Max risk",    value: formatCurrency(Math.abs(strategy.maxLoss)), color: "hsl(var(--destructive))" },
+          {
+            label: isCredit ? "Credit Received" : hasStockLeg ? "Net Cost" : "Cost",
+            value: formatCurrency(Math.abs(strategy.tradeCost) * contracts),
+            color: isCredit ? "hsl(var(--success))" : hasStockLeg ? "hsl(var(--foreground))" : "hsl(var(--destructive))",
+          },
+          { label: "Max reward",  value: formatCurrency(strategy.maxProfit * contracts), color: strategy.maxProfit >= 0 ? "hsl(var(--success))" : "hsl(var(--destructive))" },
+          { label: "Max risk",    value: formatCurrency(Math.abs(strategy.maxLoss) * contracts), color: "hsl(var(--destructive))" },
           { label: "POP",         value: `${pop}%`, color: pop >= 60 ? "hsl(var(--success))" : "hsl(var(--foreground))" },
           { label: "Breakeven",   value: formatCurrency(strategy.breakeven), color: "hsl(var(--foreground))" },
           { label: "Days to exp", value: `${dte}`, color: "hsl(var(--foreground))" },
@@ -245,7 +255,7 @@ function StrategyDetail({
       {/* P&L Simulator */}
       <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)", padding: "10px 12px 14px" }}>
         <div style={{ fontSize: 11, fontWeight: 600, color: "hsl(var(--muted-foreground))", marginBottom: 10 }}>P&amp;L Simulator</div>
-        <PnlSimulator strategy={strategy} currentPrice={currentPrice} symbol={symbol} initialIv={iv} />
+        <PnlSimulator strategy={strategy} currentPrice={currentPrice} symbol={symbol} initialIv={iv} contracts={contracts} onContractsChange={setContracts} />
       </div>
     </div>
   );
@@ -435,11 +445,19 @@ function ModifyPanel({
 
       {/* Modified metrics preview */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 0, borderTop: "1px solid rgba(255,255,255,0.05)" }}>
-        {[
-          { label: "Cost",       value: formatCurrency(updatedMetrics.cost),      color: updatedMetrics.cost < 0 ? "hsl(var(--destructive))" : "hsl(var(--success))" },
-          { label: "Max reward", value: formatCurrency(updatedMetrics.maxProfit),  color: updatedMetrics.maxProfit >= 0 ? "hsl(var(--success))" : "hsl(var(--destructive))" },
-          { label: "Max risk",   value: formatCurrency(Math.abs(updatedMetrics.maxLoss)), color: "hsl(var(--destructive))" },
-        ].map((m, i) => (
+        {(() => {
+          const mHasStock = legs.some(l => l.optionType === "stock");
+          const mIsCredit = updatedMetrics.cost > 0 && !mHasStock;
+          return [
+            {
+              label: mIsCredit ? "Credit" : mHasStock ? "Net Cost" : "Cost",
+              value: formatCurrency(Math.abs(updatedMetrics.cost)),
+              color: mIsCredit ? "hsl(var(--success))" : mHasStock ? "hsl(var(--foreground))" : "hsl(var(--destructive))",
+            },
+            { label: "Max reward", value: formatCurrency(updatedMetrics.maxProfit),  color: updatedMetrics.maxProfit >= 0 ? "hsl(var(--success))" : "hsl(var(--destructive))" },
+            { label: "Max risk",   value: formatCurrency(Math.abs(updatedMetrics.maxLoss)), color: "hsl(var(--destructive))" },
+          ];
+        })().map((m, i) => (
           <div key={i} style={{
             padding: "8px 10px",
             borderRight: i < 2 ? "1px solid rgba(255,255,255,0.05)" : undefined,
@@ -715,11 +733,16 @@ function computePnlClient(
 }
 
 // ── P&L Simulator ────────────────────────────────────────────────────────
-function PnlSimulator({ strategy, currentPrice, symbol: _symbol, initialIv = 30 }: { strategy: OptionsStrategy; currentPrice: number; symbol: string; initialIv?: number }) {
+function PnlSimulator({
+  strategy, currentPrice, symbol: _symbol, initialIv = 30,
+  contracts, onContractsChange,
+}: {
+  strategy: OptionsStrategy; currentPrice: number; symbol: string; initialIv?: number;
+  contracts: number; onContractsChange: (n: number) => void;
+}) {
   const [targetPrice, setTargetPrice] = useState(currentPrice || 100);
   const [targetDate, setTargetDate] = useState(strategy.expirationDate);
   const [iv, setIv] = useState(initialIv);
-  const [contracts, setContracts] = useState(1);
   const [dollarDraft, setDollarDraft] = useState<string | null>(null);
 
   // Sync when strategy expiry changes (e.g. after Modify → Apply)
@@ -739,7 +762,7 @@ function PnlSimulator({ strategy, currentPrice, symbol: _symbol, initialIv = 30 
   const commitDollar = (raw: string) => {
     const val = parseFloat(raw.replace(/[^0-9.]/g, ""));
     if (!isNaN(val) && costPerContract > 0) {
-      setContracts(Math.max(1, Math.round(val / costPerContract)));
+      onContractsChange(Math.max(1, Math.round(val / costPerContract)));
     }
     setDollarDraft(null);
   };
@@ -838,13 +861,13 @@ function PnlSimulator({ strategy, currentPrice, symbol: _symbol, initialIv = 30 
             <span style={{ fontSize: 10, color: "hsl(var(--muted-foreground))" }}>Contracts</span>
             <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
               <button
-                onClick={() => setContracts(c => Math.max(1, c - 1))}
+                onClick={() => onContractsChange(Math.max(1, contracts - 1))}
                 style={{ width: 24, height: 28, borderRadius: 5, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.05)", color: "hsl(var(--foreground))", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
               ><Minus style={{ width: 10, height: 10 }} /></button>
               <input
                 type="number" min={1} step={1}
                 value={contracts}
-                onChange={e => setContracts(Math.max(1, Math.round(Number(e.target.value) || 1)))}
+                onChange={e => onContractsChange(Math.max(1, Math.round(Number(e.target.value) || 1)))}
                 style={{
                   flex: 1, padding: "5px 6px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.12)",
                   background: "rgba(255,255,255,0.05)", color: "hsl(var(--foreground))",
@@ -853,7 +876,7 @@ function PnlSimulator({ strategy, currentPrice, symbol: _symbol, initialIv = 30 
                 }}
               />
               <button
-                onClick={() => setContracts(c => c + 1)}
+                onClick={() => onContractsChange(contracts + 1)}
                 style={{ width: 24, height: 28, borderRadius: 5, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.05)", color: "hsl(var(--foreground))", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
               ><Plus style={{ width: 10, height: 10 }} /></button>
             </div>

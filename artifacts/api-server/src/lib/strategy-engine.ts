@@ -110,7 +110,7 @@ export function buildStrategies(
           { action: "buy",  optionType: "stock", strikePrice: currentPrice, premium: 0, quantity: 100, expiration: exp30.date },
           { action: "sell", optionType: "call",  strikePrice: callStrike, premium: round2(callPrem / 100), quantity: 1, expiration: exp30.date },
         ],
-        tradeCost: round2(-(currentPrice * 100 - callPrem)),
+        tradeCost: round2(currentPrice * 100 - callPrem),
         maxProfit: round2((callStrike - currentPrice) * 100 + callPrem),
         maxLoss: round2(-(currentPrice * 100 - callPrem)),
         breakeven: round2(currentPrice - callPrem / 100),
