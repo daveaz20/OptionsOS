@@ -1,6 +1,7 @@
 #!/bin/bash
-# Kill any existing node processes to avoid port conflicts
-pkill -f "node" 2>/dev/null || true
+# Kill any processes on ports 3000 and 3001
+fuser -k 3000/tcp 2>/dev/null || true
+fuser -k 3001/tcp 2>/dev/null || true
 sleep 1
 
 # Start API server in background
