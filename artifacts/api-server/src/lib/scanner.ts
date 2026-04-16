@@ -65,7 +65,7 @@ export function scanOpportunity(
   const technicalScore = scoreTechnical(signals, outlook);
   const ivScore        = scoreIvAlignment(ivRank, setup, daysToEarnings);
   const entryScore     = scoreEntryQuality(signals, price, outlook);
-  const momentumScore  = scoreMomentum(signals, changePercent, outlook);
+  const momentumScore  = scoreMomentum(signals, changePercent, outlook, price);
 
   const total = Math.round(technicalScore + ivScore + entryScore + momentumScore);
   const opportunityScore = Math.max(0, Math.min(100, total));
@@ -270,7 +270,7 @@ function scoreEntryQuality(signals: TechnicalSignals, price: number, outlook: Sc
   return 8;
 }
 
-function scoreMomentum(signals: TechnicalSignals, changePercent: number, outlook: ScanOutlook): number {
+function scoreMomentum(signals: TechnicalSignals, changePercent: number, outlook: ScanOutlook, price: number): number {
   // Max 15 pts — volume, ATR, recent price velocity
   let score = 0;
 
