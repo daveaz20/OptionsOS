@@ -1,6 +1,7 @@
 import { Link, useLocation } from "wouter";
 import { Activity, Settings } from "lucide-react";
 import { useState, useEffect } from "react";
+import { GlobalSearch } from "./GlobalSearch";
 
 interface ShellProps {
   children: React.ReactNode;
@@ -91,6 +92,9 @@ export function Shell({ children }: ShellProps) {
             })}
           </nav>
         </div>
+
+        {/* Center: global search */}
+        <GlobalSearch />
 
         {/* Right: market status + settings */}
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
