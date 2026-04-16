@@ -9,6 +9,8 @@ interface ScreenerRow {
   price: number;
   opportunityScore: number;
   recommendedOutlook?: string;
+  isETF?: boolean;
+  etfCategory?: string;
 }
 
 interface Result {
@@ -17,6 +19,8 @@ interface Result {
   price: number;
   score: number;
   outlook?: string;
+  isETF?: boolean;
+  etfCategory?: string;
 }
 
 export function GlobalSearch() {
@@ -40,24 +44,35 @@ export function GlobalSearch() {
 
       const cached = qc.getQueryData<ScreenerRow[]>(["screener-v3"]);
       if (cached && cached.length > 0) {
+        const nameUpper = upper;
+
+        // Rank tier: 0 = exact ticker, 1 = ticker starts-with, 2 = ticker contains, 3 = name match
+        const tier = (r: ScreenerRow): number => {
+          if (r.symbol === nameUpper) return 0;
+          if (r.symbol.startsWith(nameUpper)) return 1;
+          if (r.symbol.includes(nameUpper)) return 2;
+          return 3; // name match
+        };
+
         const matched = cached
-          .filter(
-            (r) =>
-              r.symbol.startsWith(upper) ||
-              r.name.toUpperCase().includes(upper)
+          .filter((r) =>
+            r.symbol.includes(nameUpper) ||
+            r.name.toUpperCase().includes(nameUpper)
           )
           .sort((a, b) => {
-            const aExact = a.symbol === upper ? 0 : a.symbol.startsWith(upper) ? 1 : 2;
-            const bExact = b.symbol === upper ? 0 : b.symbol.startsWith(upper) ? 1 : 2;
-            return aExact !== bExact ? aExact - bExact : b.opportunityScore - a.opportunityScore;
+            const ta = tier(a), tb = tier(b);
+            if (ta !== tb) return ta - tb;
+            return b.opportunityScore - a.opportunityScore;
           })
-          .slice(0, 8)
+          .slice(0, 10)
           .map((r) => ({
             symbol: r.symbol,
             name: r.name,
             price: r.price,
             score: r.opportunityScore,
             outlook: r.recommendedOutlook,
+            isETF: r.isETF,
+            etfCategory: r.etfCategory,
           }));
         setResults(matched);
         setOpen(matched.length > 0);
@@ -139,6 +154,19 @@ export function GlobalSearch() {
 
   const outlookColor = (o?: string) =>
     o === "bullish" ? "#4ade80" : o === "bearish" ? "#f87171" : "hsl(var(--muted-foreground))";
+
+  const ETF_LABEL: Record<string, string> = {
+    "leveraged-bull":   "3× Bull",
+    "leveraged-bear":   "3× Bear",
+    "leveraged-single": "Single-Stock",
+    "sector":           "Sector",
+  };
+  const ETF_COLOR: Record<string, string> = {
+    "leveraged-bull":   "#4ade80",
+    "leveraged-bear":   "#f87171",
+    "leveraged-single": "#c084fc",
+    "sector":           "hsl(var(--primary))",
+  };
 
   return (
     <div
@@ -223,40 +251,29 @@ export function GlobalSearch() {
               }}
             >
               <div style={{ display: "flex", flexDirection: "column", gap: 1, minWidth: 0 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <span
-                    style={{
-                      fontSize: 12,
-                      fontWeight: 600,
-                      color: "hsl(var(--foreground))",
-                      letterSpacing: "-0.01em",
-                    }}
-                  >
+                <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "nowrap" }}>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: "hsl(var(--foreground))", letterSpacing: "-0.01em", flexShrink: 0 }}>
                     {r.symbol}
                   </span>
-                  {r.outlook && (
-                    <span
-                      style={{
-                        fontSize: 10,
-                        color: outlookColor(r.outlook),
-                        textTransform: "capitalize",
-                        opacity: 0.85,
-                      }}
-                    >
+                  {r.etfCategory ? (
+                    <span style={{
+                      fontSize: 9, fontWeight: 600, padding: "1px 4px", borderRadius: 3,
+                      color: ETF_COLOR[r.etfCategory] ?? "hsl(var(--primary))",
+                      background: `color-mix(in srgb, ${ETF_COLOR[r.etfCategory] ?? "hsl(var(--primary))"} 15%, transparent)`,
+                      flexShrink: 0,
+                    }}>
+                      {ETF_LABEL[r.etfCategory] ?? "ETF"}
+                    </span>
+                  ) : r.outlook ? (
+                    <span style={{ fontSize: 10, color: outlookColor(r.outlook), textTransform: "capitalize", opacity: 0.8, flexShrink: 0 }}>
                       {r.outlook}
                     </span>
-                  )}
+                  ) : null}
                 </div>
-                <span
-                  style={{
-                    fontSize: 11,
-                    color: "hsl(var(--muted-foreground))",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                    maxWidth: 140,
-                  }}
-                >
+                <span style={{
+                  fontSize: 11, color: "hsl(var(--muted-foreground))",
+                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 150,
+                }}>
                   {r.name}
                 </span>
               </div>
