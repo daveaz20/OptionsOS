@@ -115,7 +115,8 @@ async function buildYahooData(): Promise<ScreenerRow[]> {
           recommendedOutlook: scan?.recommendedOutlook ?? "neutral",
           supportPrice: sig.support, resistancePrice: sig.resistance,
         } satisfies ScreenerRow;
-      } catch {
+      } catch (err) {
+        console.error(`[screener] technicals failed for ${q.symbol}:`, (err as Error)?.message ?? err);
         return {
           ...base,
           technicalStrength: 5, rsi14: 50, macdHistogram: 0, ivRank: 30,
@@ -242,7 +243,8 @@ async function buildKnownRows(
           recommendedOutlook: scan?.recommendedOutlook ?? "neutral",
           supportPrice: sig.support, resistancePrice: sig.resistance,
         } satisfies ScreenerRow;
-      } catch {
+      } catch (err) {
+        console.error(`[screener] technicals failed for ${s.ticker}:`, (err as Error)?.message ?? err);
         return {
           ...base,
           technicalStrength: 5, rsi14: 50, macdHistogram: 0, ivRank: 30,

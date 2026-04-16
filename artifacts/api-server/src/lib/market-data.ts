@@ -254,7 +254,13 @@ export async function getHistoricalVolatility(symbol: string): Promise<{ hv30: n
   if (cached) return cached;
 
   const oneYearAgo = new Date(); oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-  const result = await yahooFinance.chart(symbol, { interval: "1d", period1: oneYearAgo }, { validateResult: false });
+  let result: Awaited<ReturnType<typeof yahooFinance.chart>>;
+  try {
+    result = await yahooFinance.chart(symbol, { interval: "1d", period1: oneYearAgo }, { validateResult: false });
+  } catch (err) {
+    console.warn(`[market-data] getHistoricalVolatility failed for ${symbol}:`, (err as Error)?.message ?? err);
+    return { hv30: 25, hv252: 25, ivRank: 50 };
+  }
   const closes = (result.quotes ?? []).filter((q) => q.close).map((q) => q.close!);
 
   const hv = (window: number) => {
