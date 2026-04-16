@@ -183,6 +183,7 @@ function screenerRowToStock(row: ScreenerRow) {
     setupType: row.setupType,
     recommendedOutlook: row.recommendedOutlook,
     setupDescription,
+    ...(row.etfCategory ? { etfCategory: row.etfCategory } : {}),
     createdAt: new Date(),
   };
 }

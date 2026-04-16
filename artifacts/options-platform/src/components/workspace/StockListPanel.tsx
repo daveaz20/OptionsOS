@@ -11,7 +11,7 @@ interface StockListPanelProps {
 }
 
 type MainTab = "ideas" | "watchlist" | "portfolio";
-type IdeaFilter = "all" | "bullish" | "bearish" | "highIv";
+type IdeaFilter = "all" | "bullish" | "bearish" | "highIv" | "etfs";
 type SortKey = "opportunity" | "ivRank" | "move" | "symbol";
 
 const TABS: { id: MainTab; label: string }[] = [
@@ -25,7 +25,42 @@ const FILTERS: { id: IdeaFilter; label: string }[] = [
   { id: "bullish", label: "Bullish" },
   { id: "bearish", label: "Bearish" },
   { id: "highIv",  label: "High IV" },
+  { id: "etfs",    label: "ETFs" },
 ];
+
+// ─── ETF lookup (mirrors ETF_UNIVERSE in market-data.ts) ─────────────────────
+const ETF_CATEGORY: Record<string, "leveraged-bull" | "leveraged-bear" | "sector"> = {
+  // Leveraged Bull
+  TQQQ: "leveraged-bull", SOXL: "leveraged-bull", UPRO: "leveraged-bull",
+  SPXL: "leveraged-bull", TECL: "leveraged-bull", FNGU: "leveraged-bull",
+  LABU: "leveraged-bull", TNA:  "leveraged-bull", UDOW: "leveraged-bull",
+  MIDU: "leveraged-bull", CURE: "leveraged-bull", DFEN: "leveraged-bull",
+  DPST: "leveraged-bull", FAS:  "leveraged-bull", NAIL: "leveraged-bull",
+  WANT: "leveraged-bull", BULZ: "leveraged-bull",
+  // Leveraged Bear
+  SQQQ: "leveraged-bear", SOXS: "leveraged-bear", SPXS: "leveraged-bear",
+  SPXU: "leveraged-bear", TECS: "leveraged-bear", FNGD: "leveraged-bear",
+  LABD: "leveraged-bear", TZA:  "leveraged-bear", SDOW: "leveraged-bear",
+  MIDZ: "leveraged-bear", HIBS: "leveraged-bear", FAZ:  "leveraged-bear",
+  SARK: "leveraged-bear",
+  // Sector
+  XLF: "sector", XLK: "sector", XLE: "sector", XLV: "sector", XLI: "sector",
+  XLC: "sector", XLY: "sector", XLP: "sector", XLB: "sector", XLRE: "sector",
+  XLU: "sector", SMH: "sector", ARKK: "sector", GDX: "sector", GDXJ: "sector",
+  IBB: "sector", XBI: "sector", KRE: "sector", IYR: "sector",
+};
+
+const ETF_BADGE_LABEL: Record<string, string> = {
+  "leveraged-bull": "3× Bull",
+  "leveraged-bear": "3× Bear",
+  "sector":         "Sector",
+};
+
+const ETF_BADGE_COLOR: Record<string, string> = {
+  "leveraged-bull": "hsl(var(--success))",
+  "leveraged-bear": "hsl(var(--destructive))",
+  "sector":         "hsl(var(--primary))",
+};
 
 const sortLabels: Record<SortKey, string> = {
   opportunity: "Score",
@@ -107,6 +142,7 @@ export function StockListPanel({ selectedSymbol, onSelect }: StockListPanelProps
       if (filter === "bullish") return outlook === "bullish";
       if (filter === "bearish") return outlook === "bearish";
       if (filter === "highIv")  return ivRank >= 50;
+      if (filter === "etfs")    return !!ETF_CATEGORY[item.symbol];
       return true;
     });
 
@@ -241,6 +277,7 @@ export function StockListPanel({ selectedSymbol, onSelect }: StockListPanelProps
               const ivRank     = item.ivRank ?? 0;
               const label      = shortLabel(item.setupType);
               const sColor     = scoreColor(score);
+              const etfCat     = ETF_CATEGORY[item.symbol];
 
               return (
                 <button
@@ -276,6 +313,17 @@ export function StockListPanel({ selectedSymbol, onSelect }: StockListPanelProps
                         }}>
                           {label}
                         </span>
+                        {etfCat && (
+                          <span style={{
+                            fontSize: 9, fontWeight: 600, letterSpacing: "0.04em",
+                            padding: "1.5px 5px", borderRadius: 3, flexShrink: 0,
+                            color: ETF_BADGE_COLOR[etfCat],
+                            background: `color-mix(in srgb, ${ETF_BADGE_COLOR[etfCat]} 12%, transparent)`,
+                            border: `1px solid color-mix(in srgb, ${ETF_BADGE_COLOR[etfCat]} 25%, transparent)`,
+                          }}>
+                            {ETF_BADGE_LABEL[etfCat]}
+                          </span>
+                        )}
                       </div>
                       <div style={{ fontSize: 11, color: "hsl(var(--muted-foreground))", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 140, lineHeight: 1.3 }}>
                         {item.name}

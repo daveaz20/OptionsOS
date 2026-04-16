@@ -49,6 +49,11 @@ export interface ScanResult {
   vwapScore: number;            // 0–10
 }
 
+export interface ScanOpts {
+  isETF?: boolean;
+  etfCategory?: "leveraged-bull" | "leveraged-bear" | "sector";
+}
+
 export function scanOpportunity(
   signals: TechnicalSignals,
   ivRank: number,
@@ -57,19 +62,40 @@ export function scanOpportunity(
   daysToEarnings?: number,   // undefined = unknown, 0 = today/past
   dayVwap = 0,               // today's VWAP from Polygon snapshot (0 = unavailable)
   prevDayVwap = 0,           // previous day's VWAP from Polygon snapshot
+  opts?: ScanOpts,
 ): ScanResult {
+  const isETF      = opts?.isETF ?? false;
+  const etfCat     = opts?.etfCategory;
+
   // ── 1. Determine directional outlook ────────────────────────────────────
-  const outlook = determineOutlook(signals, ivRank);
+  let outlook = determineOutlook(signals, ivRank);
+  // Leveraged ETFs are directional by design — lock in their intended direction
+  if (etfCat === "leveraged-bull") outlook = "bullish";
+  if (etfCat === "leveraged-bear") outlook = "bearish";
 
   // ── 2. Choose the best setup for this outlook + IV environment ───────────
   const setup = chooseSetup(outlook, ivRank, signals);
 
+  // ETFs have no earnings — skip earnings-proximity adjustments to ivScore
+  const effectiveDte = isETF ? undefined : daysToEarnings;
+
   // ── 3. Score each dimension ──────────────────────────────────────────────
-  const technicalScore = scoreTechnical(signals, outlook);
-  const ivScore        = scoreIvAlignment(ivRank, setup, daysToEarnings);
-  const entryScore     = scoreEntryQuality(signals, price, outlook);
-  const momentumScore  = scoreMomentum(signals, changePercent, outlook, price);
-  const vwapScore      = scoreVwap(price, dayVwap, prevDayVwap, outlook);
+  const rawTechnical = scoreTechnical(signals, outlook);
+  const rawIv        = scoreIvAlignment(ivRank, setup, effectiveDte);
+  const entryScore   = scoreEntryQuality(signals, price, outlook);
+  const rawMomentum  = scoreMomentum(signals, changePercent, outlook, price);
+  const vwapScore    = scoreVwap(price, dayVwap, prevDayVwap, outlook);
+
+  // ETF weight adjustments: technical +5, momentum +5, IV −5
+  // Rationale: ETFs have cleaner trend signals and no earnings risk, but IV rank
+  // is less meaningful (no single-stock vol events).
+  const techAdj = isETF ? 5 : 0;
+  const momAdj  = isETF ? 5 : 0;
+  const ivAdj   = isETF ? -5 : 0;
+
+  const technicalScore = rawTechnical + techAdj;
+  const ivScore        = Math.max(0, rawIv + ivAdj);
+  const momentumScore  = rawMomentum + momAdj;
 
   const total = Math.round(technicalScore + ivScore + entryScore + momentumScore + vwapScore);
   const opportunityScore = Math.max(0, Math.min(100, total));
@@ -78,7 +104,7 @@ export function scanOpportunity(
     opportunityScore,
     setupType: setup,
     recommendedOutlook: outlook,
-    setupDescription: buildDescription(setup, outlook, ivRank, signals, daysToEarnings),
+    setupDescription: buildDescription(setup, outlook, ivRank, signals, effectiveDte),
     technicalScore: Math.round(technicalScore),
     ivScore: Math.round(ivScore),
     entryScore: Math.round(entryScore),

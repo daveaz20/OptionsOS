@@ -333,6 +333,28 @@ export function computeHVFromBars(bars: { close: number }[]): { hv30: number; iv
   };
 }
 
+// ─── ETF Universe ─────────────────────────────────────────────────────────────
+
+export type EtfCategory = "leveraged-bull" | "leveraged-bear" | "sector";
+
+export interface EtfEntry {
+  symbol: string;
+  category: EtfCategory;
+}
+
+export const ETF_UNIVERSE: EtfEntry[] = [
+  ...["TQQQ","SOXL","UPRO","SPXL","TECL","FNGU","LABU","TNA","UDOW","MIDU","CURE","DFEN","DPST","FAS","NAIL","WANT","BULZ"]
+    .map(s => ({ symbol: s, category: "leveraged-bull" as EtfCategory })),
+  ...["SQQQ","SOXS","SPXS","SPXU","TECS","FNGD","LABD","TZA","SDOW","MIDZ","HIBS","FAZ","SARK"]
+    .map(s => ({ symbol: s, category: "leveraged-bear" as EtfCategory })),
+  ...["XLF","XLK","XLE","XLV","XLI","XLC","XLY","XLP","XLB","XLRE","XLU","SMH","ARKK","GDX","GDXJ","IBB","XBI","KRE","IYR"]
+    .map(s => ({ symbol: s, category: "sector" as EtfCategory })),
+];
+
+export const ETF_MAP = new Map<string, EtfCategory>(
+  ETF_UNIVERSE.map(e => [e.symbol, e.category])
+);
+
 // Default scanner universe — 100 liquid, optionable stocks
 export const DEFAULT_UNIVERSE = [
   // ── Mega-Cap Tech ──────────────────────────────────────────────────────────
