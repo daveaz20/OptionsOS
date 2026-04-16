@@ -1,4 +1,8 @@
 #!/bin/bash
+# Kill any existing node processes to avoid port conflicts
+pkill -f "node" 2>/dev/null || true
+sleep 1
+
 # Start API server in background
 PORT=3000 pnpm --filter api-server dev &
 
