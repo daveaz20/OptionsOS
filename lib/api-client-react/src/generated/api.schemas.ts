@@ -34,6 +34,11 @@ export interface Stock {
   fiftyTwoWeekHigh?: number;
   fiftyTwoWeekLow?: number;
   opportunityScore?: number;
+  technicalScore?: number;
+  ivScore?: number;
+  entryScore?: number;
+  momentumScore?: number;
+  vwapScore?: number;
   setupType?: string;
   recommendedOutlook?: "bullish" | "bearish" | "neutral";
   setupDescription?: string;

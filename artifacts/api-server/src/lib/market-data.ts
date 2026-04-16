@@ -297,6 +297,42 @@ export async function getHistoricalVolatility(symbol: string): Promise<{ hv30: n
   return out;
 }
 
+// ─── HV from Polygon bars (no Yahoo Finance call needed) ─────────────────────
+
+export function computeHVFromBars(bars: { close: number }[]): { hv30: number; ivRank: number } {
+  if (bars.length < 32) return { hv30: 0, ivRank: 50 };
+
+  const closes = bars.map(b => b.close);
+
+  const hv30Daily = (() => {
+    const slice = closes.slice(-31);
+    const rets  = slice.slice(1).map((c, i) => Math.log(c / slice[i]!));
+    const mean  = rets.reduce((s, r) => s + r, 0) / rets.length;
+    const vari  = rets.reduce((s, r) => s + (r - mean) ** 2, 0) / (rets.length - 1);
+    return Math.sqrt(vari * 252);
+  })();
+
+  const windows: number[] = [];
+  for (let i = 31; i <= closes.length; i++) {
+    const slice = closes.slice(i - 31, i);
+    const rets  = slice.slice(1).map((c, idx) => Math.log(c / slice[idx]!));
+    const mean  = rets.reduce((s, r) => s + r, 0) / rets.length;
+    const vari  = rets.reduce((s, r) => s + (r - mean) ** 2, 0) / (rets.length - 1);
+    windows.push(Math.sqrt(vari * 252));
+  }
+
+  if (windows.length === 0) return { hv30: round2(hv30Daily * 100), ivRank: 50 };
+
+  const minHv = Math.min(...windows);
+  const maxHv = Math.max(...windows);
+  const ivRank = maxHv === minHv ? 50 : Math.round(((hv30Daily - minHv) / (maxHv - minHv)) * 100);
+
+  return {
+    hv30:   round2(hv30Daily * 100),
+    ivRank: Math.max(1, Math.min(100, ivRank)),
+  };
+}
+
 // Default scanner universe — 100 liquid, optionable stocks
 export const DEFAULT_UNIVERSE = [
   // ── Mega-Cap Tech ──────────────────────────────────────────────────────────

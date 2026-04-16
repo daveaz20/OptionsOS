@@ -16,6 +16,7 @@ import {
   getQuotes,
   getPriceHistory,
   getHistoricalVolatility,
+  computeHVFromBars,
   DEFAULT_UNIVERSE,
   getSectorForSymbol,
 } from "../lib/market-data.js";
@@ -202,12 +203,10 @@ async function buildPolygonData(): Promise<ScreenerRow[]> {
       };
 
       try {
-        const [history, hv] = await Promise.all([
-          getPolygonBars(s.ticker, 580),
-          getHistoricalVolatility(s.ticker),
-        ]);
-        const sig  = computeSignals(history, price);
-        const dte  = daysUntilEarnings(q?.earningsDate ?? "TBD");
+        const history = await getPolygonBars(s.ticker, 580);
+        const hv  = computeHVFromBars(history);
+        const sig = computeSignals(history, price);
+        const dte = daysUntilEarnings(q?.earningsDate ?? "TBD");
         const scan = scanOpportunity(sig, hv.ivRank, price, chPct, dte, dayVwap, prevDayVwap);
         return {
           ...base,
