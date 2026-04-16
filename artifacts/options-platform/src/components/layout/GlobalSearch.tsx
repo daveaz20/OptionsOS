@@ -220,7 +220,7 @@ export function GlobalSearch() {
             <div
               key={r.symbol}
               onMouseEnter={() => setActiveIndex(i)}
-              onMouseDown={(e) => { e.preventDefault(); select(r.symbol); }}
+              onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); select(r.symbol); }}
               style={{
                 display: "flex", alignItems: "center", justifyContent: "space-between",
                 padding: "7px 12px", cursor: "pointer",

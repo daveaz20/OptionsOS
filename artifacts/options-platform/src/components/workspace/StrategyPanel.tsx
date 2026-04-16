@@ -5,7 +5,7 @@ import { formatCurrency, formatPercent } from "@/lib/format";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Slider } from "@/components/ui/slider";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AlertCircle, BarChart2, ChevronDown, ChevronUp, Minus, Pencil, Plus, X } from "lucide-react";
+import { AlertCircle, BarChart2, Minus, Pencil, Plus, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { OptionsStrategy, StrategyLeg, GetStrategiesOutlook } from "@workspace/api-client-react";
 
@@ -169,7 +169,6 @@ function StrategyDetail({
   onModify: () => void;
 }) {
   const { toast } = useToast();
-  const [showSim, setShowSim] = useState(false);
 
   const exp = strategy.expirationDate;
   const dte = Math.max(0, Math.round((new Date(exp).getTime() - Date.now()) / 86_400_000));
@@ -243,24 +242,10 @@ function StrategyDetail({
         </button>
       </div>
 
-      {/* P&L Simulator toggle */}
-      <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
-        <button
-          onClick={() => setShowSim(!showSim)}
-          style={{
-            width: "100%", padding: "9px 12px", display: "flex", alignItems: "center", justifyContent: "space-between",
-            background: "transparent", border: "none", cursor: "pointer", color: "hsl(var(--muted-foreground))",
-            fontSize: 11, fontWeight: 500,
-          }}
-        >
-          <span>P&amp;L Simulator</span>
-          {showSim ? <ChevronUp style={{ width: 13, height: 13 }} /> : <ChevronDown style={{ width: 13, height: 13 }} />}
-        </button>
-        {showSim && (
-          <div style={{ padding: "0 12px 14px" }}>
-            <PnlSimulator strategy={strategy} currentPrice={currentPrice} symbol={symbol} initialIv={iv} />
-          </div>
-        )}
+      {/* P&L Simulator */}
+      <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)", padding: "10px 12px 14px" }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: "hsl(var(--muted-foreground))", marginBottom: 10 }}>P&amp;L Simulator</div>
+        <PnlSimulator strategy={strategy} currentPrice={currentPrice} symbol={symbol} initialIv={iv} />
       </div>
     </div>
   );
@@ -533,7 +518,7 @@ export function StrategyPanel({ symbol, currentPrice = 0 }: StrategyPanelProps) 
       {/* Header */}
       <div style={{ padding: "16px 16px 0", borderBottom: "1px solid rgba(255,255,255,0.05)", flexShrink: 0 }}>
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 14 }}>
-          <h2 style={{ fontSize: 14, fontWeight: 600, letterSpacing: "-0.02em" }}>Strategies</h2>
+          <h2 style={{ fontSize: 16, fontWeight: 600, letterSpacing: "-0.02em" }}>Strategies</h2>
           <span style={{ fontSize: 11, color: "hsl(var(--muted-foreground))" }}>{symbol}</span>
         </div>
         <div style={{ display: "flex", gap: 2, background: "rgba(255,255,255,0.04)", borderRadius: 8, padding: 3, marginBottom: 14 }}>
@@ -729,26 +714,43 @@ function computePnlClient(
   return { profitLoss, profitLossPercent, breakeven, pnlCurve };
 }
 
-// ── P&L Simulator (collapsible, slider + typeable) ───────────────────────
+// ── P&L Simulator ────────────────────────────────────────────────────────
 function PnlSimulator({ strategy, currentPrice, symbol: _symbol, initialIv = 30 }: { strategy: OptionsStrategy; currentPrice: number; symbol: string; initialIv?: number }) {
   const [targetPrice, setTargetPrice] = useState(currentPrice || 100);
-  // targetDate tracks the exact date — syncs from strategy.expirationDate on change
   const [targetDate, setTargetDate] = useState(strategy.expirationDate);
-  // IV initialised from the strategy's implied volatility estimate (not hardcoded 30)
   const [iv, setIv] = useState(initialIv);
+  const [contracts, setContracts] = useState(1);
+  const [dollarDraft, setDollarDraft] = useState<string | null>(null);
 
   // Sync when strategy expiry changes (e.g. after Modify → Apply)
   useEffect(() => { setTargetDate(strategy.expirationDate); }, [strategy.expirationDate]);
   // Sync IV when strategy changes (different strategies may have different estimated IVs)
   useEffect(() => { setIv(initialIv); }, [initialIv]);
-  // Sync target price when stock loads
   useEffect(() => { if (currentPrice > 0 && targetPrice === 0) setTargetPrice(currentPrice); }, [currentPrice]);
 
-  // P&L computed entirely client-side using the actual strategy legs
-  // This is correct even after Modify because strategy.legs holds the modified premiums/expiry.
+  // Net cost per contract (absolute value of net debit/credit × 100)
+  const costPerContract = Math.abs(
+    strategy.legs
+      .filter(l => l.optionType !== "stock")
+      .reduce((s, l) => s + l.premium * 100 * (l.action === "buy" ? 1 : -1), 0)
+  );
+  const dollarAmount = Math.round(contracts * costPerContract * 100) / 100;
+
+  const commitDollar = (raw: string) => {
+    const val = parseFloat(raw.replace(/[^0-9.]/g, ""));
+    if (!isNaN(val) && costPerContract > 0) {
+      setContracts(Math.max(1, Math.round(val / costPerContract)));
+    }
+    setDollarDraft(null);
+  };
+
   const pnlData = useMemo(
     () => computePnlClient(strategy.legs, strategy.expirationDate, targetPrice, targetDate, iv, currentPrice),
     [strategy.legs, strategy.expirationDate, targetPrice, targetDate, iv, currentPrice],
+  );
+  const scaledCurve = useMemo(
+    () => pnlData.pnlCurve.map(p => ({ ...p, pnl: Math.round(p.pnl * contracts * 100) / 100 })),
+    [pnlData.pnlCurve, contracts],
   );
 
   // Date slider: position 0→1 across today…strategy expiry
@@ -810,16 +812,65 @@ function PnlSimulator({ strategy, currentPrice, symbol: _symbol, initialIv = 30 
         <SimSlider label="Implied volatility" value={[iv]} min={10} max={150} step={1} suffix="%" onChange={([v]) => setIv(v!)} />
       </div>
 
+      {/* Position size */}
+      <div style={{ background: "rgba(255,255,255,0.03)", borderRadius: 8, border: "1px solid rgba(255,255,255,0.06)", padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8 }}>
+        <span style={{ fontSize: 10, fontWeight: 600, color: "hsl(var(--muted-foreground))", letterSpacing: "0.05em", textTransform: "uppercase" }}>Position Size</span>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <span style={{ fontSize: 10, color: "hsl(var(--muted-foreground))" }}>Dollar Amount</span>
+            <input
+              type="text"
+              inputMode="decimal"
+              value={dollarDraft !== null ? dollarDraft : (dollarAmount > 0 ? `$${dollarAmount.toFixed(0)}` : "—")}
+              onFocus={() => setDollarDraft(dollarAmount > 0 ? dollarAmount.toFixed(0) : "")}
+              onChange={e => setDollarDraft(e.target.value)}
+              onBlur={e => commitDollar(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") commitDollar((e.target as HTMLInputElement).value); if (e.key === "Escape") setDollarDraft(null); }}
+              style={{
+                padding: "5px 8px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.12)",
+                background: "rgba(255,255,255,0.05)", color: "hsl(var(--foreground))",
+                fontSize: 12, fontWeight: 600, outline: "none", fontVariantNumeric: "tabular-nums",
+                width: "100%", boxSizing: "border-box",
+              }}
+            />
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <span style={{ fontSize: 10, color: "hsl(var(--muted-foreground))" }}>Contracts</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <button
+                onClick={() => setContracts(c => Math.max(1, c - 1))}
+                style={{ width: 24, height: 28, borderRadius: 5, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.05)", color: "hsl(var(--foreground))", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+              ><Minus style={{ width: 10, height: 10 }} /></button>
+              <input
+                type="number" min={1} step={1}
+                value={contracts}
+                onChange={e => setContracts(Math.max(1, Math.round(Number(e.target.value) || 1)))}
+                style={{
+                  flex: 1, padding: "5px 6px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.12)",
+                  background: "rgba(255,255,255,0.05)", color: "hsl(var(--foreground))",
+                  fontSize: 12, fontWeight: 600, outline: "none", textAlign: "center",
+                  fontVariantNumeric: "tabular-nums", minWidth: 0,
+                }}
+              />
+              <button
+                onClick={() => setContracts(c => c + 1)}
+                style={{ width: 24, height: 28, borderRadius: 5, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.05)", color: "hsl(var(--foreground))", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+              ><Plus style={{ width: 10, height: 10 }} /></button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
           <div style={{
             padding: "10px", borderRadius: 8, textAlign: "center",
-            border: pnlData.profitLoss >= 0 ? "1px solid hsl(var(--success) / 0.2)" : "1px solid hsl(var(--destructive) / 0.2)",
-            background: pnlData.profitLoss >= 0 ? "hsl(var(--success) / 0.06)" : "hsl(var(--destructive) / 0.06)",
+            border: (pnlData.profitLoss * contracts) >= 0 ? "1px solid hsl(var(--success) / 0.2)" : "1px solid hsl(var(--destructive) / 0.2)",
+            background: (pnlData.profitLoss * contracts) >= 0 ? "hsl(var(--success) / 0.06)" : "hsl(var(--destructive) / 0.06)",
           }}>
             <div style={{ fontSize: 10, color: "hsl(var(--muted-foreground))", marginBottom: 5 }}>P&L</div>
             <div style={{ fontSize: 17, fontWeight: 700, letterSpacing: "-0.03em", color: pnlData.profitLoss >= 0 ? "hsl(var(--success))" : "hsl(var(--destructive))", fontVariantNumeric: "tabular-nums" }}>
-              {formatCurrency(pnlData.profitLoss)}
+              {formatCurrency(pnlData.profitLoss * contracts)}
             </div>
             <div style={{ fontSize: 11, color: pnlData.profitLoss >= 0 ? "hsl(var(--success))" : "hsl(var(--destructive))", marginTop: 2, fontVariantNumeric: "tabular-nums" }}>
               {formatPercent(pnlData.profitLossPercent)}
@@ -833,7 +884,7 @@ function PnlSimulator({ strategy, currentPrice, symbol: _symbol, initialIv = 30 
 
         <div style={{ height: 140, background: "rgba(255,255,255,0.02)", borderRadius: 8, border: "1px solid rgba(255,255,255,0.05)", padding: "10px 6px 6px" }}>
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={pnlData.pnlCurve} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+            <AreaChart data={scaledCurve} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
               <defs>
                 <linearGradient id="pnlGrad" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.18} />

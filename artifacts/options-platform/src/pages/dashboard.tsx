@@ -101,8 +101,8 @@ function Section({ title, sub, icon, children, noPad, action }: {
       <div style={{ padding: "13px 16px 12px", borderBottom: "1px solid rgba(255,255,255,0.05)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
           {icon}
-          <span style={{ fontSize: 12.5, fontWeight: 600, letterSpacing: "-0.02em" }}>{title}</span>
-          {sub && <span style={{ fontSize: 11, color: "hsl(var(--muted-foreground))", marginLeft: 4 }}>{sub}</span>}
+          <span style={{ fontSize: 14, fontWeight: 600, letterSpacing: "-0.02em" }}>{title}</span>
+          {sub && <span style={{ fontSize: 12, color: "hsl(var(--muted-foreground))", marginLeft: 4 }}>{sub}</span>}
         </div>
         {action}
       </div>
