@@ -290,7 +290,9 @@ export async function getHistoricalVolatility(symbol: string): Promise<{ hv30: n
   const maxHv = Math.max(...windows);
   const ivRank = maxHv === minHv ? 50 : Math.round(((hv30 - minHv) / (maxHv - minHv)) * 100);
 
-  const out = { hv30: round2(hv30 * 100), hv252: round2(hv252 * 100), ivRank: Math.max(0, Math.min(100, ivRank)) };
+  // Clamp to 1–100: floor at 1 so a floating-point near-zero (hv30 ≈ minHv)
+  // doesn't masquerade as "cheapest options ever" and score 25/25 for debit buying.
+  const out = { hv30: round2(hv30 * 100), hv252: round2(hv252 * 100), ivRank: Math.max(1, Math.min(100, ivRank)) };
   setCache(key, out, OPTIONS_TTL);
   return out;
 }

@@ -69,7 +69,7 @@ export function scanOpportunity(
   const ivScore        = scoreIvAlignment(ivRank, setup, daysToEarnings);
   const entryScore     = scoreEntryQuality(signals, price, outlook);
   const momentumScore  = scoreMomentum(signals, changePercent, outlook, price);
-  const vwapScore      = scoreVwap(price, dayVwap, prevDayVwap);
+  const vwapScore      = scoreVwap(price, dayVwap, prevDayVwap, outlook);
 
   const total = Math.round(technicalScore + ivScore + entryScore + momentumScore + vwapScore);
   const opportunityScore = Math.max(0, Math.min(100, total));
@@ -312,12 +312,23 @@ function scoreMomentum(signals: TechnicalSignals, changePercent: number, outlook
 
 // ─── VWAP position scoring ────────────────────────────────────────────────────
 
-function scoreVwap(price: number, dayVwap: number, prevDayVwap: number): number {
-  // Max 10 pts — confirms intraday and multi-day directional bias
-  let score = 0;
-  if (dayVwap > 0 && price > dayVwap)     score += 5; // intraday bullish
-  if (prevDayVwap > 0 && price > prevDayVwap) score += 5; // momentum continuation
-  return score;
+function scoreVwap(price: number, dayVwap: number, prevDayVwap: number, outlook: ScanOutlook): number {
+  // Max 10 pts — VWAP must confirm the trade direction to score
+  // A bullish stock below VWAP (failed intraday) gets 0. A bearish stock
+  // above VWAP (failed breakdown) gets 0. Neutral gets no VWAP credit.
+  if (outlook === "bullish") {
+    let score = 0;
+    if (dayVwap > 0 && price > dayVwap)          score += 5; // intraday above VWAP
+    if (prevDayVwap > 0 && price > prevDayVwap)  score += 5; // above yesterday's VWAP
+    return score;
+  }
+  if (outlook === "bearish") {
+    let score = 0;
+    if (dayVwap > 0 && price < dayVwap)          score += 5; // intraday below VWAP
+    if (prevDayVwap > 0 && price < prevDayVwap)  score += 5; // below yesterday's VWAP
+    return score;
+  }
+  return 0; // neutral strategies don't benefit from VWAP directionality
 }
 
 // ─── Human-readable setup description ────────────────────────────────────────
