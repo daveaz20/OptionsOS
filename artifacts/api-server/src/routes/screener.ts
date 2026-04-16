@@ -42,7 +42,7 @@ export interface ScreenerRow {
   fiftyTwoWeekHigh: number; fiftyTwoWeekLow: number;
   pctFrom52High: number; pctFrom52Low: number; earningsDate: string;
   technicalStrength: number; rsi14: number; macdHistogram: number; ivRank: number;
-  opportunityScore: number; technicalScore: number; ivScore: number; entryScore: number; momentumScore: number;
+  opportunityScore: number; technicalScore: number; ivScore: number; entryScore: number; momentumScore: number; vwapScore: number;
   setupType: string; recommendedOutlook: string;
   supportPrice: number; resistancePrice: number;
   liquidity: "Liquid" | "Illiquid";
@@ -51,6 +51,8 @@ export interface ScreenerRow {
 
 interface Cache { data: ScreenerRow[]; at: number; promise: Promise<void> | null }
 const cache: Cache = { data: [], at: 0, promise: null };
+
+const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -111,6 +113,7 @@ async function buildYahooData(): Promise<ScreenerRow[]> {
           ivScore: scan?.ivScore ?? 0,
           entryScore: scan?.entryScore ?? 0,
           momentumScore: scan?.momentumScore ?? 0,
+          vwapScore: scan?.vwapScore ?? 0,
           setupType: scan?.setupType ?? "Neutral",
           recommendedOutlook: scan?.recommendedOutlook ?? "neutral",
           supportPrice: sig.support, resistancePrice: sig.resistance,
@@ -120,7 +123,7 @@ async function buildYahooData(): Promise<ScreenerRow[]> {
         return {
           ...base,
           technicalStrength: 5, rsi14: 50, macdHistogram: 0, ivRank: 30,
-          opportunityScore: 40, technicalScore: 0, ivScore: 0, entryScore: 0, momentumScore: 0,
+          opportunityScore: 40, technicalScore: 0, ivScore: 0, entryScore: 0, momentumScore: 0, vwapScore: 0,
           setupType: "Neutral", recommendedOutlook: "neutral",
           supportPrice: r2(q.price * 0.94), resistancePrice: r2(q.price * 1.06),
         } satisfies ScreenerRow;
@@ -138,23 +141,16 @@ async function buildYahooData(): Promise<ScreenerRow[]> {
 async function buildPolygonData(): Promise<ScreenerRow[]> {
   console.log("[screener] building from Polygon.io…");
 
-  // Fetch in parallel: snapshots + reference metadata
   const [snaps, tickerMap] = await Promise.all([
     getPolygonSnapshots(),
     getPolygonTickers(),
   ]);
 
-  // Filter to investable universe:
-  // - Must exist in our reference map (so we have a company name)
-  // - Common stock (CS) OR listed ADR (ADRC) OR trust (ignore ETF, preferred, etc.)
-  // - Price ≥ $2 (no deep penny stocks)
-  // - Day volume ≥ 100 000
+  // Filter to investable universe: CS/ADRC, price ≥ $2, volume ≥ 100k
   const VALID_TYPES = new Set(["CS", "ADRC"]);
-
   const filtered = snaps.filter((s) => {
     const ref = tickerMap.get(s.ticker);
-    if (!ref) return false;
-    if (!VALID_TYPES.has(ref.type)) return false;
+    if (!ref || !VALID_TYPES.has(ref.type)) return false;
     const price = s.day?.c ?? s.lastTrade?.p ?? 0;
     const vol   = s.day?.v ?? 0;
     return price >= 2 && vol >= 100_000;
@@ -162,45 +158,29 @@ async function buildPolygonData(): Promise<ScreenerRow[]> {
 
   console.log(`[polygon] ${snaps.length} snaps → ${filtered.length} quality stocks`);
 
-  // For our curated universe, run full technical analysis (batched, 12 concurrent)
-  const knownSet = new Set(DEFAULT_UNIVERSE);
-  const knownSnaps = filtered.filter(s => knownSet.has(s.ticker));
-  const unknownSnaps = filtered.filter(s => !knownSet.has(s.ticker));
+  // Fetch Yahoo Finance fundamentals for curated universe only (P/E, beta, etc.)
+  const knownSet  = new Set(DEFAULT_UNIVERSE);
+  const quotes    = await getQuotes(filtered.filter(s => knownSet.has(s.ticker)).map(s => s.ticker));
+  const quoteMap  = new Map(quotes.map(q => [q.symbol, q]));
 
-  // Build rows for known universe (full technicals via Yahoo Finance)
-  const knownRows = await buildKnownRows(knownSnaps, tickerMap);
-
-  // Build rows for Polygon-only stocks (basic data, estimated technicals)
-  const unknownRows = unknownSnaps.map(s => buildPolygonRow(s, tickerMap));
-
-  const all = [...knownRows, ...unknownRows];
-  console.log(`[polygon] total: ${all.length} rows (${knownRows.length} full + ${unknownRows.length} basic)`);
-  return all;
-}
-
-async function buildKnownRows(
-  snaps: Awaited<ReturnType<typeof getPolygonSnapshots>>,
-  tickerMap: Map<string, any>
-): Promise<ScreenerRow[]> {
-  // Re-use Yahoo Finance for known symbols to get full fundamentals + technicals
-  const symbols = snaps.map(s => s.ticker);
-  const quotes  = await getQuotes(symbols);
-  const quoteMap = new Map(quotes.map(q => [q.symbol, q]));
   const rows: ScreenerRow[] = [];
 
-  for (let i = 0; i < snaps.length; i += 25) {
-    const batch   = snaps.slice(i, i + 25);
+  // Full technicals for ALL quality stocks — 15 concurrent, 500ms between batches
+  for (let i = 0; i < filtered.length; i += 15) {
+    const batch   = filtered.slice(i, i + 15);
     const results = await Promise.allSettled(batch.map(async (s) => {
-      const q   = quoteMap.get(s.ticker);
-      const ref = tickerMap.get(s.ticker);
-      const price  = s.day?.c ?? s.lastTrade?.p ?? q?.price ?? 0;
-      const change = s.todaysChange ?? q?.change ?? 0;
-      const chPct  = s.todaysChangePerc ?? q?.changePercent ?? 0;
-      const vol    = s.day?.v ?? q?.volume ?? 0;
-      const prevVol= s.prevDay?.v ?? vol;
-      const relVol = prevVol > 0 ? r2(vol / prevVol) : 1;
-      const hi52   = q?.fiftyTwoWeekHigh  || price * 1.3;
-      const lo52   = q?.fiftyTwoWeekLow   || price * 0.7;
+      const q          = quoteMap.get(s.ticker);
+      const ref        = tickerMap.get(s.ticker);
+      const price      = s.day?.c ?? s.lastTrade?.p ?? q?.price ?? 0;
+      const change     = s.todaysChange ?? q?.change ?? 0;
+      const chPct      = s.todaysChangePerc ?? q?.changePercent ?? 0;
+      const vol        = s.day?.v ?? q?.volume ?? 0;
+      const prevVol    = s.prevDay?.v ?? vol;
+      const relVol     = prevVol > 0 ? r2(vol / prevVol) : 1;
+      const hi52       = q?.fiftyTwoWeekHigh  || price * 1.3;
+      const lo52       = q?.fiftyTwoWeekLow   || price * 0.7;
+      const dayVwap    = s.day?.vw    ?? 0;
+      const prevDayVwap= s.prevDay?.vw ?? 0;
 
       const base = {
         symbol: s.ticker,
@@ -223,24 +203,25 @@ async function buildKnownRows(
 
       try {
         const [history, hv] = await Promise.all([
-          getPolygonBars(s.ticker, 580),   // 580 days covers SMA200 + MACD/RSI warmup
+          getPolygonBars(s.ticker, 580),
           getHistoricalVolatility(s.ticker),
         ]);
         const sig  = computeSignals(history, price);
         const dte  = daysUntilEarnings(q?.earningsDate ?? "TBD");
-        const scan = scanOpportunity(sig, hv.ivRank, price, chPct, dte);
+        const scan = scanOpportunity(sig, hv.ivRank, price, chPct, dte, dayVwap, prevDayVwap);
         return {
           ...base,
           technicalStrength: Math.round(sig.strength),
           rsi14: r2(sig.rsi14), macdHistogram: r2(sig.macd.histogram),
           ivRank: r2(hv.ivRank),
-          opportunityScore: scan?.opportunityScore ?? 40,
-          technicalScore: scan?.technicalScore ?? 0,
-          ivScore: scan?.ivScore ?? 0,
-          entryScore: scan?.entryScore ?? 0,
-          momentumScore: scan?.momentumScore ?? 0,
-          setupType: scan?.setupType ?? "Neutral",
-          recommendedOutlook: scan?.recommendedOutlook ?? "neutral",
+          opportunityScore: scan.opportunityScore,
+          technicalScore: scan.technicalScore,
+          ivScore: scan.ivScore,
+          entryScore: scan.entryScore,
+          momentumScore: scan.momentumScore,
+          vwapScore: scan.vwapScore,
+          setupType: scan.setupType,
+          recommendedOutlook: scan.recommendedOutlook,
           supportPrice: sig.support, resistancePrice: sig.resistance,
         } satisfies ScreenerRow;
       } catch (err) {
@@ -248,59 +229,23 @@ async function buildKnownRows(
         return {
           ...base,
           technicalStrength: 5, rsi14: 50, macdHistogram: 0, ivRank: 30,
-          opportunityScore: 40, technicalScore: 0, ivScore: 0, entryScore: 0, momentumScore: 0,
+          opportunityScore: 40, technicalScore: 0, ivScore: 0, entryScore: 0, momentumScore: 0, vwapScore: 0,
           setupType: "Neutral", recommendedOutlook: "neutral",
           supportPrice: r2(price * 0.94), resistancePrice: r2(price * 1.06),
         } satisfies ScreenerRow;
       }
     }));
+
     for (const r of results) {
       if (r.status === "fulfilled") rows.push(r.value);
     }
+
+    if (i + 15 < filtered.length) await sleep(500);
   }
+
+  console.log(`[polygon] built ${rows.length} rows with full technicals`);
   return rows;
 }
-
-function buildPolygonRow(
-  s: Awaited<ReturnType<typeof getPolygonSnapshots>>[0],
-  tickerMap: Map<string, any>
-): ScreenerRow {
-  const ref    = tickerMap.get(s.ticker);
-  const price  = s.day?.c ?? s.lastTrade?.p ?? 0;
-  const vol    = s.day?.v ?? 0;
-  const prevVol= s.prevDay?.v ?? vol;
-  const relVol = prevVol > 0 ? r2(vol / prevVol) : 1;
-  const chPct  = s.todaysChangePerc ?? 0;
-  const chg    = s.todaysChange ?? 0;
-
-  const sector = getSectorForSymbol(s.ticker);
-
-  // Estimate technicals from just price action
-  const rsi = chPct > 3 ? 65 : chPct > 1 ? 58 : chPct < -3 ? 35 : chPct < -1 ? 42 : 50;
-  const techStrength = Math.max(1, Math.min(10, 5 + (chPct / 2)));
-  const outlook = chPct > 1 && relVol > 1.5 ? "bullish" : chPct < -1 ? "bearish" : "neutral";
-
-  return {
-    symbol: s.ticker,
-    name: ref?.name ?? s.ticker,
-    price: r2(price), change: r2(chg), changePercent: r2(chPct),
-    volume: vol, avgVolume: prevVol, relVol,
-    marketCap: 0,         // unknown without per-ticker lookup
-    sector,
-    beta: 1, pe: 0, forwardPE: 0, eps: 0, dividendYield: 0,
-    shortRatio: 0, priceTarget: 0, recommendation: 3,
-    fiftyTwoWeekHigh: s.day?.h ?? price, fiftyTwoWeekLow: s.day?.l ?? price,
-    pctFrom52High: 0, pctFrom52Low: 0, earningsDate: "TBD",
-    technicalStrength: r2(techStrength), rsi14: rsi, macdHistogram: 0, ivRank: 30,
-    opportunityScore: 40, technicalScore: 0, ivScore: 0, entryScore: 0, momentumScore: 0,
-    setupType: "Neutral", recommendedOutlook: outlook,
-    supportPrice: r2(price * 0.94), resistancePrice: r2(price * 1.06),
-    liquidity: (vol > 1_000_000 ? "Liquid" : "Illiquid"),
-    source: "polygon",
-  };
-}
-
-// ─── Cache + route ────────────────────────────────────────────────────────────
 
 // ─── DB persistence ───────────────────────────────────────────────────────────
 

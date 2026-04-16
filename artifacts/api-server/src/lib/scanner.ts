@@ -38,14 +38,15 @@ export type SetupType =
 export type ScanOutlook = "bullish" | "bearish" | "neutral";
 
 export interface ScanResult {
-  opportunityScore: number;     // 0–100
+  opportunityScore: number;     // 0–100 (clamped from 0–110)
   setupType: SetupType;
   recommendedOutlook: ScanOutlook;
   setupDescription: string;
-  technicalScore: number;       // 0–35 (debugging)
+  technicalScore: number;       // 0–35
   ivScore: number;              // 0–25
   entryScore: number;           // 0–25
   momentumScore: number;        // 0–15
+  vwapScore: number;            // 0–10
 }
 
 export function scanOpportunity(
@@ -53,7 +54,9 @@ export function scanOpportunity(
   ivRank: number,
   price: number,
   changePercent: number,
-  daysToEarnings?: number   // undefined = unknown, 0 = today/past
+  daysToEarnings?: number,   // undefined = unknown, 0 = today/past
+  dayVwap = 0,               // today's VWAP from Polygon snapshot (0 = unavailable)
+  prevDayVwap = 0,           // previous day's VWAP from Polygon snapshot
 ): ScanResult {
   // ── 1. Determine directional outlook ────────────────────────────────────
   const outlook = determineOutlook(signals, ivRank);
@@ -66,8 +69,9 @@ export function scanOpportunity(
   const ivScore        = scoreIvAlignment(ivRank, setup, daysToEarnings);
   const entryScore     = scoreEntryQuality(signals, price, outlook);
   const momentumScore  = scoreMomentum(signals, changePercent, outlook, price);
+  const vwapScore      = scoreVwap(price, dayVwap, prevDayVwap);
 
-  const total = Math.round(technicalScore + ivScore + entryScore + momentumScore);
+  const total = Math.round(technicalScore + ivScore + entryScore + momentumScore + vwapScore);
   const opportunityScore = Math.max(0, Math.min(100, total));
 
   return {
@@ -79,6 +83,7 @@ export function scanOpportunity(
     ivScore: Math.round(ivScore),
     entryScore: Math.round(entryScore),
     momentumScore: Math.round(momentumScore),
+    vwapScore: Math.round(vwapScore),
   };
 }
 
@@ -303,6 +308,16 @@ function scoreMomentum(signals: TechnicalSignals, changePercent: number, outlook
   else score += 1;
 
   return Math.min(15, score);
+}
+
+// ─── VWAP position scoring ────────────────────────────────────────────────────
+
+function scoreVwap(price: number, dayVwap: number, prevDayVwap: number): number {
+  // Max 10 pts — confirms intraday and multi-day directional bias
+  let score = 0;
+  if (dayVwap > 0 && price > dayVwap)     score += 5; // intraday bullish
+  if (prevDayVwap > 0 && price > prevDayVwap) score += 5; // momentum continuation
+  return score;
 }
 
 // ─── Human-readable setup description ────────────────────────────────────────
