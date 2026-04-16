@@ -27,6 +27,8 @@ import {
   getPolygonTickers,
   getPolygonBars,
 } from "../lib/polygon.js";
+import { db, screenerCacheTable } from "@workspace/db";
+import { desc } from "drizzle-orm";
 
 const router: IRouter = Router();
 
@@ -69,8 +71,8 @@ async function buildYahooData(): Promise<ScreenerRow[]> {
   const quotes   = await getQuotes(universe);
   const rows: ScreenerRow[] = [];
 
-  for (let i = 0; i < quotes.length; i += 12) {
-    const batch   = quotes.slice(i, i + 12);
+  for (let i = 0; i < quotes.length; i += 25) {
+    const batch   = quotes.slice(i, i + 25);
     const results = await Promise.allSettled(batch.map(async (q) => {
       const hi   = q.fiftyTwoWeekHigh || q.price;
       const lo   = q.fiftyTwoWeekLow  || q.price;
@@ -179,8 +181,8 @@ async function buildKnownRows(
   const quoteMap = new Map(quotes.map(q => [q.symbol, q]));
   const rows: ScreenerRow[] = [];
 
-  for (let i = 0; i < snaps.length; i += 12) {
-    const batch   = snaps.slice(i, i + 12);
+  for (let i = 0; i < snaps.length; i += 25) {
+    const batch   = snaps.slice(i, i + 25);
     const results = await Promise.allSettled(batch.map(async (s) => {
       const q   = quoteMap.get(s.ticker);
       const ref = tickerMap.get(s.ticker);
@@ -214,7 +216,7 @@ async function buildKnownRows(
 
       try {
         const [history, hv] = await Promise.all([
-          getPriceHistory(s.ticker, "TECH"),
+          getPolygonBars(s.ticker, 580),   // 580 days covers SMA200 + MACD/RSI warmup
           getHistoricalVolatility(s.ticker),
         ]);
         const sig  = computeSignals(history, price);
@@ -286,14 +288,56 @@ function buildPolygonRow(
 
 // ─── Cache + route ────────────────────────────────────────────────────────────
 
+// ─── DB persistence ───────────────────────────────────────────────────────────
+
+const DB_CACHE_MAX_AGE = 4 * 60 * 60 * 1000; // serve stale DB data up to 4 hours old on cold start
+
+async function persistToDb(rows: ScreenerRow[], source: string): Promise<void> {
+  try {
+    await db.transaction(async (tx) => {
+      await tx.delete(screenerCacheTable);
+      await tx.insert(screenerCacheTable).values({ payload: rows as unknown[], source });
+    });
+    console.log(`[screener] persisted ${rows.length} rows to DB`);
+  } catch (err) {
+    console.error("[screener] DB persist error (non-fatal):", err);
+  }
+}
+
+async function loadFromDb(): Promise<void> {
+  try {
+    const rows = await db
+      .select()
+      .from(screenerCacheTable)
+      .orderBy(desc(screenerCacheTable.cachedAt))
+      .limit(1);
+    const row = rows[0];
+    if (!row) return;
+    const age = Date.now() - new Date(row.cachedAt).getTime();
+    if (age > DB_CACHE_MAX_AGE) {
+      console.log("[screener] DB cache too stale, skipping");
+      return;
+    }
+    cache.data = row.payload as ScreenerRow[];
+    cache.at   = new Date(row.cachedAt).getTime();
+    console.log(`[screener] warmed ${cache.data.length} rows from DB (${Math.round(age / 60000)}m old)`);
+  } catch (err) {
+    console.error("[screener] DB load error (non-fatal):", err);
+  }
+}
+
+// ─── Refresh ──────────────────────────────────────────────────────────────────
+
 async function doRefresh(): Promise<void> {
   try {
-    const rows = isPolygonEnabled()
+    const source = isPolygonEnabled() ? "polygon" : "yahoo";
+    const rows   = isPolygonEnabled()
       ? await buildPolygonData()
       : await buildYahooData();
     cache.data = rows;
     cache.at   = Date.now();
-    console.log(`[screener] cache updated: ${rows.length} rows (${isPolygonEnabled() ? "Polygon" : "Yahoo Finance"})`);
+    console.log(`[screener] cache updated: ${rows.length} rows (${source})`);
+    persistToDb(rows, source);  // fire-and-forget — don't block response
   } catch (err) {
     console.error("[screener] refresh error", err);
   } finally {
@@ -306,8 +350,8 @@ function triggerRefresh(): Promise<void> {
   return cache.promise;
 }
 
-// Warm up at startup
-triggerRefresh().catch(() => {});
+// On startup: warm from DB first, then kick off a fresh network fetch in background
+loadFromDb().then(() => triggerRefresh().catch(() => {}));
 
 router.get("/screener", async (req, res): Promise<void> => {
   if (cache.data.length === 0) await triggerRefresh();

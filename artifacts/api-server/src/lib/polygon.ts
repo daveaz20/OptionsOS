@@ -44,11 +44,13 @@ export interface PolygonTickerRef {
 
 interface Cache<T> { data: T; at: number }
 
-const snapCache:   Cache<PolygonSnapshot[]>  = { data: [], at: 0 };
-const refCache:    Cache<Map<string,PolygonTickerRef>> = { data: new Map(), at: 0 };
+const snapCache: Cache<PolygonSnapshot[]>            = { data: [], at: 0 };
+const refCache:  Cache<Map<string, PolygonTickerRef>> = { data: new Map(), at: 0 };
+const barsCache  = new Map<string, Cache<PolygonBar[]>>();
 
-const SNAP_TTL = 15 * 60 * 1000;   // 15 min
+const SNAP_TTL = 15 * 60 * 1000;      // 15 min
 const REF_TTL  = 12 * 60 * 60 * 1000; // 12 hours
+const BARS_TTL = 30 * 60 * 1000;      // 30 min (matches getPriceHistory)
 
 // ─── Fetch helpers ────────────────────────────────────────────────────────────
 
@@ -128,18 +130,25 @@ export async function getPolygonSnapshots(): Promise<PolygonSnapshot[]> {
 
 // ─── Per-ticker historical bars (for technicals) ──────────────────────────────
 
-export async function getPolygonBars(
-  symbol: string,
-  days: number = 90
-): Promise<{ date: string; open: number; high: number; low: number; close: number; volume: number }[]> {
+export interface PolygonBar {
+  date: string; open: number; high: number; low: number; close: number; volume: number;
+}
+
+export async function getPolygonBars(symbol: string, days = 90): Promise<PolygonBar[]> {
+  const cacheKey = `${symbol}:${days}`;
+  const now = Date.now();
+  const hit = barsCache.get(cacheKey);
+  if (hit && now - hit.at < BARS_TTL) return hit.data;
+
   const to   = new Date();
-  const from = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const from = new Date(now - days * 24 * 60 * 60 * 1000);
   const fmt  = (d: Date) => d.toISOString().slice(0, 10);
 
-  const url = `${BASE}/v2/aggs/ticker/${symbol}/range/1/day/${fmt(from)}/${fmt(to)}?adjusted=true&sort=asc&limit=300`;
+  // limit=600 safely covers 580 calendar days (~414 trading days)
+  const url  = `${BASE}/v2/aggs/ticker/${symbol}/range/1/day/${fmt(from)}/${fmt(to)}?adjusted=true&sort=asc&limit=600`;
   const json = await polyFetch(url);
 
-  return (json.results ?? []).map((bar: any) => ({
+  const bars: PolygonBar[] = (json.results ?? []).map((bar: any) => ({
     date:   new Date(bar.t).toISOString().slice(0, 10),
     open:   bar.o,
     high:   bar.h,
@@ -147,40 +156,7 @@ export async function getPolygonBars(
     close:  bar.c,
     volume: bar.v,
   }));
-}
 
-// ─── RSI via Polygon technical indicators ─────────────────────────────────────
-
-export async function getPolygonRSI(symbol: string): Promise<number> {
-  try {
-    const url  = `${BASE}/v1/indicators/rsi/${symbol}?timespan=day&window=14&series_type=close&limit=1`;
-    const json = await polyFetch(url);
-    return json.results?.values?.[0]?.value ?? 50;
-  } catch {
-    return 50;
-  }
-}
-
-// ─── MACD via Polygon technical indicators ────────────────────────────────────
-
-export async function getPolygonMACD(symbol: string): Promise<{ histogram: number }> {
-  try {
-    const url  = `${BASE}/v1/indicators/macd/${symbol}?timespan=day&limit=1`;
-    const json = await polyFetch(url);
-    const v    = json.results?.values?.[0];
-    return { histogram: (v?.value ?? 0) - (v?.signal ?? 0) };
-  } catch {
-    return { histogram: 0 };
-  }
-}
-
-// ─── Single ticker snapshot ───────────────────────────────────────────────────
-
-export async function getPolygonSnapshot(symbol: string): Promise<PolygonSnapshot | null> {
-  try {
-    const json = await polyFetch(`${BASE}/v2/snapshot/locale/us/markets/stocks/tickers/${symbol}`);
-    return json.ticker ?? null;
-  } catch {
-    return null;
-  }
+  barsCache.set(cacheKey, { data: bars, at: now });
+  return bars;
 }
