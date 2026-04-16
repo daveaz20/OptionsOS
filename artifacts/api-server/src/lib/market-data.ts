@@ -285,6 +285,7 @@ export async function getHistoricalVolatility(symbol: string): Promise<{ hv30: n
     windows.push(Math.sqrt(variance * 252));
   }
 
+  if (windows.length === 0) return { hv30: round2(hv30 * 100), hv252: round2(hv252 * 100), ivRank: 50 };
   const minHv = Math.min(...windows);
   const maxHv = Math.max(...windows);
   const ivRank = maxHv === minHv ? 50 : Math.round(((hv30 - minHv) / (maxHv - minHv)) * 100);
