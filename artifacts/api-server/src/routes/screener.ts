@@ -42,7 +42,8 @@ export interface ScreenerRow {
   fiftyTwoWeekHigh: number; fiftyTwoWeekLow: number;
   pctFrom52High: number; pctFrom52Low: number; earningsDate: string;
   technicalStrength: number; rsi14: number; macdHistogram: number; ivRank: number;
-  opportunityScore: number; setupType: string; recommendedOutlook: string;
+  opportunityScore: number; technicalScore: number; ivScore: number; entryScore: number; momentumScore: number;
+  setupType: string; recommendedOutlook: string;
   supportPrice: number; resistancePrice: number;
   liquidity: "Liquid" | "Illiquid";
   source: "polygon" | "yahoo";
@@ -106,6 +107,10 @@ async function buildYahooData(): Promise<ScreenerRow[]> {
           rsi14: r2(sig.rsi14), macdHistogram: r2(sig.macd.histogram),
           ivRank: r2(hv.ivRank),
           opportunityScore: scan?.opportunityScore ?? 40,
+          technicalScore: scan?.technicalScore ?? 0,
+          ivScore: scan?.ivScore ?? 0,
+          entryScore: scan?.entryScore ?? 0,
+          momentumScore: scan?.momentumScore ?? 0,
           setupType: scan?.setupType ?? "Neutral",
           recommendedOutlook: scan?.recommendedOutlook ?? "neutral",
           supportPrice: sig.support, resistancePrice: sig.resistance,
@@ -114,7 +119,8 @@ async function buildYahooData(): Promise<ScreenerRow[]> {
         return {
           ...base,
           technicalStrength: 5, rsi14: 50, macdHistogram: 0, ivRank: 30,
-          opportunityScore: 40, setupType: "Neutral", recommendedOutlook: "neutral",
+          opportunityScore: 40, technicalScore: 0, ivScore: 0, entryScore: 0, momentumScore: 0,
+          setupType: "Neutral", recommendedOutlook: "neutral",
           supportPrice: r2(q.price * 0.94), resistancePrice: r2(q.price * 1.06),
         } satisfies ScreenerRow;
       }
@@ -228,6 +234,10 @@ async function buildKnownRows(
           rsi14: r2(sig.rsi14), macdHistogram: r2(sig.macd.histogram),
           ivRank: r2(hv.ivRank),
           opportunityScore: scan?.opportunityScore ?? 40,
+          technicalScore: scan?.technicalScore ?? 0,
+          ivScore: scan?.ivScore ?? 0,
+          entryScore: scan?.entryScore ?? 0,
+          momentumScore: scan?.momentumScore ?? 0,
           setupType: scan?.setupType ?? "Neutral",
           recommendedOutlook: scan?.recommendedOutlook ?? "neutral",
           supportPrice: sig.support, resistancePrice: sig.resistance,
@@ -236,7 +246,8 @@ async function buildKnownRows(
         return {
           ...base,
           technicalStrength: 5, rsi14: 50, macdHistogram: 0, ivRank: 30,
-          opportunityScore: 40, setupType: "Neutral", recommendedOutlook: "neutral",
+          opportunityScore: 40, technicalScore: 0, ivScore: 0, entryScore: 0, momentumScore: 0,
+          setupType: "Neutral", recommendedOutlook: "neutral",
           supportPrice: r2(price * 0.94), resistancePrice: r2(price * 1.06),
         } satisfies ScreenerRow;
       }
@@ -279,7 +290,8 @@ function buildPolygonRow(
     fiftyTwoWeekHigh: s.day?.h ?? price, fiftyTwoWeekLow: s.day?.l ?? price,
     pctFrom52High: 0, pctFrom52Low: 0, earningsDate: "TBD",
     technicalStrength: r2(techStrength), rsi14: rsi, macdHistogram: 0, ivRank: 30,
-    opportunityScore: 40, setupType: "Neutral", recommendedOutlook: outlook,
+    opportunityScore: 40, technicalScore: 0, ivScore: 0, entryScore: 0, momentumScore: 0,
+    setupType: "Neutral", recommendedOutlook: outlook,
     supportPrice: r2(price * 0.94), resistancePrice: r2(price * 1.06),
     liquidity: (vol > 1_000_000 ? "Liquid" : "Illiquid"),
     source: "polygon",
@@ -370,7 +382,16 @@ router.get("/screener/source", (_req, res) => {
 
 // ─── Accurate stats across the full universe ──────────────────────────────────
 
-router.get("/screener/stats", (_req, res) => {
+function isHighConviction(r: ScreenerRow): boolean {
+  return r.opportunityScore >= 75
+    && r.technicalScore >= 20
+    && r.ivScore >= 15
+    && r.entryScore >= 15
+    && r.momentumScore >= 8;
+}
+
+router.get("/screener/stats", async (_req, res): Promise<void> => {
+  if (cache.data.length === 0) await triggerRefresh();
   const rows = cache.data;
 
   const bull    = rows.filter(r => r.changePercent > 0).length;
@@ -378,9 +399,9 @@ router.get("/screener/stats", (_req, res) => {
   const neutral = rows.filter(r => r.changePercent === 0).length;
   const total   = rows.length;
 
-  // High conviction: only count rows with real technical analysis (not polygon-only defaults)
-  const withTechnicals = rows.filter(r => r.source !== "polygon" || r.rsi14 !== 50);
-  const highConviction = withTechnicals.filter(r => r.opportunityScore >= 75).length;
+  // Rows with real technical analysis (not polygon-only defaults)
+  const withTechnicals = rows.filter(r => r.opportunityScore !== 40);
+  const highConviction = withTechnicals.filter(r => isHighConviction(r)).length;
 
   const ivVals = rows.map(r => r.ivRank).filter(v => v > 0);
   const avgIv  = ivVals.length > 0

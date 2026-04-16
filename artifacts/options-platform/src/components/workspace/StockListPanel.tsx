@@ -122,8 +122,8 @@ export function StockListPanel({ selectedSymbol, onSelect }: StockListPanelProps
 
   const isLoading = tab === "watchlist" ? loadingWatchlist : loadingStocks;
 
-  // Count high-conviction opportunities (score >= 60)
-  const highConviction = stocks.filter((s) => (s.opportunityScore ?? 0) >= 60).length;
+  // Count high-conviction opportunities (score >= 75)
+  const highConviction = stocks.filter((s) => (s.opportunityScore ?? 0) >= 75).length;
 
   return (
     <div className="flex h-full flex-col" style={{ background: "hsl(0 0% 5%)", borderRight: "1px solid rgba(255,255,255,0.05)" }}>
