@@ -133,6 +133,31 @@ export function StockDetailPanel({ symbol }: StockDetailPanelProps) {
                 }}>
                   {stock.sector}
                 </span>
+                {stock.opportunityScore != null && (
+                  <span style={{
+                    fontSize: 13,
+                    fontWeight: 700,
+                    letterSpacing: "-0.02em",
+                    fontVariantNumeric: "tabular-nums",
+                    padding: "3px 10px",
+                    borderRadius: 6,
+                    color: stock.opportunityScore >= 90 ? "#4ade80"
+                         : stock.opportunityScore >= 75 ? "#22c55e"
+                         : stock.opportunityScore >= 50 ? "#facc15"
+                         : "#f87171",
+                    background: stock.opportunityScore >= 90 ? "rgba(74,222,128,0.12)"
+                              : stock.opportunityScore >= 75 ? "rgba(34,197,94,0.10)"
+                              : stock.opportunityScore >= 50 ? "rgba(250,204,21,0.10)"
+                              : "rgba(248,113,113,0.10)",
+                    border: `1px solid ${
+                      stock.opportunityScore >= 90 ? "rgba(74,222,128,0.3)"
+                    : stock.opportunityScore >= 75 ? "rgba(34,197,94,0.25)"
+                    : stock.opportunityScore >= 50 ? "rgba(250,204,21,0.25)"
+                    : "rgba(248,113,113,0.25)"}`,
+                  }}>
+                    {stock.opportunityScore}
+                  </span>
+                )}
                 <ActionBtn
                   active={isWatched}
                   onClick={handleWatchlistToggle}

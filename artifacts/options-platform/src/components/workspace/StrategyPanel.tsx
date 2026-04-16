@@ -160,11 +160,12 @@ function PayoffDiagram({ legs, currentPrice }: { legs: StrategyLeg[]; currentPri
 
 // ── Strategy Detail (OptionsPlay-style card) ─────────────────────────────
 function StrategyDetail({
-  strategy, currentPrice, symbol, onModify,
+  strategy, currentPrice, symbol, iv, onModify,
 }: {
   strategy: OptionsStrategy;
   currentPrice: number;
   symbol: string;
+  iv: number;
   onModify: () => void;
 }) {
   const { toast } = useToast();
@@ -257,7 +258,7 @@ function StrategyDetail({
         </button>
         {showSim && (
           <div style={{ padding: "0 12px 14px" }}>
-            <PnlSimulator strategy={strategy} currentPrice={currentPrice} symbol={symbol} />
+            <PnlSimulator strategy={strategy} currentPrice={currentPrice} symbol={symbol} initialIv={iv} />
           </div>
         )}
       </div>
@@ -598,6 +599,7 @@ export function StrategyPanel({ symbol, currentPrice = 0 }: StrategyPanelProps) 
                   strategy={selectedStrategy}
                   currentPrice={currentPrice}
                   symbol={symbol}
+                  iv={estimatedIv}
                   onModify={() => setModifying(true)}
                 />
               )}
@@ -728,14 +730,17 @@ function computePnlClient(
 }
 
 // ── P&L Simulator (collapsible, slider + typeable) ───────────────────────
-function PnlSimulator({ strategy, currentPrice, symbol: _symbol }: { strategy: OptionsStrategy; currentPrice: number; symbol: string }) {
+function PnlSimulator({ strategy, currentPrice, symbol: _symbol, initialIv = 30 }: { strategy: OptionsStrategy; currentPrice: number; symbol: string; initialIv?: number }) {
   const [targetPrice, setTargetPrice] = useState(currentPrice || 100);
   // targetDate tracks the exact date — syncs from strategy.expirationDate on change
   const [targetDate, setTargetDate] = useState(strategy.expirationDate);
-  const [iv, setIv] = useState(30);
+  // IV initialised from the strategy's implied volatility estimate (not hardcoded 30)
+  const [iv, setIv] = useState(initialIv);
 
   // Sync when strategy expiry changes (e.g. after Modify → Apply)
   useEffect(() => { setTargetDate(strategy.expirationDate); }, [strategy.expirationDate]);
+  // Sync IV when strategy changes (different strategies may have different estimated IVs)
+  useEffect(() => { setIv(initialIv); }, [initialIv]);
   // Sync target price when stock loads
   useEffect(() => { if (currentPrice > 0 && targetPrice === 0) setTargetPrice(currentPrice); }, [currentPrice]);
 

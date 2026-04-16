@@ -12,7 +12,8 @@ interface ScreenerRow {
   fiftyTwoWeekHigh: number; fiftyTwoWeekLow: number;
   pctFrom52High: number; pctFrom52Low: number; earningsDate: string;
   technicalStrength: number; rsi14: number; macdHistogram: number; ivRank: number;
-  opportunityScore: number; setupType: string; recommendedOutlook: string;
+  opportunityScore: number; momentumScore?: number; technicalScore?: number;
+  setupType: string; recommendedOutlook: string;
   supportPrice: number; resistancePrice: number; liquidity: string;
   source?: "polygon" | "yahoo";
 }
@@ -20,6 +21,7 @@ interface ScreenerRow {
 interface FactoredRow extends ScreenerRow {
   fMomentum: number; fValue: number; fQuality: number; fVolatility: number; fOptions: number;
   alpha: number;
+  daysToEarnings: number;
 }
 
 // ─── Filter definitions ───────────────────────────────────────────────────────
@@ -60,6 +62,10 @@ const FILTER_DEFS: FilterDef[] = [
   { key:"shortRatio",    label:"Short Ratio",     category:"Fundamentals", type:"minonly", unit:"d",  field:r=>r.shortRatio,     min:0,  max:30 },
   { key:"ivRank",        label:"IV Rank",         category:"Options",      type:"range",   unit:"%",  field:r=>r.ivRank,         min:0,  max:100 },
   { key:"opportunityScore",label:"Opp. Score",    category:"Options",      type:"minonly",            field:r=>r.opportunityScore,min:0,max:100 },
+  { key:"momentumScore", label:"Momentum Score",  category:"Options",      type:"minonly",            field:r=>(r.momentumScore ?? 0), min:0, max:30 },
+  { key:"technicalScore",label:"Technical Score", category:"Options",      type:"minonly",            field:r=>(r.technicalScore ?? 0), min:0, max:30 },
+  { key:"marketCapNum",  label:"Mkt Cap ($)",     category:"General",      type:"range",              field:r=>r.marketCap,       min:0 },
+  { key:"daysToEarnings",label:"Days to Earnings",category:"General",      type:"range",              field:r=>r.daysToEarnings,  min:0, max:365 },
   { key:"alpha",         label:"Alpha Score",     category:"Factors",      type:"minonly",            field:r=>r.alpha,           min:0,  max:100 },
   { key:"fMomentum",     label:"Momentum",        category:"Factors",      type:"minonly",            field:r=>r.fMomentum,       min:0,  max:100 },
   { key:"fValue",        label:"Value",           category:"Factors",      type:"minonly",            field:r=>r.fValue,          min:0,  max:100 },
@@ -94,15 +100,30 @@ const TABS: { key: TabKey; label: string }[] = [
 const PRESETS = [
   { label:"All",           filters:[] as ActiveFilter[] },
   { label:"Options Seller",filters:[{key:"ivRank",min:"65"},{key:"marketCap",value:"mid"}] as ActiveFilter[] },
-  { label:"Momentum",      filters:[{key:"changePercent",min:"1"},{key:"rsi14",min:"55"},{key:"technicalStr",min:"7"}] as ActiveFilter[] },
+  { label:"Momentum",      filters:[{key:"momentumScore",min:"12"},{key:"technicalScore",min:"25"}] as ActiveFilter[] },
   { label:"High Volume",   filters:[{key:"relVol",min:"2"}] as ActiveFilter[] },
   { label:"Value",         filters:[{key:"pe",max:"20"},{key:"dividendYield",min:"1"}] as ActiveFilter[] },
   { label:"Bullish Setup", filters:[{key:"outlook",value:"bullish"},{key:"technicalStr",min:"6"}] as ActiveFilter[] },
   { label:"Short Squeeze", filters:[{key:"shortRatio",min:"5"},{key:"changePercent",min:"1"}] as ActiveFilter[] },
   { label:"Dividend",      filters:[{key:"dividendYield",min:"3"}] as ActiveFilter[] },
+  { label:"High IV",       filters:[{key:"ivRank",min:"70"}] as ActiveFilter[] },
+  { label:"Low IV",        filters:[{key:"ivRank",max:"20"}] as ActiveFilter[] },
+  { label:"Oversold",      filters:[{key:"rsi14",max:"35"}] as ActiveFilter[] },
+  { label:"Overbought",    filters:[{key:"rsi14",min:"65"}] as ActiveFilter[] },
+  { label:"Earnings Soon", filters:[{key:"daysToEarnings",min:"0",max:"14"}] as ActiveFilter[] },
+  { label:"Large Cap",     filters:[{key:"marketCap",value:"large+"}] as ActiveFilter[] },
+  { label:"Small Cap",     filters:[{key:"marketCap",value:"small"}] as ActiveFilter[] },
 ];
 
 // ─── Factor engine ────────────────────────────────────────────────────────────
+
+function parseEarningsDays(dateStr: string): number {
+  if (!dateStr || dateStr === "TBD") return 999;
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return 999;
+  const days = Math.ceil((d.getTime() - Date.now()) / 86_400_000);
+  return days >= 0 ? days : 999;
+}
 
 function pctRank(arr: number[], val: number): number {
   if (arr.length === 0) return 50;
@@ -131,7 +152,7 @@ function computeFactors(rows: ScreenerRow[]): FactoredRow[] {
     const fVolatility = pctRank(ivR, ivR[i]);
     const fOptions    = Math.round(pctRank(opp,opp[i])*0.60 + pctRank(rv,Math.min(r.relVol,10))*0.40);
     const alpha       = Math.round((fMomentum + fValue + fQuality + fVolatility + fOptions) / 5);
-    return { ...r, fMomentum, fValue, fQuality, fVolatility, fOptions, alpha };
+    return { ...r, fMomentum, fValue, fQuality, fVolatility, fOptions, alpha, daysToEarnings: parseEarningsDays(r.earningsDate) };
   });
 }
 
@@ -152,6 +173,7 @@ function applyFilters(rows: FactoredRow[], active: ActiveFilter[]): FactoredRow[
           if (f.value === "mid"    && !(mc >= 2e9    && mc < 10e9))   return false;
           if (f.value === "large"  && !(mc >= 10e9   && mc < 200e9))  return false;
           if (f.value === "mega"   && !(mc >= 200e9))                  return false;
+          if (f.value === "large+" && !(mc >= 10e9))                   return false;
         } else {
           if (val !== f.value) return false;
         }

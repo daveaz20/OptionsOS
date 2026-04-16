@@ -1,4 +1,5 @@
 import { useMemo, useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useListStocks, useGetWatchlist } from "@workspace/api-client-react";
 import { ArrowDownRight, ArrowUpRight, BarChart2, Search, SlidersHorizontal, Star, Zap } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -102,6 +103,13 @@ export function StockListPanel({ selectedSymbol, onSelect }: StockListPanelProps
   const { data: stocks = [], isLoading: loadingStocks }       = useListStocks({ search, limit: 200 });
   const { data: watchlist = [], isLoading: loadingWatchlist } = useGetWatchlist();
 
+  // Fetch full-universe stats for accurate Setups and High Conviction counts
+  const { data: screenerStats } = useQuery<{ total: number; highConviction: number; bull: number; bear: number; highIv: number }>({
+    queryKey: ["screener-stats-v1"],
+    queryFn: () => fetch("/api/screener/stats").then(r => r.json()),
+    staleTime: 5 * 60 * 1000,
+  });
+
   const watchlistSymbols = new Set(watchlist.map((w) => w.symbol));
 
   const items = useMemo(() => {
@@ -139,8 +147,8 @@ export function StockListPanel({ selectedSymbol, onSelect }: StockListPanelProps
 
   const isLoading = tab === "watchlist" ? loadingWatchlist : loadingStocks;
 
-  // Count high-conviction opportunities (score >= 75)
-  const highConviction = stocks.filter((s) => (s.opportunityScore ?? 0) >= 75).length;
+  // Real high-conviction count from full universe (not capped by list limit)
+  const highConviction = screenerStats?.highConviction ?? stocks.filter((s) => (s.opportunityScore ?? 0) >= 75).length;
 
   return (
     <div className="flex h-full flex-col" style={{ background: "hsl(0 0% 5%)", borderRight: "1px solid rgba(255,255,255,0.05)" }}>
@@ -220,7 +228,11 @@ export function StockListPanel({ selectedSymbol, onSelect }: StockListPanelProps
           <span style={{ fontSize: 11, color: "hsl(var(--muted-foreground))" }}>
             {tab === "ideas" ? "Setups" : tab === "watchlist" ? "Watchlist" : "Portfolio"}
             {" · "}
-            <span style={{ fontVariantNumeric: "tabular-nums" }}>{items.length}</span>
+            <span style={{ fontVariantNumeric: "tabular-nums" }}>
+              {tab === "ideas" && filter === "all" && !search
+                ? (screenerStats?.total ?? items.length)
+                : items.length}
+            </span>
           </span>
           {tab === "ideas" && highConviction > 0 && (
             <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, fontWeight: 600, color: "hsl(var(--success))", letterSpacing: "0.01em" }}>

@@ -170,7 +170,7 @@ export function GlobalSearch() {
     o === "bullish" ? "#4ade80" : o === "bearish" ? "#f87171" : "hsl(var(--muted-foreground))";
 
   return (
-    <div data-global-search style={{ position: "relative", width: 220 }}>
+    <div data-global-search style={{ position: "relative", width: "clamp(280px, 22vw, 380px)" }}>
       {/* Input */}
       <div style={{
         display: "flex", alignItems: "center", gap: 6, height: 30, padding: "0 10px",

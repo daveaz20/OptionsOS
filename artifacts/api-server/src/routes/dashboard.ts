@@ -1,15 +1,22 @@
 import { Router, type IRouter } from "express";
-import { desc, asc, sql } from "drizzle-orm";
-import { db, stocksTable, watchlistTable } from "@workspace/db";
+import { db, watchlistTable } from "@workspace/db";
 import {
   GetDashboardSummaryResponse,
   GetTopMoversResponse,
 } from "@workspace/api-zod";
+import { getScreenerData, ensureScreenerReady } from "./screener.js";
+
+function hashSymbol(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) & 0x7fffffff;
+  return (h % 999) + 1;
+}
 
 const router: IRouter = Router();
 
 router.get("/dashboard/summary", async (_req, res): Promise<void> => {
-  const stocks = await db.select().from(stocksTable);
+  await ensureScreenerReady();
+  const stocks = getScreenerData();
   const watchlist = await db.select().from(watchlistTable);
 
   const bullish = stocks.filter((s) => s.changePercent > 0).length;
@@ -38,19 +45,33 @@ router.get("/dashboard/summary", async (_req, res): Promise<void> => {
 });
 
 router.get("/dashboard/top-movers", async (_req, res): Promise<void> => {
-  const gainers = await db
-    .select()
-    .from(stocksTable)
-    .where(sql`${stocksTable.changePercent} > 0`)
-    .orderBy(desc(stocksTable.changePercent))
-    .limit(5);
+  await ensureScreenerReady();
+  const rows = getScreenerData();
 
-  const losers = await db
-    .select()
-    .from(stocksTable)
-    .where(sql`${stocksTable.changePercent} < 0`)
-    .orderBy(asc(stocksTable.changePercent))
-    .limit(5);
+  const toMover = (r: ReturnType<typeof getScreenerData>[number]) => ({
+    id:               hashSymbol(r.symbol),
+    symbol:           r.symbol,
+    name:             r.name,
+    price:            r.price,
+    change:           r.change,
+    changePercent:    r.changePercent,
+    volume:           r.volume,
+    marketCap:        r.marketCap,
+    sector:           r.sector,
+    technicalStrength: Math.max(1, Math.min(10, r.technicalStrength)),
+  });
+
+  const gainers = [...rows]
+    .filter(r => r.changePercent > 0)
+    .sort((a, b) => b.changePercent - a.changePercent)
+    .slice(0, 5)
+    .map(toMover);
+
+  const losers = [...rows]
+    .filter(r => r.changePercent < 0)
+    .sort((a, b) => a.changePercent - b.changePercent)
+    .slice(0, 5)
+    .map(toMover);
 
   res.json(GetTopMoversResponse.parse({ gainers, losers }));
 });

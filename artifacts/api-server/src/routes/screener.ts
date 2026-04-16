@@ -165,7 +165,7 @@ async function buildPolygonData(): Promise<ScreenerRow[]> {
   const filtered = snaps.filter((s) => {
     const price = s.day?.c ?? s.lastTrade?.p ?? 0;
     const vol   = s.day?.v ?? 0;
-    if (etfMap.has(s.ticker)) return price >= 2 && vol >= 500_000;
+    if (etfMap.has(s.ticker)) return price >= 2 && vol >= 100_000;
     const ref = tickerMap.get(s.ticker);
     if (!ref || !VALID_TYPES.has(ref.type)) return false;
     return price >= 2 && vol >= 100_000;

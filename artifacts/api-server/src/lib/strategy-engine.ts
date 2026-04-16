@@ -476,15 +476,21 @@ function calcTechAlignment(signals: TechnicalSignals, outlook: Outlook): number 
 }
 
 // ─── Black-Scholes Premium Approximation ─────────────────────────────────
+// Returns per-share option value (multiply by 100 for 1-contract dollar value).
+// S = current price, K = strike, r = risk-free rate, sigma = IV (decimal), T = years to expiry.
 
 function bsCall(S: number, K: number, r: number, sigma: number, T: number, type: "call" | "put"): number {
+  // At expiry: intrinsic value only, no time premium
   if (T <= 0) return Math.max(0, type === "call" ? S - K : K - S);
+  // d1: log-moneyness adjusted for drift; d2: d1 minus one-sigma move over sqrt(T)
   const d1 = (Math.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * Math.sqrt(T));
   const d2 = d1 - sigma * Math.sqrt(T);
   const Nd1 = normalCDF(d1), Nd2 = normalCDF(d2);
   if (type === "call") {
+    // C = S·N(d1) - K·e^(-rT)·N(d2)
     return S * Nd1 - K * Math.exp(-r * T) * Nd2;
   } else {
+    // P = K·e^(-rT)·N(-d2) - S·N(-d1)  [put-call parity equivalent]
     return K * Math.exp(-r * T) * normalCDF(-d2) - S * normalCDF(-d1);
   }
 }
@@ -582,17 +588,21 @@ export function calcPnlCurve(
     let value = 0;
     for (const leg of legs) {
       if (leg.optionType === "stock") {
+        // Stock P&L: (current price - entry price) × shares × direction
         value += (p - leg.strikePrice) * leg.quantity * (leg.action === "buy" ? 1 : -1);
       } else {
-        // T = time remaining FROM the target date TO the option's expiry
-        // (not today→target, which was the original bug — that computed how long until we check,
-        //  not how much time value the option has left on that date)
+        // T = time remaining FROM the target date TO the option's expiry.
+        // We compute how much time value the option still has on the target date,
+        // not today→target (which would give theta decay to the check date, not the option value).
         const legExpiryMs = leg.expiration
           ? new Date(leg.expiration).getTime()
           : target.getTime() + 45 * 24 * 60 * 60 * 1000;
         const legT = Math.max(0, (legExpiryMs - target.getTime()) / (365 * 24 * 60 * 60 * 1000));
+        // optVal: BS price at target date * 100 = per-contract dollar value
         const optVal = bsCall(p, leg.strikePrice, riskFreeRate, iv, legT, leg.optionType as "call" | "put") * 100;
+        // openVal: premium * 100 = per-contract cost basis (premium stored per-share, × 100 = contract)
         const openVal = leg.premium * 100;
+        // P&L = (current value − cost basis) × direction (+1 long, −1 short)
         value += (optVal - openVal) * (leg.action === "buy" ? 1 : -1);
       }
     }
@@ -619,7 +629,13 @@ export function calcPnlCurve(
     }
   }
 
-  const totalCost = legs.reduce((s, l) => s + l.premium * 100 * (l.action === "buy" ? 1 : -1), 0);
+  // totalCost: net premium outflow (positive = debit paid, negative = credit received).
+  // Stock legs are excluded — they are not option premium; their P&L is already in pnlAtTarget.
+  // |totalCost| is used as the denominator so long options floor at −100 % and
+  // credit spreads show return relative to credit received.
+  const totalCost = legs
+    .filter(l => l.optionType !== "stock")
+    .reduce((s, l) => s + l.premium * 100 * (l.action === "buy" ? 1 : -1), 0);
   const profitLossPercent = totalCost !== 0 ? round2((pnlAtTarget / Math.abs(totalCost)) * 100) : 0;
 
   return {

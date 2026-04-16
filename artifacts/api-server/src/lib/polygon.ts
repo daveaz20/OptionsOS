@@ -193,13 +193,13 @@ export function classifyETF(ticker: string, name: string): EtfCategory {
   ];
   if (SINGLE_STOCK_TERMS.some(t => n.includes(t))) return "leveraged-single";
 
-  // Bear / inverse / short direction
-  if (/\bshort\b|inverse|bear|\-[123]x|ultrashort|ultra short|proshort/.test(n)) {
+  // Bear / inverse / short direction — includes Direxion daily bear products
+  if (/\bshort\b|inverse|bear|\-[123]x|ultrashort|ultra short|proshort|direxion.*bear|daily bear/.test(n)) {
     return "leveraged-bear";
   }
 
-  // Bull / leveraged (non-inverse)
-  if (/\b[23]x\b|[23]×|leveraged|ultra\b|ultrapro|daily bull|daily long|bull\b/.test(n)) {
+  // Bull / leveraged (non-inverse) — includes Direxion daily bull products
+  if (/\b[23]x\b|[23]×|leveraged|ultra\b|ultrapro|daily bull|daily long|bull\b|direxion/.test(n)) {
     return "leveraged-bull";
   }
 
@@ -214,9 +214,9 @@ export async function getPolygonETFs(): Promise<PolygonETFRef[]> {
   const now = Date.now();
   if (etfCache.data.length > 0 && now - etfCache.at < ETF_TTL) return etfCache.data;
 
-  console.log("[polygon] fetching ETF/ETV reference data…");
+  console.log("[polygon] fetching ETF/ETV/ETN reference data…");
 
-  const [etfItems, etvItems] = await Promise.all([
+  const [etfItems, etvItems, etnItems] = await Promise.all([
     fetchAllPages<PolygonTickerRef>(
       `${BASE}/v3/reference/tickers?type=ETF&market=stocks&active=true&limit=1000`,
       "results"
@@ -225,16 +225,21 @@ export async function getPolygonETFs(): Promise<PolygonETFRef[]> {
       `${BASE}/v3/reference/tickers?type=ETV&market=stocks&active=true&limit=1000`,
       "results"
     ).catch(() => [] as PolygonTickerRef[]),
+    // ETN (exchange-traded notes) captures VelocityShares, Credit Suisse, etc.
+    fetchAllPages<PolygonTickerRef>(
+      `${BASE}/v3/reference/tickers?type=ETN&market=stocks&active=true&limit=1000`,
+      "results"
+    ).catch(() => [] as PolygonTickerRef[]),
   ]);
 
-  const all = [...etfItems, ...etvItems].filter(
+  const all = [...etfItems, ...etvItems, ...etnItems].filter(
     t => t.locale === "us" && t.currency_name === "usd" && t.active !== false
   );
 
   const result: PolygonETFRef[] = all.map(t => ({
     ticker:      t.ticker,
     name:        t.name,
-    type:        t.type as "ETF" | "ETV",
+    type:        t.type as "ETF" | "ETV" | "ETN",
     etfCategory: classifyETF(t.ticker, t.name),
   }));
 
