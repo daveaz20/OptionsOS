@@ -8,6 +8,8 @@
  * Key env var: POLYGON_API_KEY
  */
 
+import type { EtfCategory } from "./market-data.js";
+
 const BASE = "https://api.polygon.io";
 const KEY  = () => process.env.POLYGON_API_KEY ?? "";
 
@@ -40,16 +42,25 @@ export interface PolygonTickerRef {
   currency_name:    string;
 }
 
+export interface PolygonETFRef {
+  ticker:      string;
+  name:        string;
+  type:        "ETF" | "ETV";
+  etfCategory: EtfCategory;
+}
+
 // ─── In-memory caches ─────────────────────────────────────────────────────────
 
 interface Cache<T> { data: T; at: number }
 
 const snapCache: Cache<PolygonSnapshot[]>            = { data: [], at: 0 };
 const refCache:  Cache<Map<string, PolygonTickerRef>> = { data: new Map(), at: 0 };
+const etfCache:  Cache<PolygonETFRef[]>              = { data: [], at: 0 };
 const barsCache  = new Map<string, Cache<PolygonBar[]>>();
 
 const SNAP_TTL = 15 * 60 * 1000;      // 15 min
 const REF_TTL  = 12 * 60 * 60 * 1000; // 12 hours
+const ETF_TTL  = 12 * 60 * 60 * 1000; // 12 hours — ETF universe changes slowly
 const BARS_TTL = 30 * 60 * 1000;      // 30 min (matches getPriceHistory)
 
 // ─── Fetch helpers ────────────────────────────────────────────────────────────
@@ -159,4 +170,76 @@ export async function getPolygonBars(symbol: string, days = 90): Promise<Polygon
 
   barsCache.set(cacheKey, { data: bars, at: now });
   return bars;
+}
+
+// ─── ETF reference data + classification ──────────────────────────────────────
+
+/**
+ * Classify an ETF into a scoring category based on its name.
+ * Priority: single-stock → bear → bull/leveraged → sector
+ */
+export function classifyETF(ticker: string, name: string): EtfCategory {
+  const n = name.toLowerCase();
+
+  // Single-stock leveraged/directional products contain a specific company name or ticker
+  const SINGLE_STOCK_TERMS = [
+    "nvidia","nvda","tesla","tsla","apple","aapl","microsoft","msft",
+    "amazon","amzn","alphabet","googl","google","meta","facebook",
+    "netflix","nflx","coinbase","coin","palantir","pltr","robinhood","hood",
+    "jpmorgan","jpm","goldman","gs","exxon","xom","chevron","cvx",
+    "pfizer","pfe","moderna","mrna","salesforce","crm","disney","dis",
+    "shopify","shop","airbnb","abnb","snowflake","snow","uber","lyft",
+    "berkshire","arm holdings","arm ","nike ","nike,","ford ","ford,","gm ",
+  ];
+  if (SINGLE_STOCK_TERMS.some(t => n.includes(t))) return "leveraged-single";
+
+  // Bear / inverse / short direction
+  if (/\bshort\b|inverse|bear|\-[123]x|ultrashort|ultra short|proshort/.test(n)) {
+    return "leveraged-bear";
+  }
+
+  // Bull / leveraged (non-inverse)
+  if (/\b[23]x\b|[23]×|leveraged|ultra\b|ultrapro|daily bull|daily long|bull\b/.test(n)) {
+    return "leveraged-bull";
+  }
+
+  return "sector";
+}
+
+/**
+ * Fetch all ETF and ETV reference tickers from Polygon.
+ * Price/volume filtering is done in the screener loop using snapshot data.
+ */
+export async function getPolygonETFs(): Promise<PolygonETFRef[]> {
+  const now = Date.now();
+  if (etfCache.data.length > 0 && now - etfCache.at < ETF_TTL) return etfCache.data;
+
+  console.log("[polygon] fetching ETF/ETV reference data…");
+
+  const [etfItems, etvItems] = await Promise.all([
+    fetchAllPages<PolygonTickerRef>(
+      `${BASE}/v3/reference/tickers?type=ETF&market=stocks&active=true&limit=1000`,
+      "results"
+    ).catch(() => [] as PolygonTickerRef[]),
+    fetchAllPages<PolygonTickerRef>(
+      `${BASE}/v3/reference/tickers?type=ETV&market=stocks&active=true&limit=1000`,
+      "results"
+    ).catch(() => [] as PolygonTickerRef[]),
+  ]);
+
+  const all = [...etfItems, ...etvItems].filter(
+    t => t.locale === "us" && t.currency_name === "usd" && t.active !== false
+  );
+
+  const result: PolygonETFRef[] = all.map(t => ({
+    ticker:      t.ticker,
+    name:        t.name,
+    type:        t.type as "ETF" | "ETV",
+    etfCategory: classifyETF(t.ticker, t.name),
+  }));
+
+  etfCache.data = result;
+  etfCache.at   = now;
+  console.log(`[polygon] ${result.length} ETFs loaded (${result.filter(e => e.type === "ETV").length} leveraged/ETV)`);
+  return result;
 }

@@ -42,7 +42,8 @@ export interface Stock {
   setupType?: string;
   recommendedOutlook?: "bullish" | "bearish" | "neutral";
   setupDescription?: string;
-  etfCategory?: "leveraged-bull" | "leveraged-bear" | "sector";
+  isETF?: boolean;
+  etfCategory?: "leveraged-bull" | "leveraged-bear" | "leveraged-single" | "sector";
 }
 
 export type StockDetailLiquidity =

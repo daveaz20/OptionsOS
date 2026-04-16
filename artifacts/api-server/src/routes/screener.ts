@@ -29,6 +29,7 @@ import {
   getPolygonSnapshots,
   getPolygonTickers,
   getPolygonBars,
+  getPolygonETFs,
 } from "../lib/polygon.js";
 import { db, screenerCacheTable } from "@workspace/db";
 import { desc } from "drizzle-orm";
@@ -50,7 +51,8 @@ export interface ScreenerRow {
   supportPrice: number; resistancePrice: number;
   liquidity: "Liquid" | "Illiquid";
   source: "polygon" | "yahoo";
-  etfCategory?: "leveraged-bull" | "leveraged-bear" | "sector";
+  isETF?: boolean;
+  etfCategory?: "leveraged-bull" | "leveraged-bear" | "leveraged-single" | "sector";
 }
 
 interface Cache { data: ScreenerRow[]; at: number; promise: Promise<void> | null }
@@ -105,10 +107,10 @@ async function buildYahooData(): Promise<ScreenerRow[]> {
           getPriceHistory(q.symbol, "TECH"),
           getHistoricalVolatility(q.symbol),
         ]);
-        const sig     = computeSignals(history, q.price);
-        const dte     = daysUntilEarnings(q.earningsDate);
-        const etfCat  = ETF_MAP.get(q.symbol);
-        const scan = scanOpportunity(sig, hv.ivRank, q.price, q.changePercent, dte,
+        const sig    = computeSignals(history, q.price);
+        const dte    = daysUntilEarnings(q.earningsDate);
+        const etfCat = ETF_MAP.get(q.symbol);
+        const scan   = scanOpportunity(sig, hv.ivRank, q.price, q.changePercent, dte,
           undefined, undefined, etfCat ? { isETF: true, etfCategory: etfCat } : undefined);
         return {
           ...base,
@@ -124,7 +126,7 @@ async function buildYahooData(): Promise<ScreenerRow[]> {
           setupType: scan?.setupType ?? "Neutral",
           recommendedOutlook: scan?.recommendedOutlook ?? "neutral",
           supportPrice: sig.support, resistancePrice: sig.resistance,
-          ...(etfCat ? { etfCategory: etfCat } : {}),
+          ...(etfCat ? { isETF: true, etfCategory: etfCat } : {}),
         } satisfies ScreenerRow;
       } catch (err) {
         console.error(`[screener] technicals failed for ${q.symbol}:`, (err as Error)?.message ?? err);
@@ -149,18 +151,21 @@ async function buildYahooData(): Promise<ScreenerRow[]> {
 async function buildPolygonData(): Promise<ScreenerRow[]> {
   console.log("[screener] building from Polygon.io…");
 
-  const [snaps, tickerMap] = await Promise.all([
+  const [snaps, tickerMap, etfRefs] = await Promise.all([
     getPolygonSnapshots(),
     getPolygonTickers(),
+    getPolygonETFs(),
   ]);
 
-  // Filter to investable universe: CS/ADRC stocks + ETF_UNIVERSE tickers
+  // Build fast-lookup map: ticker → ETF classification
+  const etfMap = new Map(etfRefs.map(e => [e.ticker, e]));
+
+  // Filter: CS/ADRC stocks ($2+, 100k+ vol) OR known ETFs ($2+, 500k+ vol for options liquidity)
   const VALID_TYPES = new Set(["CS", "ADRC"]);
   const filtered = snaps.filter((s) => {
     const price = s.day?.c ?? s.lastTrade?.p ?? 0;
     const vol   = s.day?.v ?? 0;
-    // Always include our curated ETF universe if it has any price/volume data
-    if (ETF_MAP.has(s.ticker)) return price >= 1 && vol >= 10_000;
+    if (etfMap.has(s.ticker)) return price >= 2 && vol >= 500_000;
     const ref = tickerMap.get(s.ticker);
     if (!ref || !VALID_TYPES.has(ref.type)) return false;
     return price >= 2 && vol >= 100_000;
@@ -212,13 +217,13 @@ async function buildPolygonData(): Promise<ScreenerRow[]> {
       };
 
       try {
-        const history = await getPolygonBars(s.ticker, 580);
-        const hv    = computeHVFromBars(history);
-        const sig   = computeSignals(history, price);
-        const dte   = daysUntilEarnings(q?.earningsDate ?? "TBD");
-        const etfCat = ETF_MAP.get(s.ticker);
-        const scan  = scanOpportunity(sig, hv.ivRank, price, chPct, dte, dayVwap, prevDayVwap,
-          etfCat ? { isETF: true, etfCategory: etfCat } : undefined);
+        const history  = await getPolygonBars(s.ticker, 580);
+        const hv       = computeHVFromBars(history);
+        const sig      = computeSignals(history, price);
+        const dte      = daysUntilEarnings(q?.earningsDate ?? "TBD");
+        const etfRef   = etfMap.get(s.ticker);
+        const scan     = scanOpportunity(sig, hv.ivRank, price, chPct, dte, dayVwap, prevDayVwap,
+          etfRef ? { isETF: true, etfCategory: etfRef.etfCategory } : undefined);
         return {
           ...base,
           technicalStrength: Math.round(sig.strength),
@@ -233,7 +238,7 @@ async function buildPolygonData(): Promise<ScreenerRow[]> {
           setupType: scan.setupType,
           recommendedOutlook: scan.recommendedOutlook,
           supportPrice: sig.support, resistancePrice: sig.resistance,
-          ...(etfCat ? { etfCategory: etfCat } : {}),
+          ...(etfRef ? { isETF: true, etfCategory: etfRef.etfCategory } : {}),
         } satisfies ScreenerRow;
       } catch (err) {
         console.error(`[screener] technicals failed for ${s.ticker}:`, (err as Error)?.message ?? err);

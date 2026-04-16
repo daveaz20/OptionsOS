@@ -335,7 +335,7 @@ export function computeHVFromBars(bars: { close: number }[]): { hv30: number; iv
 
 // ─── ETF Universe ─────────────────────────────────────────────────────────────
 
-export type EtfCategory = "leveraged-bull" | "leveraged-bear" | "sector";
+export type EtfCategory = "leveraged-bull" | "leveraged-bear" | "leveraged-single" | "sector";
 
 export interface EtfEntry {
   symbol: string;

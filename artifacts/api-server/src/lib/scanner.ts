@@ -51,7 +51,7 @@ export interface ScanResult {
 
 export interface ScanOpts {
   isETF?: boolean;
-  etfCategory?: "leveraged-bull" | "leveraged-bear" | "sector";
+  etfCategory?: "leveraged-bull" | "leveraged-bear" | "leveraged-single" | "sector";
 }
 
 export function scanOpportunity(
@@ -72,9 +72,14 @@ export function scanOpportunity(
   // Leveraged ETFs are directional by design — lock in their intended direction
   if (etfCat === "leveraged-bull") outlook = "bullish";
   if (etfCat === "leveraged-bear") outlook = "bearish";
+  // leveraged-single: don't force outlook — let technicals decide direction
 
   // ── 2. Choose the best setup for this outlook + IV environment ───────────
-  const setup = chooseSetup(outlook, ivRank, signals);
+  let setup = chooseSetup(outlook, ivRank, signals);
+
+  // Restrict leveraged/single-stock ETF setups to directional strategies only.
+  // Covered Calls require owning shares (not applicable to ETF options).
+  if (isETF) setup = restrictETFSetup(setup, etfCat, outlook, ivRank);
 
   // ETFs have no earnings — skip earnings-proximity adjustments to ivScore
   const effectiveDte = isETF ? undefined : daysToEarnings;
@@ -148,6 +153,43 @@ function determineOutlook(signals: TechnicalSignals, ivRank: number): ScanOutloo
   if (bullScore > bearScore + 1) return "bullish";
   if (bearScore > bullScore + 1) return "bearish";
   return "neutral";
+}
+
+// ─── ETF setup restriction ────────────────────────────────────────────────────
+
+const BULL_SETUPS: SetupType[] = ["Long Call", "Call Spread", "Bull Put Spread"];
+const BEAR_SETUPS: SetupType[] = ["Long Put", "Bear Put Spread", "Bear Call Spread"];
+
+function restrictETFSetup(
+  setup: SetupType,
+  etfCat: ScanOpts["etfCategory"],
+  outlook: ScanOutlook,
+  ivRank: number,
+): SetupType {
+  // Covered Calls require owning the underlying — not applicable to ETF options
+  if (setup === "Covered Call") {
+    return ivRank >= 60 ? "Bull Put Spread" : "Call Spread";
+  }
+
+  // Pure leveraged ETFs: lock to their directional setup list
+  if (etfCat === "leveraged-bull" && !BULL_SETUPS.includes(setup)) {
+    return ivRank >= 60 ? "Bull Put Spread" : ivRank < 30 ? "Long Call" : "Call Spread";
+  }
+  if (etfCat === "leveraged-bear" && !BEAR_SETUPS.includes(setup)) {
+    return ivRank >= 60 ? "Bear Call Spread" : ivRank < 30 ? "Long Put" : "Bear Put Spread";
+  }
+
+  // Single-stock leveraged ETFs: restrict based on the computed outlook
+  if (etfCat === "leveraged-single") {
+    if (outlook === "bullish" && !BULL_SETUPS.includes(setup)) {
+      return ivRank >= 60 ? "Bull Put Spread" : ivRank < 30 ? "Long Call" : "Call Spread";
+    }
+    if (outlook === "bearish" && !BEAR_SETUPS.includes(setup)) {
+      return ivRank >= 60 ? "Bear Call Spread" : ivRank < 30 ? "Long Put" : "Bear Put Spread";
+    }
+  }
+
+  return setup;
 }
 
 // ─── Setup selection ───────────────────────────────────────────────────────

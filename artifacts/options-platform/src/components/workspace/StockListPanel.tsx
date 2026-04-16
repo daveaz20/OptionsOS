@@ -28,38 +28,19 @@ const FILTERS: { id: IdeaFilter; label: string }[] = [
   { id: "etfs",    label: "ETFs" },
 ];
 
-// ─── ETF lookup (mirrors ETF_UNIVERSE in market-data.ts) ─────────────────────
-const ETF_CATEGORY: Record<string, "leveraged-bull" | "leveraged-bear" | "sector"> = {
-  // Leveraged Bull
-  TQQQ: "leveraged-bull", SOXL: "leveraged-bull", UPRO: "leveraged-bull",
-  SPXL: "leveraged-bull", TECL: "leveraged-bull", FNGU: "leveraged-bull",
-  LABU: "leveraged-bull", TNA:  "leveraged-bull", UDOW: "leveraged-bull",
-  MIDU: "leveraged-bull", CURE: "leveraged-bull", DFEN: "leveraged-bull",
-  DPST: "leveraged-bull", FAS:  "leveraged-bull", NAIL: "leveraged-bull",
-  WANT: "leveraged-bull", BULZ: "leveraged-bull",
-  // Leveraged Bear
-  SQQQ: "leveraged-bear", SOXS: "leveraged-bear", SPXS: "leveraged-bear",
-  SPXU: "leveraged-bear", TECS: "leveraged-bear", FNGD: "leveraged-bear",
-  LABD: "leveraged-bear", TZA:  "leveraged-bear", SDOW: "leveraged-bear",
-  MIDZ: "leveraged-bear", HIBS: "leveraged-bear", FAZ:  "leveraged-bear",
-  SARK: "leveraged-bear",
-  // Sector
-  XLF: "sector", XLK: "sector", XLE: "sector", XLV: "sector", XLI: "sector",
-  XLC: "sector", XLY: "sector", XLP: "sector", XLB: "sector", XLRE: "sector",
-  XLU: "sector", SMH: "sector", ARKK: "sector", GDX: "sector", GDXJ: "sector",
-  IBB: "sector", XBI: "sector", KRE: "sector", IYR: "sector",
-};
-
+// ─── ETF badge config (driven by etfCategory from API response) ──────────────
 const ETF_BADGE_LABEL: Record<string, string> = {
-  "leveraged-bull": "3× Bull",
-  "leveraged-bear": "3× Bear",
-  "sector":         "Sector",
+  "leveraged-bull":    "3× Bull",
+  "leveraged-bear":    "3× Bear",
+  "leveraged-single":  "Single-Stock",
+  "sector":            "Sector",
 };
 
 const ETF_BADGE_COLOR: Record<string, string> = {
-  "leveraged-bull": "hsl(var(--success))",
-  "leveraged-bear": "hsl(var(--destructive))",
-  "sector":         "hsl(var(--primary))",
+  "leveraged-bull":   "hsl(var(--success))",
+  "leveraged-bear":   "hsl(var(--destructive))",
+  "leveraged-single": "#c084fc",   // purple — distinct from directional green/red
+  "sector":           "hsl(var(--primary))",
 };
 
 const sortLabels: Record<SortKey, string> = {
@@ -142,7 +123,7 @@ export function StockListPanel({ selectedSymbol, onSelect }: StockListPanelProps
       if (filter === "bullish") return outlook === "bullish";
       if (filter === "bearish") return outlook === "bearish";
       if (filter === "highIv")  return ivRank >= 50;
-      if (filter === "etfs")    return !!ETF_CATEGORY[item.symbol];
+      if (filter === "etfs")    return !!(item.isETF || item.etfCategory);
       return true;
     });
 
@@ -277,7 +258,7 @@ export function StockListPanel({ selectedSymbol, onSelect }: StockListPanelProps
               const ivRank     = item.ivRank ?? 0;
               const label      = shortLabel(item.setupType);
               const sColor     = scoreColor(score);
-              const etfCat     = ETF_CATEGORY[item.symbol];
+              const etfCat     = item.etfCategory;
 
               return (
                 <button

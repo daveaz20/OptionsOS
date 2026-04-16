@@ -53,6 +53,8 @@ export const ListStocksResponseItem = zod.object({
   setupType: zod.string().optional(),
   recommendedOutlook: zod.enum(["bullish", "bearish", "neutral"]).optional(),
   setupDescription: zod.string().optional(),
+  isETF: zod.boolean().optional(),
+  etfCategory: zod.enum(["leveraged-bull", "leveraged-bear", "leveraged-single", "sector"]).optional(),
 });
 export const ListStocksResponse = zod.array(ListStocksResponseItem);
 
