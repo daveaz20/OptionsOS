@@ -24,7 +24,7 @@ const OUTLOOK_TABS: { id: GetStrategiesOutlook; label: string; color: string }[]
 function normalCDF(x: number): number {
   const a = 0.2316419;
   const k = 1 / (1 + a * Math.abs(x));
-  const poly = k * (0.31938 + k * (-0.35656 + k * (1.78147 + k * (-1.82125 + k * 1.33027))));
+  const poly = k * (0.319381530 + k * (-0.356563782 + k * (1.781477937 + k * (-1.821255978 + k * 1.330274429))));
   const phi = Math.exp(-0.5 * x * x) / Math.sqrt(2 * Math.PI);
   const prob = 1 - phi * poly;
   return x >= 0 ? prob : 1 - prob;

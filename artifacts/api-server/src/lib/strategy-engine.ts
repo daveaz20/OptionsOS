@@ -290,7 +290,7 @@ export function buildStrategies(
       const plPrem    = bsCall(currentPrice, putLong,   0.045, iv, 45 / 365, "put");
       const credit    = round2(((csPrem - clPrem) + (psPrem - plPrem)) * 100);
       const wing      = round2((callShort - putShort) / 2 * 100);
-      const maxLoss   = round2(wing * 100 - credit);
+      const maxLoss   = round2(wing - credit);
 
       strategies.push(makeStrategy(1, symbol, "iron_condor", outlook, currentPrice, iv, ivRank, signals, {
         name: `${exp45.label} Iron Condor ${fmt(putShort)}/${fmt(callShort)}`,
@@ -305,7 +305,7 @@ export function buildStrategies(
         tradeCost: credit,
         maxProfit: credit,
         maxLoss: -maxLoss,
-        breakeven: round2(putShort - credit / 100),
+        breakeven: round2(putShort - credit / 100),  // lower breakeven (upper: callShort + credit/100)
         returnPercent: round2((credit / maxLoss) * 100),
         rrRatio: credit / maxLoss,
         probProfit: deltaToProb(0.30),
@@ -351,7 +351,7 @@ export function buildStrategies(
         tradeCost: -totalDebit,
         maxProfit: round2(currentPrice * 0.20 * 100),
         maxLoss: -totalDebit,
-        breakeven: round2(atmStrike + totalDebit / 100),
+        breakeven: round2(atmStrike - totalDebit / 100),  // lower breakeven (upper: atmStrike + totalDebit/100)
         returnPercent: round2(((currentPrice * 0.08) / (totalDebit / 100)) * 100),
         rrRatio: (currentPrice * 0.15 * 100) / totalDebit,
         probProfit: 0.45,

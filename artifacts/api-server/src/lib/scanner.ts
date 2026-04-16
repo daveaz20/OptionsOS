@@ -297,7 +297,7 @@ function scoreMomentum(signals: TechnicalSignals, changePercent: number, outlook
 
   // ATR relative check: is volatility appropriate? (0–3)
   // ATR < 3% of price = stable, good for credit; > 3% = high vol environment
-  const atrPct = (signals.atr14 / signals.sma20) * 100;
+  const atrPct = (signals.atr14 / price) * 100;
   if (outlook === "neutral" && atrPct < 2.5) score += 3;
   else if (outlook !== "neutral" && atrPct >= 1.5 && atrPct <= 4) score += 3;
   else score += 1;

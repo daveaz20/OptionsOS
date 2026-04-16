@@ -271,8 +271,8 @@ export async function getHistoricalVolatility(symbol: string): Promise<{ hv30: n
 
   // IV Rank proxy: where is HV30 relative to its 1-year range
   const windows: number[] = [];
-  for (let i = 30; i < closes.length; i++) {
-    const slice = closes.slice(i - 30, i);
+  for (let i = 31; i <= closes.length; i++) {
+    const slice = closes.slice(i - 31, i);   // 31 closes → 30 log-returns, matching hv(30)
     const returns = slice.slice(1).map((c, idx) => Math.log(c / slice[idx]));
     const mean = returns.reduce((s, r) => s + r, 0) / returns.length;
     const variance = returns.reduce((s, r) => s + (r - mean) ** 2, 0) / (returns.length - 1);

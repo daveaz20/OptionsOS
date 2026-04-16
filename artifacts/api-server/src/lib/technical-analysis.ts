@@ -39,7 +39,7 @@ export function computeSignals(candles: OHLCV[], currentPrice: number): Technica
   const sma50  = sma(closes, 50);
   const sma200 = sma(closes, 200);
   const atr14  = calcATR(highs, lows, closes, 14);
-  const volAvg = avg(vols.slice(-20));
+  const volAvg = avg(vols.slice(-21, -1));   // exclude today so today's vol doesn't inflate its own ratio
   const volRatio = volAvg > 0 ? vols[vols.length - 1] / volAvg : 1;
 
   // ── Support / Resistance (swing pivots over last 60 bars) ─────────────
