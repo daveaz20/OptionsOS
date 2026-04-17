@@ -1,8 +1,13 @@
 const API_BASE_URL   = "https://api.tastytrade.com";
 const TOKEN_BASE_URL = "https://api.tastyworks.com";
-const ACCOUNT        = process.env.TASTYTRADE_ACCOUNT_NUMBER ?? "5WI61720";
-const CLIENT_SECRET  = process.env.TASTYTRADE_CLIENT_SECRET ?? "";
-const REFRESH_TOKEN  = process.env.TASTYTRADE_REFRESH_TOKEN ?? "";
+
+// Read account at module load (safe — always set before process start)
+const ACCOUNT = process.env.TASTYTRADE_ACCOUNT_NUMBER ?? "5WI61720";
+
+// CLIENT_SECRET and REFRESH_TOKEN are read lazily inside functions so they
+// are always fetched from the live process.env, not captured at import time.
+// PM2 injects env vars before spawning the process, but module caching means
+// a stale capture of "" would persist for the process lifetime if read here.
 
 // ─── Token management ─────────────────────────────────────────────────────
 
@@ -14,7 +19,9 @@ interface AccessToken {
 let _token: AccessToken | null = null;
 
 export function isTastytradeEnabled(): boolean {
-  return !!(CLIENT_SECRET && REFRESH_TOKEN);
+  const secret  = process.env.TASTYTRADE_CLIENT_SECRET ?? "";
+  const refresh = process.env.TASTYTRADE_REFRESH_TOKEN ?? "";
+  return !!(secret && refresh);
 }
 
 export function isTastytradeAuthorized(): boolean {
@@ -27,41 +34,70 @@ async function getToken(): Promise<string> {
     return _token.value;
   }
 
+  const clientSecret  = process.env.TASTYTRADE_CLIENT_SECRET ?? "";
+  const refreshToken  = process.env.TASTYTRADE_REFRESH_TOKEN ?? "";
+
+  console.log("[TT] getToken: clientSecret present =", !!clientSecret,
+    "| first8 =", clientSecret.slice(0, 8) || "(empty)");
+  console.log("[TT] getToken: refreshToken present =", !!refreshToken,
+    "| first8 =", refreshToken.slice(0, 8) || "(empty)");
+
+  if (!clientSecret || !refreshToken) {
+    throw new Error("Missing TASTYTRADE_CLIENT_SECRET or TASTYTRADE_REFRESH_TOKEN in environment");
+  }
+
   const params = new URLSearchParams({
     grant_type:    "refresh_token",
-    refresh_token: REFRESH_TOKEN,
-    client_secret: CLIENT_SECRET,
+    refresh_token: refreshToken,
+    client_secret: clientSecret,
   });
 
-  const res = await fetch(`${TOKEN_BASE_URL}/oauth/token`, {
+  const url = `${TOKEN_BASE_URL}/oauth/token`;
+  console.log("[TT] getToken: POST", url);
+
+  const res = await fetch(url, {
     method:  "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body:    params.toString(),
   });
 
+  console.log("[TT] getToken: response status =", res.status);
+
   if (!res.ok) {
     const body = await res.text().catch(() => "");
+    console.log("[TT] getToken: error body =", body);
     throw new Error(`TT token refresh failed (${res.status}): ${body}`);
   }
 
   const json = await res.json();
+  const hasAccessToken = !!json.access_token;
+  const expiresIn      = json.expires_in as number;
+  console.log("[TT] getToken: access_token present =", hasAccessToken,
+    "| expires_in =", expiresIn);
+
   _token = {
     value:     json.access_token as string,
-    expiresAt: Date.now() + (json.expires_in as number) * 1000,
+    expiresAt: Date.now() + expiresIn * 1000,
   };
+  console.log("[TT] getToken: token stored, expiresAt =", new Date(_token.expiresAt).toISOString());
   return _token.value;
 }
 
 export async function initTastytrade(log: { info: (msg: string) => void; warn: (msg: string) => void }): Promise<void> {
-  if (!isTastytradeEnabled()) {
-    log.warn("Tastytrade disabled — TASTYTRADE_CLIENT_SECRET or TASTYTRADE_REFRESH_TOKEN not set");
+  const secret  = process.env.TASTYTRADE_CLIENT_SECRET ?? "";
+  const refresh = process.env.TASTYTRADE_REFRESH_TOKEN ?? "";
+
+  log.info(`[TT] initTastytrade: CLIENT_SECRET present=${!!secret} REFRESH_TOKEN present=${!!refresh}`);
+
+  if (!secret || !refresh) {
+    log.warn("[TT] initTastytrade: one or more env vars missing — Tastytrade disabled");
     return;
   }
   try {
     await getToken();
-    log.info("Tastytrade connected — access token obtained");
+    log.info("[TT] initTastytrade: connected — access token obtained");
   } catch (err: any) {
-    log.warn(`Tastytrade token fetch failed at startup: ${err.message}`);
+    log.warn(`[TT] initTastytrade: token fetch failed — ${err.message}`);
   }
 }
 
