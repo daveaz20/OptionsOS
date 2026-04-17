@@ -1,0 +1,28 @@
+name: Deploy to Beta
+
+on:
+  push:
+    branches:
+      - dev
+
+jobs:
+  deploy-beta:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to Beta Server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: 157.230.51.190
+          username: root
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            cd /var/www/optionsos-beta
+            git pull origin dev
+            pnpm install
+            pnpm --filter api-server build
+            PORT=3002 BASE_PATH=/ pnpm --filter options-platform build
+            cp .env artifacts/api-server/.env
+            cp .env lib/db/.env
+            pm2 restart optionsos-beta-api
+            pm2 restart optionsos-beta-frontend
+            echo "Beta deploy complete"
