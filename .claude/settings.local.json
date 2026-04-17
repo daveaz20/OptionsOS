@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs grep *)",
+      "Bash(npx tsc *)",
+      "Bash(node_modules/.bin/tsc --noEmit --project artifacts/api-server/tsconfig.json)",
+      "Bash(tsc --version)",
+      "Bash(pnpm run *)",
+      "Bash(\"/c/Program Files/nodejs/node_modules/corepack/shims/pnpm\" --version)",
+      "Bash(\"/c/Program Files/nodejs/node_modules/corepack/shims/pnpm\" run typecheck)",
+      "Bash(git pull *)"
+    ]
+  }
+}
