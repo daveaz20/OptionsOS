@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import {
-  isTastytradeEnabled, getOptionsChain, getRawPositions, getBalances,
+  isTastytradeEnabled, isTastytradeAuthorized, getOptionsChain, getRawPositions, getBalances,
   type OptionsChain,
 } from "../lib/tastytrade.js";
 
@@ -83,7 +83,8 @@ function inferStrategyType(legs: ParsedLeg[]): string {
 // ─── GET /account/balances ─────────────────────────────────────────────────
 
 router.get("/account/balances", async (_req, res): Promise<void> => {
-  if (!isTastytradeEnabled()) { res.status(503).json({ error: "Tastytrade credentials not configured" }); return; }
+  if (!isTastytradeEnabled()) { res.status(503).json({ error: "Tastytrade OAuth credentials not configured" }); return; }
+  if (!isTastytradeAuthorized()) { res.status(503).json({ error: "Tastytrade not authorized", authUrl: "/auth/tastytrade" }); return; }
   try {
     const b = await getBalances();
     res.json({
@@ -102,7 +103,8 @@ router.get("/account/balances", async (_req, res): Promise<void> => {
 // ─── GET /account/positions ────────────────────────────────────────────────
 
 router.get("/account/positions", async (_req, res): Promise<void> => {
-  if (!isTastytradeEnabled()) { res.status(503).json({ error: "Tastytrade credentials not configured" }); return; }
+  if (!isTastytradeEnabled()) { res.status(503).json({ error: "Tastytrade OAuth credentials not configured" }); return; }
+  if (!isTastytradeAuthorized()) { res.status(503).json({ error: "Tastytrade not authorized", authUrl: "/auth/tastytrade" }); return; }
   try {
     const rawAll = await getRawPositions();
     const rawOpts = rawAll.filter(p =>
@@ -213,7 +215,8 @@ router.get("/account/positions", async (_req, res): Promise<void> => {
 // ─── GET /account/summary ─────────────────────────────────────────────────
 
 router.get("/account/summary", async (_req, res): Promise<void> => {
-  if (!isTastytradeEnabled()) { res.status(503).json({ error: "Tastytrade credentials not configured" }); return; }
+  if (!isTastytradeEnabled()) { res.status(503).json({ error: "Tastytrade OAuth credentials not configured" }); return; }
+  if (!isTastytradeAuthorized()) { res.status(503).json({ error: "Tastytrade not authorized", authUrl: "/auth/tastytrade" }); return; }
   try {
     const [balances, rawAll] = await Promise.all([getBalances(), getRawPositions()]);
     const rawOpts = rawAll.filter(p =>

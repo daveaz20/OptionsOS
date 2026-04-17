@@ -10,7 +10,7 @@ import {
 import { getQuote, getPriceHistory, getHistoricalVolatility } from "../lib/market-data.js";
 import { computeSignals } from "../lib/technical-analysis.js";
 import { buildStrategies, calcPnlCurve } from "../lib/strategy-engine.js";
-import { isTastytradeEnabled, getOptionsChain, makeContractLookup } from "../lib/tastytrade.js";
+import { isTastytradeEnabled, isTastytradeAuthorized, getOptionsChain, makeContractLookup } from "../lib/tastytrade.js";
 
 const router: IRouter = Router();
 
@@ -33,7 +33,7 @@ router.get("/stocks/:symbol/strategies", async (req, res): Promise<void> => {
     const signals = computeSignals(history, quote.price);
 
     let lookupContract;
-    if (isTastytradeEnabled()) {
+    if (isTastytradeEnabled() && isTastytradeAuthorized()) {
       try {
         const chain = await getOptionsChain(symbol);
         lookupContract = makeContractLookup(chain);
@@ -121,7 +121,11 @@ router.get("/stocks/:symbol/options-chain", async (req, res): Promise<void> => {
   const symbol = (Array.isArray(params.data.symbol) ? params.data.symbol[0] : params.data.symbol).toUpperCase();
 
   if (!isTastytradeEnabled()) {
-    res.status(503).json({ error: "Tastytrade not configured" });
+    res.status(503).json({ error: "Tastytrade OAuth credentials not configured" });
+    return;
+  }
+  if (!isTastytradeAuthorized()) {
+    res.status(503).json({ error: "Tastytrade not authorized", authUrl: "/auth/tastytrade" });
     return;
   }
   try {

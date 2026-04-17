@@ -1,38 +1,76 @@
 const BASE_URL = "https://api.tastytrade.com";
 const ACCOUNT = process.env.TASTYTRADE_ACCOUNT_NUMBER ?? "5WI61720";
 
-// ─── Session ──────────────────────────────────────────────────────────────
+const CLIENT_ID     = process.env.TASTYTRADE_CLIENT_ID ?? "";
+const CLIENT_SECRET = process.env.TASTYTRADE_CLIENT_SECRET ?? "";
+const REDIRECT_URI  = process.env.TASTYTRADE_REDIRECT_URI ?? "https://optionsos.azeizat.com/auth/callback";
 
-interface CachedSession { token: string; expiresAt: number }
-let _session: CachedSession | null = null;
+// ─── OAuth2 Token ─────────────────────────────────────────────────────────
+
+interface OAuthToken {
+  accessToken:  string;
+  refreshToken: string;
+  expiresAt:    number; // ms
+}
+
+let _token: OAuthToken | null = null;
 
 export function isTastytradeEnabled(): boolean {
-  return !!(process.env.TASTYTRADE_USERNAME && process.env.TASTYTRADE_PASSWORD);
+  return !!(CLIENT_ID && CLIENT_SECRET);
+}
+
+export function isTastytradeAuthorized(): boolean {
+  return _token !== null;
+}
+
+export function setOAuthToken(accessToken: string, refreshToken: string, expiresInSeconds: number): void {
+  _token = {
+    accessToken,
+    refreshToken,
+    expiresAt: Date.now() + expiresInSeconds * 1000,
+  };
+}
+
+export function getOAuthConfig() {
+  return { clientId: CLIENT_ID, redirectUri: REDIRECT_URI };
 }
 
 async function getToken(): Promise<string> {
-  if (_session && Date.now() < _session.expiresAt - 5 * 60 * 1000) return _session.token;
-  const res = await fetch(`${BASE_URL}/sessions`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      login: process.env.TASTYTRADE_USERNAME,
-      password: process.env.TASTYTRADE_PASSWORD,
-      "remember-me": true,
-    }),
-  });
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`TT auth failed: ${res.status} ${body}`);
+  if (!_token) throw new Error("Tastytrade not authorized — visit /auth/tastytrade");
+
+  // Refresh 5 min before expiry
+  if (Date.now() > _token.expiresAt - 5 * 60 * 1000) {
+    const params = new URLSearchParams({
+      grant_type:    "refresh_token",
+      refresh_token: _token.refreshToken,
+      client_id:     CLIENT_ID,
+      client_secret: CLIENT_SECRET,
+    });
+    const res = await fetch(`${BASE_URL}/oauth/token`, {
+      method:  "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body:    params.toString(),
+    });
+    if (!res.ok) {
+      _token = null;
+      throw new Error(`TT token refresh failed: ${res.status}`);
+    }
+    const json = await res.json();
+    _token = {
+      accessToken:  json.access_token as string,
+      refreshToken: (json.refresh_token as string) ?? _token.refreshToken,
+      expiresAt:    Date.now() + (json.expires_in as number) * 1000,
+    };
   }
-  const json = await res.json();
-  _session = { token: json.data["session-token"] as string, expiresAt: Date.now() + 23 * 60 * 60 * 1000 };
-  return _session.token;
+
+  return _token.accessToken;
 }
 
 async function ttGet(path: string): Promise<any> {
   const token = await getToken();
-  const res = await fetch(`${BASE_URL}${path}`, { headers: { Authorization: token } });
+  const res = await fetch(`${BASE_URL}${path}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
   if (!res.ok) throw new Error(`TT ${path} → ${res.status}`);
   return res.json();
 }
@@ -136,7 +174,6 @@ export type ContractLookup = (
 
 export function makeContractLookup(chain: OptionsChain): ContractLookup {
   return (type, targetStrike, targetExpiry) => {
-    // Find closest expiry by DTE
     const targetDte = Math.max(
       0,
       Math.ceil((new Date(targetExpiry).getTime() - Date.now()) / 86_400_000),
