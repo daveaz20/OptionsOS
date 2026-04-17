@@ -1,85 +1,90 @@
-const BASE_URL = "https://api.tastytrade.com";
-const ACCOUNT = process.env.TASTYTRADE_ACCOUNT_NUMBER ?? "5WI61720";
+const API_BASE_URL   = "https://api.tastytrade.com";
+const TOKEN_BASE_URL = "https://api.tastyworks.com";
+const ACCOUNT        = process.env.TASTYTRADE_ACCOUNT_NUMBER ?? "5WI61720";
+const CLIENT_SECRET  = process.env.TASTYTRADE_CLIENT_SECRET ?? "";
+const REFRESH_TOKEN  = process.env.TASTYTRADE_REFRESH_TOKEN ?? "";
 
-const CLIENT_ID     = process.env.TASTYTRADE_CLIENT_ID ?? "";
-const CLIENT_SECRET = process.env.TASTYTRADE_CLIENT_SECRET ?? "";
-const REDIRECT_URI  = process.env.TASTYTRADE_REDIRECT_URI ?? "https://optionsos.azeizat.com/auth/callback";
+// ─── Token management ─────────────────────────────────────────────────────
 
-// ─── OAuth2 Token ─────────────────────────────────────────────────────────
-
-interface OAuthToken {
-  accessToken:  string;
-  refreshToken: string;
-  expiresAt:    number; // ms
+interface AccessToken {
+  value:     string;
+  expiresAt: number; // ms
 }
 
-let _token: OAuthToken | null = null;
+let _token: AccessToken | null = null;
 
 export function isTastytradeEnabled(): boolean {
-  return !!(CLIENT_ID && CLIENT_SECRET);
+  return !!(CLIENT_SECRET && REFRESH_TOKEN);
 }
 
 export function isTastytradeAuthorized(): boolean {
   return _token !== null;
 }
 
-export function setOAuthToken(accessToken: string, refreshToken: string, expiresInSeconds: number): void {
-  _token = {
-    accessToken,
-    refreshToken,
-    expiresAt: Date.now() + expiresInSeconds * 1000,
-  };
-}
-
-export function getOAuthConfig() {
-  return { clientId: CLIENT_ID, redirectUri: REDIRECT_URI };
-}
-
 async function getToken(): Promise<string> {
-  if (!_token) throw new Error("Tastytrade not authorized — visit /auth/tastytrade");
-
-  // Refresh 5 min before expiry
-  if (Date.now() > _token.expiresAt - 5 * 60 * 1000) {
-    const params = new URLSearchParams({
-      grant_type:    "refresh_token",
-      refresh_token: _token.refreshToken,
-      client_id:     CLIENT_ID,
-      client_secret: CLIENT_SECRET,
-    });
-    const res = await fetch(`${BASE_URL}/oauth/token`, {
-      method:  "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body:    params.toString(),
-    });
-    if (!res.ok) {
-      _token = null;
-      throw new Error(`TT token refresh failed: ${res.status}`);
-    }
-    const json = await res.json();
-    _token = {
-      accessToken:  json.access_token as string,
-      refreshToken: (json.refresh_token as string) ?? _token.refreshToken,
-      expiresAt:    Date.now() + (json.expires_in as number) * 1000,
-    };
+  // Refresh 2 min before the 15-min expiry
+  if (_token && Date.now() < _token.expiresAt - 2 * 60 * 1000) {
+    return _token.value;
   }
 
-  return _token.accessToken;
+  const params = new URLSearchParams({
+    grant_type:    "refresh_token",
+    refresh_token: REFRESH_TOKEN,
+    client_secret: CLIENT_SECRET,
+  });
+
+  const res = await fetch(`${TOKEN_BASE_URL}/oauth/token`, {
+    method:  "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body:    params.toString(),
+  });
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`TT token refresh failed (${res.status}): ${body}`);
+  }
+
+  const json = await res.json();
+  _token = {
+    value:     json.access_token as string,
+    expiresAt: Date.now() + (json.expires_in as number) * 1000,
+  };
+  return _token.value;
 }
 
-async function ttGet(path: string): Promise<any> {
-  const token = await getToken();
-  const res = await fetch(`${BASE_URL}${path}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) throw new Error(`TT ${path} → ${res.status}`);
-  return res.json();
+export async function initTastytrade(log: { info: (msg: string) => void; warn: (msg: string) => void }): Promise<void> {
+  if (!isTastytradeEnabled()) {
+    log.warn("Tastytrade disabled — TASTYTRADE_CLIENT_SECRET or TASTYTRADE_REFRESH_TOKEN not set");
+    return;
+  }
+  try {
+    await getToken();
+    log.info("Tastytrade connected — access token obtained");
+  } catch (err: any) {
+    log.warn(`Tastytrade token fetch failed at startup: ${err.message}`);
+  }
 }
+
+export function getTastytradeTokenExpiry(): number | null {
+  return _token?.expiresAt ?? null;
+}
+
+// ─── HTTP helper ──────────────────────────────────────────────────────────
 
 const num = (v: any): number => {
   if (typeof v === "number") return isNaN(v) ? 0 : v;
   if (typeof v === "string") { const n = parseFloat(v); return isNaN(n) ? 0 : n; }
   return 0;
 };
+
+async function ttGet(path: string): Promise<any> {
+  const token = await getToken();
+  const res = await fetch(`${API_BASE_URL}${path}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(`TT ${path} → ${res.status}`);
+  return res.json();
+}
 
 // ─── Options Chain ────────────────────────────────────────────────────────
 
