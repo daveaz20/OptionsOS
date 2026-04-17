@@ -57,7 +57,10 @@ async function getToken(): Promise<string> {
 
   const res = await fetch(url, {
     method:  "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "User-Agent":   "tastytrade-api-client/1.0",
+    },
     body:    params.toString(),
   });
 
@@ -116,7 +119,10 @@ const num = (v: any): number => {
 async function ttGet(path: string): Promise<any> {
   const token = await getToken();
   const res = await fetch(`${API_BASE_URL}${path}`, {
-    headers: { Authorization: `Bearer ${token}` },
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "User-Agent":    "tastytrade-api-client/1.0",
+    },
   });
   if (!res.ok) throw new Error(`TT ${path} → ${res.status}`);
   return res.json();
