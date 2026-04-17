@@ -21,11 +21,14 @@ OptionsOS is an options trading platform with a market screener, dashboard, watc
 | **Frontend port** | 3001 | 3003 |
 | **PM2 API process** | `optionsos-api` | `optionsos-beta-api` |
 | **PM2 Frontend process** | `optionsos-frontend` | `optionsos-beta-frontend` |
-| **Git branch** | `main` | `main` (same repo) |
+| **Git branch** | `main` | `dev` |
 
 **Web server:** nginx reverse proxy with Let's Encrypt SSL (cert covers optionsos.azeizat.com + beta.optionsos.azeizat.com + azeizat.com as SANs)  
 **Config:** `/etc/nginx/sites-enabled/optionsos`  
 **DNS:** Cloudflare — all records set to DNS Only (grey cloud, no proxy)
+
+### Auto-Deploy (Production)
+Pushing to `main` automatically deploys to production via GitHub Actions (`.github/workflows/deploy.yml`). It SSHes into the server using `secrets.DEPLOY_SSH_KEY`, pulls main, builds, copies `.env`, and restarts PM2. **Never push broken code directly to main.**
 
 ---
 
@@ -90,7 +93,7 @@ OptionsOS/
 
 ## Environment Variables
 
-All env vars live in `/var/www/optionsos/artifacts/api-server/.env` (production) and `/var/www/optionsos-beta/ecosystem.config.cjs` (beta).
+All env vars live in `/var/www/optionsos/.env` (production — copied to `artifacts/api-server/.env` and `lib/db/.env` on every deploy) and `/var/www/optionsos-beta/ecosystem.config.cjs` (beta).
 
 | Variable | Description |
 |---|---|
@@ -116,28 +119,25 @@ All env vars live in `/var/www/optionsos/artifacts/api-server/.env` (production)
 
 ## Deploy Commands
 
-### Deploy to Beta
+### Deploy to Production (AUTOMATIC)
+Just push to `main` — GitHub Actions handles everything automatically.
+```
+git checkout main
+git merge dev
+git push origin main
+```
+The action pulls, builds, copies `.env`, and restarts PM2. Monitor at github.com/daveaz20/OptionsOS/actions.
+
+### Deploy to Beta (MANUAL)
 ```bash
 ssh root@157.230.51.190
 cd /var/www/optionsos-beta
-git pull origin main
+git pull origin dev
 pnpm install
 pnpm --filter api-server build
 PORT=3002 BASE_PATH=/ pnpm --filter options-platform build
 pm2 restart optionsos-beta-api --update-env
 pm2 restart optionsos-beta-frontend
-```
-
-### Deploy to Production
-```bash
-ssh root@157.230.51.190
-cd /var/www/optionsos
-git pull origin main
-pnpm install
-pnpm --filter api-server build
-PORT=3001 BASE_PATH=/ pnpm --filter options-platform build
-pm2 restart optionsos-api --update-env
-pm2 restart optionsos-frontend
 ```
 
 ### DB Schema Push (after schema changes)
