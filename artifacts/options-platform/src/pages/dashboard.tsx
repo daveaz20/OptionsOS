@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   useGetDashboardSummary, useGetTopMovers, useGetWatchlist,
   useListStocks, getGetWatchlistQueryKey, useRemoveFromWatchlist,
+  useGetAccountSummary,
 } from "@workspace/api-client-react";
 import type { Stock } from "@workspace/api-client-react";
 import {
@@ -14,7 +15,7 @@ import {
   BookOpen, Briefcase, ChevronDown, ChevronUp, CheckCircle2,
   Circle, Flame, LayoutDashboard, LayoutGrid, Pencil, Star,
   TrendingDown, TrendingUp, Volume2, Zap, X, Calendar, Bell,
-  BarChart2,
+  BarChart2, Wallet,
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { formatCurrency, formatPercent, formatNumber } from "@/lib/format";
@@ -35,6 +36,7 @@ export interface ModuleDef {
 }
 
 const MODULE_REGISTRY: ModuleDef[] = [
+  { id: "account_summary",  title: "Account",             description: "Tastytrade account: net liq, buying power, P&L, theta",   icon: <Wallet style={{ width: 13, height: 13 }} />,       cols: 12, defaultEnabled: true,  category: "personal" },
   { id: "stats",            title: "Market Stats",        description: "Live overview: sentiment, setups, IV rank, breadth",      icon: <Activity style={{ width: 13, height: 13 }} />,    cols: 12, defaultEnabled: true,  category: "market"   },
   { id: "opportunities",    title: "Top Opportunities",   description: "Highest-scoring setups from the scanner",                  icon: <Zap style={{ width: 13, height: 13 }} />,          cols: 12, defaultEnabled: true,  category: "analysis" },
   { id: "sector_perf",      title: "Sector Performance",  description: "Average daily change by sector",                           icon: <BarChart2 style={{ width: 13, height: 13 }} />,    cols: 6,  defaultEnabled: true,  category: "market"   },
@@ -157,6 +159,74 @@ function MarketStatusPill() {
       <div style={{ width: 6, height: 6, borderRadius: "50%", background: color,
         boxShadow: open ? `0 0 6px ${color}` : "none" }} />
       <span style={{ fontSize: 11, fontWeight: 600, color }}>{open ? "Market Open" : "Market Closed"}</span>
+    </div>
+  );
+}
+
+// ── Account Summary Module ────────────────────────────────────────────────
+
+function AccountSummaryModule() {
+  const { data, isLoading, error } = useGetAccountSummary();
+
+  if (error) {
+    const is503 = (error as any)?.status === 503;
+    return (
+      <div style={{ padding: "18px 20px", color: "hsl(var(--muted-foreground))", fontSize: 12 }}>
+        {is503 ? "Tastytrade credentials not configured." : `Account unavailable: ${(error as Error).message}`}
+      </div>
+    );
+  }
+
+  const stats = [
+    {
+      label: "NET LIQUIDATING VALUE",
+      value: isLoading ? null : `$${(data?.netLiquidatingValue ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      color: undefined,
+    },
+    {
+      label: "OPTION BUYING POWER",
+      value: isLoading ? null : `$${(data?.optionBuyingPower ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      color: undefined,
+    },
+    {
+      label: "TODAY'S P&L",
+      value: isLoading ? null : (data?.dayPnl !== undefined
+        ? `${data.dayPnl >= 0 ? "+" : ""}$${Math.abs(data.dayPnl).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+        : "—"),
+      color: data?.dayPnl !== undefined
+        ? (data.dayPnl >= 0 ? "hsl(var(--success))" : "hsl(var(--destructive))")
+        : undefined,
+    },
+    {
+      label: "OPEN POSITIONS",
+      value: isLoading ? null : String(data?.openPositionsCount ?? 0),
+      color: undefined,
+      link: "/positions",
+    },
+    {
+      label: "PORTFOLIO THETA",
+      value: isLoading ? null : (data?.portfolioTheta !== undefined
+        ? `${data.portfolioTheta >= 0 ? "+" : ""}$${Math.abs(data.portfolioTheta).toFixed(2)}/d`
+        : "—"),
+      color: data?.portfolioTheta !== undefined
+        ? (data.portfolioTheta < 0 ? "hsl(var(--destructive))" : "hsl(var(--success))")
+        : undefined,
+    },
+  ];
+
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 10 }}>
+      {stats.map((s, i) => (
+        <div key={i} style={{ padding: "13px 14px", borderRadius: 9, border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.02)" }}>
+          <div style={{ fontSize: 9.5, letterSpacing: "0.05em", color: "hsl(var(--muted-foreground))", marginBottom: 7, fontWeight: 500 }}>{s.label}</div>
+          {isLoading
+            ? <div style={{ height: 26, borderRadius: 4, background: "rgba(255,255,255,0.06)", animation: "pulse 1.4s infinite", marginBottom: 4 }} />
+            : s.link
+              ? <Link href={s.link}><div style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums", marginBottom: 3, color: s.color ?? "hsl(var(--foreground))", cursor: "pointer", textDecoration: "underline", textDecorationColor: "rgba(255,255,255,0.2)" }}>{s.value}</div></Link>
+              : <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums", marginBottom: 3, color: s.color ?? "hsl(var(--foreground))" }}>{s.value}</div>
+          }
+        </div>
+      ))}
     </div>
   );
 }
@@ -877,6 +947,7 @@ export default function DashboardPage() {
 
   function renderModuleContent(mod: ModuleDef) {
     switch (mod.id) {
+      case "account_summary": return <AccountSummaryModule />;
       case "stats":           return <StatsModule stocks={stocks} loadingStocks={loadingStocks} />;
       case "opportunities":   return <OpportunitiesModule stocks={stocks} loading={loadingStocks} />;
       case "sector_perf":     return <Section title="Sector Performance" sub="Avg daily change" icon={<BarChart2 style={{ width: 14, height: 14, color: "hsl(var(--primary))" }} />} noPad><SectorPerfModule stocks={stocks} loading={loadingStocks} /></Section>;
@@ -901,8 +972,8 @@ export default function DashboardPage() {
   let currentCols = 0;
 
   for (const mod of activeModules) {
-    if (mod.id === "stats") {
-      // Stats module renders outside the grid (no Section wrapper)
+    if (mod.id === "stats" || mod.id === "account_summary") {
+      // These modules render outside the grid (no Section wrapper)
       if (currentRow.length > 0) { gridRows.push([...currentRow]); currentRow = []; currentCols = 0; }
       gridRows.push([mod]);
       continue;
@@ -951,7 +1022,7 @@ export default function DashboardPage() {
         {/* Module grid */}
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           {gridRows.map((row, ri) => {
-            if (row.length === 1 && row[0]!.id === "stats") {
+            if (row.length === 1 && (row[0]!.id === "stats" || row[0]!.id === "account_summary")) {
               return <div key={ri}>{renderModuleContent(row[0]!)}</div>;
             }
             if (row.length === 1 && row[0]!.cols === 12) {

@@ -5,6 +5,7 @@ import watchlistRouter from "./watchlist";
 import strategiesRouter from "./strategies";
 import dashboardRouter from "./dashboard";
 import screenerRouter from "./screener";
+import accountRouter from "./account";
 
 const router: IRouter = Router();
 
@@ -14,5 +15,6 @@ router.use(watchlistRouter);
 router.use(strategiesRouter);
 router.use(dashboardRouter);
 router.use(screenerRouter);
+router.use(accountRouter);
 
 export default router;

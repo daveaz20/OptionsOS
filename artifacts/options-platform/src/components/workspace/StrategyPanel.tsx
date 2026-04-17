@@ -1,13 +1,13 @@
 import { useState, useEffect, useMemo } from "react";
-import { useGetStrategies } from "@workspace/api-client-react";
+import { useGetStrategies, useGetAccountPositions, useGetOptionsChain } from "@workspace/api-client-react";
 import { Area, AreaChart, ResponsiveContainer, Tooltip as RechartsTooltip, XAxis, YAxis, ReferenceLine } from "recharts";
 import { formatCurrency, formatPercent } from "@/lib/format";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Slider } from "@/components/ui/slider";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AlertCircle, BarChart2, Minus, Pencil, Plus, X } from "lucide-react";
+import { AlertCircle, BarChart2, Minus, Pencil, Plus, X, TrendingUp } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import type { OptionsStrategy, StrategyLeg, GetStrategiesOutlook } from "@workspace/api-client-react";
+import type { OptionsStrategy, StrategyLeg, GetStrategiesOutlook, AccountPosition } from "@workspace/api-client-react";
 
 interface StrategyPanelProps {
   symbol: string;
@@ -488,20 +488,128 @@ const stepBtn: React.CSSProperties = {
   cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
 };
 
+// ── Existing Position Banner ─────────────────────────────────────────────
+function ExistingPositionBanner({
+  position, onUseEntryPrice,
+}: {
+  position: AccountPosition;
+  onUseEntryPrice: (price: number) => void;
+}) {
+  const isUp = position.totalPnl >= 0;
+  const pnlColor = isUp ? "hsl(var(--success))" : "hsl(var(--destructive))";
+  // Average entry price across all legs (weighted by quantity)
+  const avgEntry = position.legs.reduce((s, l) => s + l.openPrice * l.quantity, 0)
+    / Math.max(1, position.legs.reduce((s, l) => s + l.quantity, 0));
+
+  return (
+    <div style={{
+      margin: "0 0 10px",
+      padding: "10px 12px",
+      borderRadius: 8,
+      border: "1px solid hsl(var(--primary)/0.25)",
+      background: "hsl(var(--primary)/0.06)",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+        <TrendingUp style={{ width: 12, height: 12, color: "hsl(var(--primary))" }} />
+        <span style={{ fontSize: 11, fontWeight: 600, color: "hsl(var(--primary))" }}>Existing Position</span>
+        <span style={{
+          fontSize: 9, fontWeight: 600, padding: "1px 5px", borderRadius: 3,
+          background: "rgba(255,255,255,0.08)", color: "hsl(var(--muted-foreground))", marginLeft: 2,
+        }}>
+          {position.strategyType}
+        </span>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 8, marginBottom: 8 }}>
+        <div>
+          <div style={{ fontSize: 9, color: "hsl(var(--muted-foreground))" }}>Strikes</div>
+          <div style={{ fontSize: 11, fontWeight: 600 }}>{position.strikesLabel}</div>
+        </div>
+        <div>
+          <div style={{ fontSize: 9, color: "hsl(var(--muted-foreground))" }}>Expiry</div>
+          <div style={{ fontSize: 11, fontWeight: 600 }}>{position.expiration}</div>
+        </div>
+        <div>
+          <div style={{ fontSize: 9, color: "hsl(var(--muted-foreground))" }}>DTE</div>
+          <div style={{ fontSize: 11, fontWeight: 600 }}>{position.dte}</div>
+        </div>
+        <div>
+          <div style={{ fontSize: 9, color: "hsl(var(--muted-foreground))" }}>P&L</div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: pnlColor, fontVariantNumeric: "tabular-nums" }}>
+            {isUp ? "+" : ""}{formatCurrency(position.totalPnl)}
+          </div>
+        </div>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 6, paddingTop: 7, borderTop: "1px solid rgba(255,255,255,0.06)", marginBottom: 8 }}>
+        {[
+          { label: "Δ", value: (position.greeks.delta >= 0 ? "+" : "") + position.greeks.delta.toFixed(3) },
+          { label: "Θ", value: formatCurrency(position.greeks.theta) + "/d" },
+          { label: "Γ", value: position.greeks.gamma.toFixed(4) },
+          { label: "V", value: formatCurrency(position.greeks.vega) },
+        ].map((g, i) => (
+          <div key={i}>
+            <div style={{ fontSize: 9, color: "hsl(var(--muted-foreground))" }}>{g.label}</div>
+            <div style={{ fontSize: 10.5, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{g.value}</div>
+          </div>
+        ))}
+      </div>
+      <button
+        onClick={() => onUseEntryPrice(avgEntry)}
+        style={{
+          width: "100%", padding: "5px 0", borderRadius: 5, fontSize: 10, fontWeight: 600,
+          border: "1px solid hsl(var(--primary)/0.3)", background: "hsl(var(--primary)/0.08)",
+          color: "hsl(var(--primary))", cursor: "pointer", letterSpacing: "-0.01em",
+        }}
+      >
+        Use entry price ({formatCurrency(avgEntry)}) in P&L simulator
+      </button>
+    </div>
+  );
+}
+
 // ── Main StrategyPanel ───────────────────────────────────────────────────
 export function StrategyPanel({ symbol, currentPrice = 0 }: StrategyPanelProps) {
   const [outlook, setOutlook] = useState<GetStrategiesOutlook>("bullish");
   const [selectedStrategyId, setSelectedStrategyId] = useState<number | null>(null);
   const [modifying, setModifying] = useState(false);
   const [customStrategies, setCustomStrategies] = useState<Record<string, OptionsStrategy>>({});
+  const [entryPriceOverride, setEntryPriceOverride] = useState<number | null>(null);
 
   const { data: strategies = [], isLoading } = useGetStrategies(symbol, { outlook }, { query: { enabled: !!symbol } });
+  const { data: positionsData } = useGetAccountPositions({ query: { enabled: !!symbol } });
+  const { data: chainData } = useGetOptionsChain(symbol, { query: { enabled: !!symbol } });
+
+  // Find existing positions for this symbol (pick closest DTE if multiple)
+  const existingPosition = useMemo(() => {
+    if (!positionsData?.positions || !symbol) return null;
+    const matches = positionsData.positions.filter(p => p.underlying === symbol);
+    if (matches.length === 0) return null;
+    return matches.reduce((best, p) => p.dte < best.dte ? p : best);
+  }, [positionsData, symbol]);
+
+  // Get ATM IV from TT chain for the closest-to-45-DTE expiry
+  const chainIv = useMemo(() => {
+    if (!chainData || !currentPrice || currentPrice <= 0) return null;
+    const targetDte = 45;
+    const expiry = chainData.expirations.reduce((best, e) =>
+      Math.abs(e.daysToExpiration - targetDte) < Math.abs(best.daysToExpiration - targetDte) ? e : best,
+    chainData.expirations[0]!);
+    if (!expiry) return null;
+    const calls = expiry.contracts.filter(c => c.optionType === "call" && c.impliedVolatility > 0);
+    if (calls.length === 0) return null;
+    const atm = calls.reduce((best, c) =>
+      Math.abs(c.strikePrice - currentPrice) < Math.abs(best.strikePrice - currentPrice) ? c : best,
+    );
+    return Math.round(atm.impliedVolatility);
+  }, [chainData, currentPrice]);
 
   useEffect(() => {
     if (strategies.length > 0 && !selectedStrategyId) setSelectedStrategyId(strategies[0]!.id);
     else if (strategies.length === 0) setSelectedStrategyId(null);
     setModifying(false);
   }, [strategies, outlook]);
+
+  // Reset entry price override whenever symbol changes
+  useEffect(() => { setEntryPriceOverride(null); }, [symbol]);
 
   if (!symbol) {
     return (
@@ -519,10 +627,9 @@ export function StrategyPanel({ symbol, currentPrice = 0 }: StrategyPanelProps) 
   const customKey = `${symbol}:${outlook}:${selectedStrategyId}`;
   const selectedStrategy = customStrategies[customKey] ?? rawSelected;
 
-  // Back-calculate IV from the strategy's long call/put leg premium using
-  // Brenner-Subrahmanyam: σ ≈ premium * √(2π) / (S * √T)
-  // This keeps Modify panel pricing consistent with what the server computed.
+  // Prefer real TT IV from chain; fall back to Brenner-Subrahmanyam back-calculation
   const estimatedIv = (() => {
+    if (chainIv !== null) return chainIv;
     if (!selectedStrategy || currentPrice <= 0) return 30;
     const atmLeg = selectedStrategy.legs.find(l => l.optionType !== "stock" && l.action === "buy");
     if (!atmLeg || atmLeg.premium <= 0) return 30;
@@ -584,9 +691,17 @@ export function StrategyPanel({ symbol, currentPrice = 0 }: StrategyPanelProps) 
             })
           )}
 
+          {/* Existing position banner */}
+          {existingPosition && !isLoading && (
+            <ExistingPositionBanner
+              position={existingPosition}
+              onUseEntryPrice={(price) => setEntryPriceOverride(price)}
+            />
+          )}
+
           {/* Detail / Modify area */}
           {selectedStrategy && !isLoading && (
-            <div style={{ marginTop: 10 }}>
+            <div style={{ marginTop: existingPosition ? 0 : 10 }}>
               {modifying ? (
                 <ModifyPanel
                   strategy={selectedStrategy}
@@ -600,7 +715,7 @@ export function StrategyPanel({ symbol, currentPrice = 0 }: StrategyPanelProps) 
               ) : (
                 <StrategyDetail
                   strategy={selectedStrategy}
-                  currentPrice={currentPrice}
+                  currentPrice={entryPriceOverride ?? currentPrice}
                   symbol={symbol}
                   iv={estimatedIv}
                   onModify={() => setModifying(true)}

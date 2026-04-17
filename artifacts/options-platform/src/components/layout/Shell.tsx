@@ -39,6 +39,7 @@ export function Shell({ children }: ShellProps) {
     { href: "/", label: "Dashboard" },
     { href: "/screener", label: "Screener" },
     { href: "/scanner", label: "Analysis" },
+    { href: "/positions", label: "Positions" },
   ];
 
   const statusColor  = marketOpen ? "hsl(var(--success))" : "hsl(var(--muted-foreground))";

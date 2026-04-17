@@ -23,6 +23,12 @@
 
 import type { TechnicalSignals } from "./technical-analysis.js";
 
+export type ContractLookup = (
+  type: "call" | "put",
+  strike: number,
+  expiry: string,
+) => { mid: number; iv: number } | null;
+
 export interface StrategyLeg {
   action: "buy" | "sell";
   optionType: "call" | "put" | "stock";
@@ -56,8 +62,14 @@ export function buildStrategies(
   ivRank: number,
   hv30: number,         // realized vol as decimal (e.g. 0.28)
   signals: TechnicalSignals,
-  outlook: Outlook
+  outlook: Outlook,
+  lookupContract?: ContractLookup,
 ): OptionsStrategy[] {
+  // Helper: prefer real TT mid price, fall back to Black-Scholes
+  const realPrem = (type: "call" | "put", strike: number, expiry: string, bsFallback: number): number => {
+    const real = lookupContract?.(type, strike, expiry);
+    return real?.mid ?? bsFallback;
+  };
   // Use HV30 as our IV proxy (in %) — inflate slightly for option premiums
   const iv = Math.max(hv30 / 100, 0.15) * 1.15;
 
@@ -75,8 +87,8 @@ export function buildStrategies(
       // Bull Put Spread — sell credit when IV is rich
       const shortStrike = round2(atm(currentPrice, -1));   // 1 strike OTM
       const longStrike  = round2(atm(currentPrice, -3));   // 3 strikes OTM
-      const shortPrem   = bsCall(currentPrice, shortStrike, 0.045, iv, 45 / 365, "put");
-      const longPrem    = bsCall(currentPrice, longStrike,  0.045, iv, 45 / 365, "put");
+      const shortPrem   = realPrem("put", shortStrike, exp45.date, bsCall(currentPrice, shortStrike, 0.045, iv, 45 / 365, "put"));
+      const longPrem    = realPrem("put", longStrike,  exp45.date, bsCall(currentPrice, longStrike,  0.045, iv, 45 / 365, "put"));
       const credit      = round2((shortPrem - longPrem) * 100);
       const maxLoss     = round2((shortStrike - longStrike - (shortPrem - longPrem)) * 100);
       const rr          = credit / maxLoss;
@@ -101,7 +113,7 @@ export function buildStrategies(
 
       // Covered Call (income)
       const callStrike = round2(atm(currentPrice, 2));
-      const callPrem   = round2(bsCall(currentPrice, callStrike, 0.045, iv, 30 / 365, "call") * 100);
+      const callPrem   = round2(realPrem("call", callStrike, exp30.date, bsCall(currentPrice, callStrike, 0.045, iv, 30 / 365, "call")) * 100);
       strategies.push(makeStrategy(2, symbol, "covered_call", outlook, currentPrice, iv, ivRank, signals, {
         name: `${exp30.label} ${fmt(callStrike)} Covered Call`,
         type: "income",
@@ -123,8 +135,8 @@ export function buildStrategies(
       // Bull Call Spread — buy debit when IV is low
       const longStrike  = round2(atm(currentPrice, 0));
       const shortStrike = round2(atm(currentPrice, 4));
-      const longPrem    = bsCall(currentPrice, longStrike,  0.045, iv, 45 / 365, "call");
-      const shortPrem   = bsCall(currentPrice, shortStrike, 0.045, iv, 45 / 365, "call");
+      const longPrem    = realPrem("call", longStrike,  exp45.date, bsCall(currentPrice, longStrike,  0.045, iv, 45 / 365, "call"));
+      const shortPrem   = realPrem("call", shortStrike, exp45.date, bsCall(currentPrice, shortStrike, 0.045, iv, 45 / 365, "call"));
       const debit       = round2((longPrem - shortPrem) * 100);
       const maxProfit   = round2((shortStrike - longStrike) * 100 - debit);
 
@@ -147,7 +159,7 @@ export function buildStrategies(
       }));
 
       // Long Call
-      const callPrem = round2(bsCall(currentPrice, longStrike, 0.045, iv, 45 / 365, "call") * 100);
+      const callPrem = round2(realPrem("call", longStrike, exp45.date, bsCall(currentPrice, longStrike, 0.045, iv, 45 / 365, "call")) * 100);
       strategies.push(makeStrategy(2, symbol, "long_call", outlook, currentPrice, iv, ivRank, signals, {
         name: `${exp45.label} ${fmt(longStrike)} Call`,
         type: "trade",
@@ -190,8 +202,8 @@ export function buildStrategies(
       // Bear Call Spread — credit
       const shortStrike = round2(atm(currentPrice, 1));
       const longStrike  = round2(atm(currentPrice, 3));
-      const shortPrem   = bsCall(currentPrice, shortStrike, 0.045, iv, 45 / 365, "call");
-      const longPrem    = bsCall(currentPrice, longStrike,  0.045, iv, 45 / 365, "call");
+      const shortPrem   = realPrem("call", shortStrike, exp45.date, bsCall(currentPrice, shortStrike, 0.045, iv, 45 / 365, "call"));
+      const longPrem    = realPrem("call", longStrike,  exp45.date, bsCall(currentPrice, longStrike,  0.045, iv, 45 / 365, "call"));
       const credit      = round2((shortPrem - longPrem) * 100);
       const maxLoss     = round2((longStrike - shortStrike) * 100 - credit);
 
@@ -216,8 +228,8 @@ export function buildStrategies(
       // Bear Put Spread — debit
       const longStrike  = round2(atm(currentPrice, 0));
       const shortStrike = round2(atm(currentPrice, -4));
-      const longPrem    = bsCall(currentPrice, longStrike,  0.045, iv, 45 / 365, "put");
-      const shortPrem   = bsCall(currentPrice, shortStrike, 0.045, iv, 45 / 365, "put");
+      const longPrem    = realPrem("put", longStrike,  exp45.date, bsCall(currentPrice, longStrike,  0.045, iv, 45 / 365, "put"));
+      const shortPrem   = realPrem("put", shortStrike, exp45.date, bsCall(currentPrice, shortStrike, 0.045, iv, 45 / 365, "put"));
       const debit       = round2((longPrem - shortPrem) * 100);
       const maxProfit   = round2((longStrike - shortStrike) * 100 - debit);
 
@@ -242,7 +254,7 @@ export function buildStrategies(
 
     // Long Put
     const putStrike = round2(atm(currentPrice, -1));
-    const putPrem   = round2(bsCall(currentPrice, putStrike, 0.045, iv, 45 / 365, "put") * 100);
+    const putPrem   = round2(realPrem("put", putStrike, exp45.date, bsCall(currentPrice, putStrike, 0.045, iv, 45 / 365, "put")) * 100);
     strategies.push(makeStrategy(2, symbol, "long_put", outlook, currentPrice, iv, ivRank, signals, {
       name: `${exp45.label} ${fmt(putStrike)} Put`,
       type: "trade",
@@ -284,10 +296,10 @@ export function buildStrategies(
       const callLong  = round2(atm(currentPrice, 4));
       const putShort  = round2(atm(currentPrice, -2));
       const putLong   = round2(atm(currentPrice, -4));
-      const csPrem    = bsCall(currentPrice, callShort, 0.045, iv, 45 / 365, "call");
-      const clPrem    = bsCall(currentPrice, callLong,  0.045, iv, 45 / 365, "call");
-      const psPrem    = bsCall(currentPrice, putShort,  0.045, iv, 45 / 365, "put");
-      const plPrem    = bsCall(currentPrice, putLong,   0.045, iv, 45 / 365, "put");
+      const csPrem    = realPrem("call", callShort, exp45.date, bsCall(currentPrice, callShort, 0.045, iv, 45 / 365, "call"));
+      const clPrem    = realPrem("call", callLong,  exp45.date, bsCall(currentPrice, callLong,  0.045, iv, 45 / 365, "call"));
+      const psPrem    = realPrem("put",  putShort,  exp45.date, bsCall(currentPrice, putShort,  0.045, iv, 45 / 365, "put"));
+      const plPrem    = realPrem("put",  putLong,   exp45.date, bsCall(currentPrice, putLong,   0.045, iv, 45 / 365, "put"));
       const credit    = round2(((csPrem - clPrem) + (psPrem - plPrem)) * 100);
       const wing      = round2((callShort - putShort) / 2 * 100);
       const maxLoss   = round2(wing - credit);
@@ -336,8 +348,8 @@ export function buildStrategies(
     } else {
       // Long Straddle
       const atmStrike = round2(atm(currentPrice, 0));
-      const callPrem  = round2(bsCall(currentPrice, atmStrike, 0.045, iv, 45 / 365, "call") * 100);
-      const putPrem   = round2(bsCall(currentPrice, atmStrike, 0.045, iv, 45 / 365, "put") * 100);
+      const callPrem  = round2(realPrem("call", atmStrike, exp45.date, bsCall(currentPrice, atmStrike, 0.045, iv, 45 / 365, "call")) * 100);
+      const putPrem   = round2(realPrem("put",  atmStrike, exp45.date, bsCall(currentPrice, atmStrike, 0.045, iv, 45 / 365, "put"))  * 100);
       const totalDebit = round2(callPrem + putPrem);
 
       strategies.push(makeStrategy(1, symbol, "long_straddle", outlook, currentPrice, iv, ivRank, signals, {
@@ -361,8 +373,8 @@ export function buildStrategies(
 
     // Calendar Spread
     const calStrike = round2(atm(currentPrice, 0));
-    const frontPrem = bsCall(currentPrice, calStrike, 0.045, iv, 30 / 365, "call");
-    const backPrem  = bsCall(currentPrice, calStrike, 0.045, iv, 60 / 365, "call");
+    const frontPrem = realPrem("call", calStrike, exp30.date, bsCall(currentPrice, calStrike, 0.045, iv, 30 / 365, "call"));
+    const backPrem  = realPrem("call", calStrike, exp60.date, bsCall(currentPrice, calStrike, 0.045, iv, 60 / 365, "call"));
     const calDebit  = round2((backPrem - frontPrem) * 100);
     strategies.push(makeStrategy(2, symbol, "calendar_spread", outlook, currentPrice, iv, ivRank, signals, {
       name: `${exp30.label}/${exp60.label} ${fmt(calStrike)} Calendar`,
