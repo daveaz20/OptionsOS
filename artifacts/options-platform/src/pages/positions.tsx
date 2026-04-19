@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { useGetAccountPositions } from "@workspace/api-client-react";
 import type { AccountPosition } from "@workspace/api-zod";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -54,6 +55,7 @@ function GreekPill({ label, value, color }: { label: string; value: string; colo
 
 function PositionRow({ position }: { position: AccountPosition }) {
   const [expanded, setExpanded] = useState(false);
+  const isMobile = useIsMobile();
   const isUp = position.totalPnl >= 0;
   const thetaColor = position.greeks.theta < 0 ? "hsl(var(--destructive))" : "hsl(var(--success))";
   const dteColor = position.dte <= 7 ? "hsl(var(--destructive))" : position.dte <= 21 ? "hsl(30 95% 60%)" : "hsl(var(--foreground))";
@@ -68,8 +70,8 @@ function PositionRow({ position }: { position: AccountPosition }) {
         onClick={() => setExpanded(e => !e)}
         style={{
           width: "100%", textAlign: "left", display: "grid",
-          gridTemplateColumns: "2fr 1.5fr 1fr 1fr 1.5fr auto",
-          alignItems: "center", gap: 16, padding: "14px 18px",
+          gridTemplateColumns: isMobile ? "1fr 1fr auto" : "2fr 1.5fr 1fr 1fr 1.5fr auto",
+          alignItems: "center", gap: isMobile ? 10 : 16, padding: isMobile ? "12px 14px" : "14px 18px",
           background: "none", border: "none", cursor: "pointer",
           transition: "background 0.1s",
         }}
@@ -115,34 +117,36 @@ function PositionRow({ position }: { position: AccountPosition }) {
           </div>
         </div>
 
-        {/* DTE */}
-        <div>
-          <div style={{ fontSize: 17, fontWeight: 700, letterSpacing: "-0.03em", color: dteColor, fontVariantNumeric: "tabular-nums" }}>
-            {position.dte}
+        {/* DTE / Theta / Greeks — hidden on mobile (shown in expanded section) */}
+        {!isMobile && (
+          <div>
+            <div style={{ fontSize: 17, fontWeight: 700, letterSpacing: "-0.03em", color: dteColor, fontVariantNumeric: "tabular-nums" }}>
+              {position.dte}
+            </div>
+            <div style={{ fontSize: 9.5, color: "hsl(var(--muted-foreground))" }}>DTE</div>
           </div>
-          <div style={{ fontSize: 9.5, color: "hsl(var(--muted-foreground))" }}>DTE</div>
-        </div>
-
-        {/* Theta */}
-        <div>
-          <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: "-0.02em", color: thetaColor, fontVariantNumeric: "tabular-nums" }}>
-            {position.greeks.theta >= 0 ? "+" : ""}{formatCurrency(position.greeks.theta)}/d
+        )}
+        {!isMobile && (
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: "-0.02em", color: thetaColor, fontVariantNumeric: "tabular-nums" }}>
+              {position.greeks.theta >= 0 ? "+" : ""}{formatCurrency(position.greeks.theta)}/d
+            </div>
+            <div style={{ fontSize: 9.5, color: "hsl(var(--muted-foreground))" }}>Theta</div>
           </div>
-          <div style={{ fontSize: 9.5, color: "hsl(var(--muted-foreground))" }}>Theta</div>
-        </div>
-
-        {/* Delta / Vega */}
-        <div style={{ display: "flex", gap: 16 }}>
-          <GreekPill
-            label="DELTA"
-            value={(position.greeks.delta >= 0 ? "+" : "") + position.greeks.delta.toFixed(3)}
-            color={Math.abs(position.greeks.delta) > 0.3 ? "hsl(30 95% 60%)" : undefined}
-          />
-          <GreekPill
-            label="VEGA"
-            value={formatCurrency(position.greeks.vega)}
-          />
-        </div>
+        )}
+        {!isMobile && (
+          <div style={{ display: "flex", gap: 16 }}>
+            <GreekPill
+              label="DELTA"
+              value={(position.greeks.delta >= 0 ? "+" : "") + position.greeks.delta.toFixed(3)}
+              color={Math.abs(position.greeks.delta) > 0.3 ? "hsl(30 95% 60%)" : undefined}
+            />
+            <GreekPill
+              label="VEGA"
+              value={formatCurrency(position.greeks.vega)}
+            />
+          </div>
+        )}
 
         {/* Expand toggle */}
         <div style={{ color: "hsl(var(--muted-foreground))" }}>
@@ -155,7 +159,16 @@ function PositionRow({ position }: { position: AccountPosition }) {
 
       {/* Expanded legs */}
       {expanded && (
-        <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)", padding: "12px 18px 14px" }}>
+        <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)", padding: isMobile ? "10px 14px 12px" : "12px 18px 14px" }}>
+          {/* Mobile summary row: DTE / Theta / Greeks */}
+          {isMobile && (
+            <div style={{ display: "flex", gap: 16, marginBottom: 10, flexWrap: "wrap" }}>
+              <GreekPill label="DTE" value={String(position.dte)} color={dteColor} />
+              <GreekPill label="THETA" value={`${position.greeks.theta >= 0 ? "+" : ""}${formatCurrency(position.greeks.theta)}/d`} color={thetaColor} />
+              <GreekPill label="DELTA" value={(position.greeks.delta >= 0 ? "+" : "") + position.greeks.delta.toFixed(3)} color={Math.abs(position.greeks.delta) > 0.3 ? "hsl(30 95% 60%)" : undefined} />
+              <GreekPill label="VEGA" value={formatCurrency(position.greeks.vega)} />
+            </div>
+          )}
           <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.06em", color: "hsl(var(--muted-foreground))", marginBottom: 8 }}>
             LEGS
           </div>
@@ -165,8 +178,8 @@ function PositionRow({ position }: { position: AccountPosition }) {
               const actionColor = leg.action === "long" ? "hsl(var(--success))" : "hsl(var(--destructive))";
               return (
                 <div key={i} style={{
-                  display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr 1fr",
-                  gap: 12, padding: "8px 12px", borderRadius: 7,
+                  display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "1fr 1fr 1fr 1fr 1fr",
+                  gap: isMobile ? 8 : 12, padding: "8px 12px", borderRadius: 7,
                   background: "rgba(255,255,255,0.025)", alignItems: "center",
                 }}>
                   <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
@@ -212,12 +225,13 @@ function PositionRow({ position }: { position: AccountPosition }) {
 // ─── Portfolio summary strip ───────────────────────────────────────────────
 
 function PortfolioSummary({ positions }: { positions: AccountPosition[] }) {
+  const isMobile = useIsMobile();
   const totalPnl = positions.reduce((s, p) => s + p.totalPnl, 0);
   const totalTheta = positions.reduce((s, p) => s + p.greeks.theta, 0);
   const totalDelta = positions.reduce((s, p) => s + p.greeks.delta, 0);
 
   return (
-    <div style={{ display: "flex", gap: 10, marginBottom: 22 }}>
+    <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4,1fr)", gap: 10, marginBottom: 22 }}>
       {[
         { label: "TOTAL P&L", value: formatCurrency(totalPnl), color: totalPnl >= 0 ? "hsl(var(--success))" : "hsl(var(--destructive))" },
         { label: "PORTFOLIO THETA", value: `${formatCurrency(totalTheta)}/d`, color: totalTheta < 0 ? "hsl(var(--destructive))" : "hsl(var(--success))" },
@@ -243,6 +257,7 @@ function PortfolioSummary({ positions }: { positions: AccountPosition[] }) {
 // ─── Main ──────────────────────────────────────────────────────────────────
 
 export default function PositionsPage() {
+  const isMobile = useIsMobile();
   const [sortKey, setSortKey] = useState<SortKey>("dte");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
@@ -265,11 +280,11 @@ export default function PositionsPage() {
 
   return (
     <ScrollArea className="h-full w-full" style={{ background: "hsl(0 0% 4%)" }}>
-      <div style={{ maxWidth: 1200, margin: "0 auto", padding: "28px 24px 60px" }}>
+      <div style={{ maxWidth: 1200, margin: "0 auto", padding: isMobile ? "16px 12px 80px" : "28px 24px 60px" }}>
 
         {/* Header */}
-        <div style={{ marginBottom: 24 }}>
-          <h1 style={{ fontSize: 24, fontWeight: 700, letterSpacing: "-0.03em", display: "flex", alignItems: "center", gap: 9, marginBottom: 4 }}>
+        <div style={{ marginBottom: isMobile ? 16 : 24 }}>
+          <h1 style={{ fontSize: isMobile ? 18 : 24, fontWeight: 700, letterSpacing: "-0.03em", display: "flex", alignItems: "center", gap: 9, marginBottom: 4 }}>
             <Briefcase style={{ width: 20, height: 20, color: "hsl(var(--primary))" }} />
             Positions
           </h1>

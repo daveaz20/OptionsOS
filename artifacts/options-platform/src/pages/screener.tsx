@@ -510,7 +510,7 @@ export default function Screener() {
               <div style={{
                 position:"absolute", top:"calc(100% + 6px)", left:0, zIndex:200,
                 background:"#1c1c1e", border:"1px solid rgba(255,255,255,0.1)",
-                borderRadius:12, boxShadow:"0 20px 60px rgba(0,0,0,0.7)", minWidth:440,
+                borderRadius:12, boxShadow:"0 20px 60px rgba(0,0,0,0.7)", minWidth:"min(440px, calc(100vw - 24px))",
                 overflow:"hidden",
               }}>
                 <FilterPicker onAdd={addFilter} existing={existingKeys} />

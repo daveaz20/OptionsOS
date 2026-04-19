@@ -1,4 +1,5 @@
 import { useMemo, useState, useCallback, useEffect } from "react";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { useQuery } from "@tanstack/react-query";
 import {
   useGetDashboardSummary, useGetTopMovers, useGetWatchlist,
@@ -167,6 +168,7 @@ function MarketStatusPill() {
 
 function AccountSummaryModule() {
   const { data, isLoading, error } = useGetAccountSummary();
+  const isMobile = useIsMobile();
 
   if (error) {
     const is503 = (error as any)?.status === 503;
@@ -215,7 +217,7 @@ function AccountSummaryModule() {
   ];
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 10 }}>
+    <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2,1fr)" : "repeat(5,1fr)", gap: 10 }}>
       {stats.map((s, i) => (
         <div key={i} style={{ padding: "13px 14px", borderRadius: 9, border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.02)" }}>
           <div style={{ fontSize: 9.5, letterSpacing: "0.05em", color: "hsl(var(--muted-foreground))", marginBottom: 7, fontWeight: 500 }}>{s.label}</div>
@@ -258,6 +260,7 @@ function useMarketStats() {
 function StatsModule({ stocks: _stocks, loadingStocks: _loadingStocks }: { stocks: Stock[]; loadingStocks: boolean }) {
   const { data: mkt, isLoading: loadingStats } = useMarketStats();
   const loading = loadingStats;
+  const isMobile = useIsMobile();
 
   const bull    = mkt?.bull    ?? 0;
   const bear    = mkt?.bear    ?? 0;
@@ -313,7 +316,7 @@ function StatsModule({ stocks: _stocks, loadingStocks: _loadingStocks }: { stock
   ];
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 10 }}>
+    <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2,1fr)" : "repeat(4,1fr)", gap: 10 }}>
       {stats.map((s, i) => (
         <div key={i} style={{ padding: "13px 14px", borderRadius: 9, border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.02)" }}>
           <div style={{ fontSize: 9.5, letterSpacing: "0.05em", color: "hsl(var(--muted-foreground))", marginBottom: 7, fontWeight: 500 }}>{s.label}</div>
@@ -329,15 +332,17 @@ function StatsModule({ stocks: _stocks, loadingStocks: _loadingStocks }: { stock
 }
 
 function OpportunitiesModule({ stocks, loading }: { stocks: Stock[]; loading: boolean }) {
+  const isMobile = useIsMobile();
   const top = useMemo(() =>
     [...stocks].filter(s => (s.opportunityScore ?? 0) > 0)
       .sort((a, b) => (b.opportunityScore ?? 0) - (a.opportunityScore ?? 0)).slice(0, 9),
     [stocks]);
 
-  if (loading) return <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>{Array.from({ length: 9 }).map((_, i) => <div key={i} style={{ height: 110, borderRadius: 8, background: "rgba(255,255,255,0.04)", animation: "pulse 1.4s infinite" }} />)}</div>;
+  const cols = isMobile ? "1fr" : "repeat(3,1fr)";
+  if (loading) return <div style={{ display: "grid", gridTemplateColumns: cols, gap: 10 }}>{Array.from({ length: isMobile ? 3 : 9 }).map((_, i) => <div key={i} style={{ height: 110, borderRadius: 8, background: "rgba(255,255,255,0.04)", animation: "pulse 1.4s infinite" }} />)}</div>;
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
+    <div style={{ display: "grid", gridTemplateColumns: cols, gap: 10 }}>
       {top.map(s => <OpportunityCard key={s.id} stock={s} />)}
     </div>
   );
@@ -528,6 +533,7 @@ function MoverListModule({ stocks, loading, type }: { stocks: Stock[]; loading: 
 }
 
 function WatchlistModule({ watchlist, loading }: { watchlist: any[]; loading: boolean }) {
+  const isMobile = useIsMobile();
   const removeFromWatchlist = useRemoveFromWatchlist();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -540,7 +546,7 @@ function WatchlistModule({ watchlist, loading }: { watchlist: any[]; loading: bo
     </div>
   );
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(200px,1fr))", gap: 1 }}>
+    <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fill,minmax(200px,1fr))", gap: 1 }}>
       {watchlist.map(item => {
         const isUp = item.changePercent >= 0;
         const iv = item.ivRank as number | undefined;
@@ -579,11 +585,12 @@ function WatchlistModule({ watchlist, loading }: { watchlist: any[]; loading: bo
 }
 
 function TechnicalAlertsModule({ stocks, loading }: { stocks: Stock[]; loading: boolean }) {
+  const isMobile = useIsMobile();
   const overbought = useMemo(() => stocks.filter(s => s.technicalStrength >= 8).sort((a, b) => b.technicalStrength - a.technicalStrength).slice(0, 5), [stocks]);
   const oversold   = useMemo(() => stocks.filter(s => s.technicalStrength <= 2).sort((a, b) => a.technicalStrength - b.technicalStrength).slice(0, 5), [stocks]);
   if (loading) return <Skeleton h={40} />;
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+    <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12 }}>
       {[
         { label: "Overbought (TS ≥ 8)", stocks: overbought, color: "hsl(var(--destructive))", icon: <ChevronUp style={{ width: 11, height: 11 }} /> },
         { label: "Oversold (TS ≤ 2)", stocks: oversold, color: "hsl(var(--success))", icon: <ChevronDown style={{ width: 11, height: 11 }} /> },
@@ -677,11 +684,12 @@ function MostActiveModule({ stocks, loading }: { stocks: Stock[]; loading: boole
 }
 
 function Week52Module({ stocks, loading }: { stocks: Stock[]; loading: boolean }) {
+  const isMobile = useIsMobile();
   const nearHigh = useMemo(() => stocks.filter(s => s.fiftyTwoWeekHigh && s.price >= s.fiftyTwoWeekHigh * 0.95).sort((a, b) => b.price / b.fiftyTwoWeekHigh! - a.price / a.fiftyTwoWeekHigh!).slice(0, 5), [stocks]);
   const nearLow  = useMemo(() => stocks.filter(s => s.fiftyTwoWeekLow && s.price <= s.fiftyTwoWeekLow * 1.08).sort((a, b) => a.price / a.fiftyTwoWeekLow! - b.price / b.fiftyTwoWeekLow!).slice(0, 5), [stocks]);
   if (loading) return <Skeleton h={40} />;
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+    <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12 }}>
       {[
         { label: "Near 52W High", list: nearHigh, color: "hsl(var(--success))", icon: <ChevronUp style={{ width: 11, height: 11 }} /> },
         { label: "Near 52W Low",  list: nearLow,  color: "hsl(var(--destructive))", icon: <ChevronDown style={{ width: 11, height: 11 }} /> },
@@ -903,6 +911,7 @@ function CustomizePanel({ order, enabled, onToggle, onMove, onReset, onClose }: 
 export default function DashboardPage() {
   const [config, setConfig] = useState<DashboardConfig>(loadConfig);
   const [customizing, setCustomizing] = useState(false);
+  const isMobile = useIsMobile();
 
   const { data: topMovers, isLoading: loadingMovers } = useGetTopMovers();
   const { data: watchlist = [], isLoading: loadingWatchlist } = useGetWatchlist();
@@ -991,16 +1000,16 @@ export default function DashboardPage() {
 
   return (
     <ScrollArea className="h-full w-full" style={{ background: "hsl(0 0% 4%)" }}>
-      <div style={{ maxWidth: 1360, margin: "0 auto", padding: "28px 24px 60px" }}>
+      <div style={{ maxWidth: 1360, margin: "0 auto", padding: isMobile ? "16px 12px 80px" : "28px 24px 60px" }}>
 
         {/* Header */}
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 22 }}>
+        <div style={{ display: "flex", alignItems: isMobile ? "center" : "flex-start", justifyContent: "space-between", marginBottom: isMobile ? 14 : 22, flexWrap: "wrap", gap: 8 }}>
           <div>
-            <h1 style={{ fontSize: 24, fontWeight: 700, letterSpacing: "-0.03em", display: "flex", alignItems: "center", gap: 9, marginBottom: 3 }}>
-              <LayoutDashboard style={{ width: 20, height: 20, color: "hsl(var(--primary))" }} />
+            <h1 style={{ fontSize: isMobile ? 18 : 24, fontWeight: 700, letterSpacing: "-0.03em", display: "flex", alignItems: "center", gap: 9, marginBottom: 3 }}>
+              <LayoutDashboard style={{ width: isMobile ? 16 : 20, height: isMobile ? 16 : 20, color: "hsl(var(--primary))" }} />
               Market Dashboard
             </h1>
-            <p style={{ fontSize: 12.5, color: "hsl(var(--muted-foreground))" }}>{dateStr}</p>
+            {!isMobile && <p style={{ fontSize: 12.5, color: "hsl(var(--muted-foreground))" }}>{dateStr}</p>}
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <MarketStatusPill />
@@ -1028,9 +1037,9 @@ export default function DashboardPage() {
             if (row.length === 1 && row[0]!.cols === 12) {
               return <div key={ri}>{renderModuleContent(row[0]!)}</div>;
             }
-            const colDefs = row.map(m => `${m.cols}fr`).join(" ");
+            const colDefs = isMobile ? "1fr" : row.map(m => `${m.cols}fr`).join(" ");
             return (
-              <div key={ri} style={{ display: "grid", gridTemplateColumns: colDefs, gap: 14 }}>
+              <div key={ri} style={{ display: "grid", gridTemplateColumns: colDefs, gap: isMobile ? 10 : 14 }}>
                 {row.map(mod => <div key={mod.id} style={{ minWidth: 0 }}>{renderModuleContent(mod)}</div>)}
               </div>
             );

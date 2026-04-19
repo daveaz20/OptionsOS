@@ -170,7 +170,7 @@ export function GlobalSearch() {
     o === "bullish" ? "#4ade80" : o === "bearish" ? "#f87171" : "hsl(var(--muted-foreground))";
 
   return (
-    <div data-global-search style={{ position: "relative", width: "clamp(280px, 22vw, 380px)" }}>
+    <div data-global-search style={{ position: "relative", width: "clamp(180px, 22vw, 380px)" }}>
       {/* Input */}
       <div style={{
         display: "flex", alignItems: "center", gap: 6, height: 30, padding: "0 10px",
@@ -205,7 +205,7 @@ export function GlobalSearch() {
             position: "absolute",
             top: "calc(100% + 4px)",
             right: 0,               // anchor to right edge of input
-            width: 360,             // wide enough for long ETF names
+            width: "min(360px, calc(100vw - 24px))",
             background: "hsl(var(--card))",
             border: "1px solid rgba(255,255,255,0.1)",
             borderRadius: 8,
