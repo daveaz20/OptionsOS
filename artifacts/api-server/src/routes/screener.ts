@@ -31,6 +31,11 @@ import {
   getPolygonBars,
   getPolygonETFs,
 } from "../lib/polygon.js";
+import {
+  isTastytradeEnabled,
+  isTastytradeAuthorized,
+  getMarketMetrics,
+} from "../lib/tastytrade.js";
 import { db, screenerCacheTable } from "@workspace/db";
 import { desc } from "drizzle-orm";
 
@@ -81,6 +86,17 @@ async function buildYahooData(): Promise<ScreenerRow[]> {
   const quotes     = await getQuotes(universe);
   const rows: ScreenerRow[] = [];
 
+  // Batch-fetch TT market metrics once (true IV rank from options history)
+  let ttMetrics = new Map<string, import("../lib/tastytrade.js").TtMarketMetrics>();
+  if (isTastytradeEnabled() && isTastytradeAuthorized()) {
+    try {
+      ttMetrics = await getMarketMetrics(quotes.map(q => q.symbol));
+      console.log(`[screener] TT metrics fetched for ${ttMetrics.size}/${quotes.length} symbols`);
+    } catch (err) {
+      console.warn("[screener] TT metrics batch failed, falling back to HV proxy:", (err as Error)?.message ?? err);
+    }
+  }
+
   for (let i = 0; i < quotes.length; i += 25) {
     const batch   = quotes.slice(i, i + 25);
     const results = await Promise.allSettled(batch.map(async (q) => {
@@ -110,13 +126,16 @@ async function buildYahooData(): Promise<ScreenerRow[]> {
         const sig    = computeSignals(history, q.price);
         const dte    = daysUntilEarnings(q.earningsDate);
         const etfCat = ETF_MAP.get(q.symbol);
-        const scan   = scanOpportunity(sig, hv.ivRank, q.price, q.changePercent, dte,
+        // Prefer TT's true IV rank (options-based) over HV-percentile proxy
+        const tt     = ttMetrics.get(q.symbol);
+        const ivRank = tt ? tt.ivRank : r2(hv.ivRank);
+        const scan   = scanOpportunity(sig, ivRank, q.price, q.changePercent, dte,
           undefined, undefined, etfCat ? { isETF: true, etfCategory: etfCat } : undefined);
         return {
           ...base,
           technicalStrength: Math.round(sig.strength),
           rsi14: r2(sig.rsi14), macdHistogram: r2(sig.macd.histogram),
-          ivRank: r2(hv.ivRank),
+          ivRank,
           opportunityScore: scan?.opportunityScore ?? 40,
           technicalScore: scan?.technicalScore ?? 0,
           ivScore: scan?.ivScore ?? 0,
@@ -133,7 +152,7 @@ async function buildYahooData(): Promise<ScreenerRow[]> {
         return {
           ...base,
           technicalStrength: 5, rsi14: 50, macdHistogram: 0, ivRank: 30,
-          opportunityScore: 40, technicalScore: 0, ivScore: 0, entryScore: 0, momentumScore: 0, vwapScore: 0,
+          opportunityScore: 25, technicalScore: 0, ivScore: 0, entryScore: 0, momentumScore: 0, vwapScore: 0,
           setupType: "Neutral", recommendedOutlook: "neutral",
           supportPrice: r2(q.price * 0.94), resistancePrice: r2(q.price * 1.06),
         } satisfies ScreenerRow;
@@ -180,6 +199,17 @@ async function buildPolygonData(): Promise<ScreenerRow[]> {
 
   const rows: ScreenerRow[] = [];
 
+  // Batch-fetch TT market metrics once for the curated universe (true IV rank)
+  let ttMetrics = new Map<string, import("../lib/tastytrade.js").TtMarketMetrics>();
+  if (isTastytradeEnabled() && isTastytradeAuthorized()) {
+    try {
+      ttMetrics = await getMarketMetrics([...knownSet]);
+      console.log(`[screener] TT metrics fetched for ${ttMetrics.size}/${knownSet.size} symbols`);
+    } catch (err) {
+      console.warn("[screener] TT metrics batch failed, falling back to HV proxy:", (err as Error)?.message ?? err);
+    }
+  }
+
   // Full technicals for ALL quality stocks — 15 concurrent, 500ms between batches
   for (let i = 0; i < filtered.length; i += 15) {
     const batch   = filtered.slice(i, i + 15);
@@ -222,13 +252,16 @@ async function buildPolygonData(): Promise<ScreenerRow[]> {
         const sig      = computeSignals(history, price);
         const dte      = daysUntilEarnings(q?.earningsDate ?? "TBD");
         const etfRef   = etfMap.get(s.ticker);
-        const scan     = scanOpportunity(sig, hv.ivRank, price, chPct, dte, dayVwap, prevDayVwap,
+        // Prefer TT's true IV rank (options-based) over HV-percentile proxy
+        const tt       = ttMetrics.get(s.ticker);
+        const ivRank   = tt ? tt.ivRank : r2(hv.ivRank);
+        const scan     = scanOpportunity(sig, ivRank, price, chPct, dte, dayVwap, prevDayVwap,
           etfRef ? { isETF: true, etfCategory: etfRef.etfCategory } : undefined);
         return {
           ...base,
           technicalStrength: Math.round(sig.strength),
           rsi14: r2(sig.rsi14), macdHistogram: r2(sig.macd.histogram),
-          ivRank: r2(hv.ivRank),
+          ivRank,
           opportunityScore: scan.opportunityScore,
           technicalScore: scan.technicalScore,
           ivScore: scan.ivScore,
@@ -245,7 +278,7 @@ async function buildPolygonData(): Promise<ScreenerRow[]> {
         return {
           ...base,
           technicalStrength: 5, rsi14: 50, macdHistogram: 0, ivRank: 30,
-          opportunityScore: 40, technicalScore: 0, ivScore: 0, entryScore: 0, momentumScore: 0, vwapScore: 0,
+          opportunityScore: 25, technicalScore: 0, ivScore: 0, entryScore: 0, momentumScore: 0, vwapScore: 0,
           setupType: "Neutral", recommendedOutlook: "neutral",
           supportPrice: r2(price * 0.94), resistancePrice: r2(price * 1.06),
         } satisfies ScreenerRow;
@@ -346,11 +379,11 @@ router.get("/screener/source", (_req, res) => {
 // ─── Accurate stats across the full universe ──────────────────────────────────
 
 function isHighConviction(r: ScreenerRow): boolean {
-  return r.opportunityScore >= 75
+  return r.opportunityScore >= 70
     && r.technicalScore >= 20
-    && r.ivScore >= 15
-    && r.entryScore >= 15
-    && r.momentumScore >= 8;
+    && r.ivScore >= 12
+    && r.entryScore >= 14
+    && r.momentumScore >= 6;
 }
 
 router.get("/screener/stats", async (_req, res): Promise<void> => {

@@ -73,13 +73,17 @@ async function getToken(): Promise<string> {
   }
 
   const json = await res.json();
-  const hasAccessToken = !!json.access_token;
-  const expiresIn      = json.expires_in as number;
-  console.log("[TT] getToken: access_token present =", hasAccessToken,
+  const accessToken = json.access_token as string | undefined;
+  const expiresIn   = json.expires_in as number;
+  console.log("[TT] getToken: access_token present =", !!accessToken,
     "| expires_in =", expiresIn);
 
+  if (!accessToken) {
+    throw new Error("TT token refresh succeeded but response missing access_token");
+  }
+
   _token = {
-    value:     json.access_token as string,
+    value:     accessToken,
     expiresAt: Date.now() + expiresIn * 1000,
   };
   console.log("[TT] getToken: token stored, expiresAt =", new Date(_token.expiresAt).toISOString());
@@ -238,6 +242,58 @@ export function makeContractLookup(chain: OptionsChain): ContractLookup {
     );
     return { mid: best.mid, iv: best.impliedVolatility };
   };
+}
+
+// ─── Market Metrics ───────────────────────────────────────────────────────
+
+export interface TtMarketMetrics {
+  iv:           number; // current IV percent (e.g. 25.3)
+  ivRank:       number; // 0–100, true IV rank from options price history
+  ivPercentile: number; // 0–100
+  hv30:         number; // 30-day HV percent
+  hv60:         number;
+  hv90:         number;
+}
+
+const metricsCache = new Map<string, { data: TtMarketMetrics; exp: number }>();
+const METRICS_TTL  = 15 * 60 * 1000; // 15 min
+
+export async function getMarketMetrics(symbols: string[]): Promise<Map<string, TtMarketMetrics>> {
+  const now     = Date.now();
+  const result  = new Map<string, TtMarketMetrics>();
+  const missing: string[] = [];
+
+  for (const sym of symbols) {
+    const hit = metricsCache.get(sym);
+    if (hit && now < hit.exp) result.set(sym, hit.data);
+    else missing.push(sym);
+  }
+  if (missing.length === 0) return result;
+
+  const CHUNK = 100;
+  for (let i = 0; i < missing.length; i += CHUNK) {
+    const chunk = missing.slice(i, i + CHUNK);
+    try {
+      const json = await ttGet(`/market-metrics?symbols=${chunk.map(encodeURIComponent).join(",")}`);
+      for (const item of (json.data?.items ?? []) as any[]) {
+        const sym = item.symbol as string;
+        if (!sym) continue;
+        const metrics: TtMarketMetrics = {
+          iv:           Math.round(num(item["implied-volatility-index"])      * 100 * 100) / 100,
+          ivRank:       Math.round(num(item["implied-volatility-index-rank"]) * 100),
+          ivPercentile: Math.round(num(item["implied-volatility-percentile"]) * 100),
+          hv30:         Math.round(num(item["hv-30-day"])  * 100 * 100) / 100,
+          hv60:         Math.round(num(item["hv-60-day"])  * 100 * 100) / 100,
+          hv90:         Math.round(num(item["hv-90-day"])  * 100 * 100) / 100,
+        };
+        metricsCache.set(sym, { data: metrics, exp: now + METRICS_TTL });
+        result.set(sym, metrics);
+      }
+    } catch (err) {
+      console.warn("[TT] getMarketMetrics chunk failed:", (err as Error)?.message ?? err);
+    }
+  }
+  return result;
 }
 
 // ─── Positions ────────────────────────────────────────────────────────────

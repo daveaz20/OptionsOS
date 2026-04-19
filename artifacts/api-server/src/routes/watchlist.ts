@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db, stocksTable, watchlistTable } from "@workspace/db";
 import {
   AddToWatchlistBody,
@@ -43,7 +43,7 @@ router.post("/watchlist", async (req, res): Promise<void> => {
   const [stock] = await db
     .select()
     .from(stocksTable)
-    .where(sql`${stocksTable.symbol} = ${parsed.data.symbol.toUpperCase()}`);
+    .where(eq(stocksTable.symbol, parsed.data.symbol.toUpperCase()));
 
   if (!stock) {
     res.status(404).json({ error: "Stock not found" });
@@ -64,6 +64,11 @@ router.post("/watchlist", async (req, res): Promise<void> => {
     .insert(watchlistTable)
     .values({ symbol: parsed.data.symbol.toUpperCase() })
     .returning();
+
+  if (!entry) {
+    res.status(500).json({ error: "Insert failed" });
+    return;
+  }
 
   res.status(201).json({
     id: entry.id,

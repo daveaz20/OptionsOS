@@ -103,13 +103,37 @@ export function scanOpportunity(
   const momentumScore  = rawMomentum + momAdj;
 
   const total = Math.round(technicalScore + ivScore + entryScore + momentumScore + vwapScore);
-  const opportunityScore = Math.max(0, Math.min(100, total));
+
+  // ── Hard gates: ensure ALL key dimensions meet a minimum bar ───────────────
+  // A setup with a great score in two areas but weak in others isn't actionable.
+  // These gates prevent marginal multi-dimension stacks from appearing as setups.
+  let cappedScore = total;
+  let cappedSetup: SetupType = setup;
+  let cappedOutlook: ScanOutlook = outlook;
+
+  const dimensionsFailing =
+    (technicalScore < 18 ? 1 : 0) +   // must have real technical conviction (≥18/35)
+    (ivScore        < 10 ? 1 : 0) +   // IV must be in the right regime (≥10/25)
+    (entryScore     < 12 ? 1 : 0) +   // must be near a meaningful level (≥12/25)
+    (momentumScore  <  5 ? 1 : 0);    // must have at least mild confirmation (≥5/15)
+
+  if (dimensionsFailing >= 2) {
+    // Two or more weak dimensions = no actionable setup
+    cappedScore   = Math.min(cappedScore, 44);
+    cappedSetup   = "Neutral";
+    cappedOutlook = "neutral";
+  } else if (dimensionsFailing === 1) {
+    // One weak dimension: marginal setup — cap at 62
+    cappedScore = Math.min(cappedScore, 62);
+  }
+
+  const opportunityScore = Math.max(0, Math.min(100, cappedScore));
 
   return {
     opportunityScore,
-    setupType: setup,
-    recommendedOutlook: outlook,
-    setupDescription: buildDescription(setup, outlook, ivRank, signals, effectiveDte),
+    setupType: cappedSetup,
+    recommendedOutlook: cappedOutlook,
+    setupDescription: buildDescription(cappedSetup, cappedOutlook, ivRank, signals, effectiveDte),
     technicalScore: Math.round(technicalScore),
     ivScore: Math.round(ivScore),
     entryScore: Math.round(entryScore),
@@ -150,8 +174,8 @@ function determineOutlook(signals: TechnicalSignals, ivRank: number): ScanOutloo
     else bearScore += 1;
   }
 
-  if (bullScore > bearScore + 1) return "bullish";
-  if (bearScore > bullScore + 1) return "bearish";
+  if (bullScore > bearScore + 2) return "bullish";
+  if (bearScore > bullScore + 2) return "bearish";
   return "neutral";
 }
 
@@ -219,52 +243,60 @@ function chooseSetup(outlook: ScanOutlook, ivRank: number, signals: TechnicalSig
 
 function scoreTechnical(signals: TechnicalSignals, outlook: ScanOutlook): number {
   // Max 35 pts
+  // Requires broad agreement across trend, RSI, MACD, and MA stack.
+  // Partial alignment scores much lower to avoid stacking mediocre signals.
   let score = 0;
 
   if (outlook === "bullish") {
-    // Trend alignment (0–12)
-    if (signals.trend === "bullish") score += 12;
-    else if (signals.trend === "neutral") score += 4;
+    // MA stack (0–10): require sma20 > sma50 > sma200 for full points
+    if (signals.sma20 > signals.sma50 && signals.sma50 > signals.sma200) score += 10;
+    else if (signals.sma20 > signals.sma50) score += 4;   // partial alignment only
 
-    // RSI zone — want 45–70 for bullish (0–8)
-    if (signals.rsi14 >= 52 && signals.rsi14 <= 68) score += 8;
-    else if (signals.rsi14 >= 45 && signals.rsi14 < 52) score += 5;
-    else if (signals.rsi14 > 68 && signals.rsi14 < 75) score += 4;  // overbought but still bullish
-    else if (signals.rsi14 >= 35 && signals.rsi14 < 45) score += 2; // weak but not bear
+    // Trend + RSI combo (0–13): trend must be confirmed by RSI being in bullish zone
+    if (signals.trend === "bullish" && signals.rsi14 >= 52 && signals.rsi14 <= 70) score += 13;
+    else if (signals.trend === "bullish" && signals.rsi14 >= 45) score += 8;
+    else if (signals.trend === "bullish") score += 4;           // trend without RSI confirmation
+    else if (signals.rsi14 >= 55 && signals.rsi14 <= 70) score += 3; // RSI without trend
 
-    // MACD (0–8)
+    // MACD (0–8): both value and histogram must agree for full score
     if (signals.macd.histogram > 0 && signals.macd.value > signals.macd.signal) score += 8;
-    else if (signals.macd.histogram > 0) score += 4;
+    else if (signals.macd.histogram > 0) score += 3;           // weak — histogram alone
 
-    // MA alignment: above 20 and 50 (0–7)
-    if (signals.sma20 > signals.sma50) score += 4;
-    if (signals.strength >= 7) score += 3;
+    // Strength bonus (0–4)
+    if (signals.strength >= 8) score += 4;
+    else if (signals.strength >= 6) score += 2;
   } else if (outlook === "bearish") {
-    // Mirror logic
-    if (signals.trend === "bearish") score += 12;
-    else if (signals.trend === "neutral") score += 4;
+    // Mirror: full MA stack bearish
+    if (signals.sma20 < signals.sma50 && signals.sma50 < signals.sma200) score += 10;
+    else if (signals.sma20 < signals.sma50) score += 4;
 
-    if (signals.rsi14 <= 48 && signals.rsi14 >= 32) score += 8;
-    else if (signals.rsi14 > 48 && signals.rsi14 <= 55) score += 5;
-    else if (signals.rsi14 < 32 && signals.rsi14 > 25) score += 4;
+    if (signals.trend === "bearish" && signals.rsi14 <= 48 && signals.rsi14 >= 30) score += 13;
+    else if (signals.trend === "bearish" && signals.rsi14 <= 55) score += 8;
+    else if (signals.trend === "bearish") score += 4;
+    else if (signals.rsi14 <= 45 && signals.rsi14 >= 30) score += 3;
 
     if (signals.macd.histogram < 0 && signals.macd.value < signals.macd.signal) score += 8;
-    else if (signals.macd.histogram < 0) score += 4;
+    else if (signals.macd.histogram < 0) score += 3;
 
-    if (signals.sma20 < signals.sma50) score += 4;
-    if (signals.strength <= 4) score += 3;
+    if (signals.strength <= 3) score += 4;
+    else if (signals.strength <= 5) score += 2;
   } else {
-    // Neutral: want RSI near 50, MACD near zero, low ATR relative to price
-    if (signals.rsi14 >= 42 && signals.rsi14 <= 58) score += 10;
+    // Neutral: RSI near 50 + flat MACD + neutral trend — all three required for high score
+    const rsiNeutral  = signals.rsi14 >= 43 && signals.rsi14 <= 57;
+    const macdFlat    = Math.abs(signals.macd.histogram) < Math.abs(signals.macd.signal) * 0.25;
+    const trendFlat   = signals.trend === "neutral";
+
+    if (rsiNeutral)  score += 10;
     else if (signals.rsi14 >= 38 && signals.rsi14 <= 62) score += 5;
 
-    const macdNeutral = Math.abs(signals.macd.histogram) < Math.abs(signals.macd.signal) * 0.3;
-    if (macdNeutral) score += 8;
+    if (macdFlat)    score += 10;
+    else if (Math.abs(signals.macd.histogram) < Math.abs(signals.macd.signal) * 0.5) score += 5;
 
-    if (signals.trend === "neutral") score += 12;
-    else score += 4;
+    if (trendFlat)   score += 10;
+    else             score += 3;
 
-    score += 5; // base for neutral
+    // Confluence bonus: all three aligned is a genuine neutral environment
+    if (rsiNeutral && macdFlat && trendFlat) score += 5;
   }
 
   return Math.min(35, score);
@@ -313,67 +345,80 @@ function scoreIvAlignment(ivRank: number, setup: SetupType, daysToEarnings?: num
 }
 
 function scoreEntryQuality(signals: TechnicalSignals, price: number, outlook: ScanOutlook): number {
-  // Max 25 pts — proximity and alignment with S/R levels
+  // Max 25 pts — must be near a meaningful S/R level to score well.
+  // Mid-range positions score low — no edge, no setup.
   const range = signals.resistance - signals.support;
-  if (range <= 0) return 10;
+  if (range <= 0) return 6;
 
   const pos = (price - signals.support) / range; // 0 = at support, 1 = at resistance
 
   if (outlook === "bullish") {
-    // Best entry: price near support (0.0–0.35), having bounced
-    if (pos >= 0.05 && pos <= 0.30) return 25;      // sweet spot — near support
-    if (pos >= 0.30 && pos <= 0.50) return 18;      // mid-range, still good
-    if (pos > 0.50 && pos <= 0.70) return 10;       // above mid, caution
-    if (pos > 0.70) return 4;                        // near resistance, poor entry
-    return 12;                                        // very close to support
+    // Excellent: bouncing off support (within 15% of the range from support)
+    if (pos >= 0.03 && pos <= 0.20) return 25;
+    // Good: recently cleared support, still in lower third
+    if (pos > 0.20 && pos <= 0.35) return 17;
+    // Mediocre: mid-range — no clear S/R edge
+    if (pos > 0.35 && pos <= 0.55) return 8;
+    // Poor: extended toward resistance — chasing
+    if (pos > 0.55 && pos <= 0.75) return 4;
+    // Very poor: at or beyond resistance
+    return 2;
   }
 
   if (outlook === "bearish") {
-    // Best entry: price near resistance (0.65–0.95), having rejected
-    if (pos >= 0.70 && pos <= 0.95) return 25;      // sweet spot — near resistance
-    if (pos >= 0.50 && pos < 0.70) return 18;
-    if (pos < 0.50 && pos >= 0.30) return 10;
-    if (pos < 0.30) return 4;                        // near support, poor short entry
-    return 12;
+    // Excellent: rejecting from resistance (within 15% of range from top)
+    if (pos >= 0.80 && pos <= 0.97) return 25;
+    // Good: recently failed at resistance, still in upper third
+    if (pos >= 0.65 && pos < 0.80) return 17;
+    // Mediocre: mid-range — no clear S/R edge
+    if (pos >= 0.45 && pos < 0.65) return 8;
+    // Poor: extended toward support
+    if (pos >= 0.25 && pos < 0.45) return 4;
+    return 2;
   }
 
-  // Neutral: best when price is in the middle (good for range strategies)
-  if (pos >= 0.35 && pos <= 0.65) return 25;
-  if (pos >= 0.20 && pos <= 0.80) return 16;
-  return 8;
+  // Neutral: must be in the middle third for range strategies to make sense
+  if (pos >= 0.38 && pos <= 0.62) return 25;
+  if (pos >= 0.25 && pos <= 0.75) return 14;
+  return 5;
 }
 
 function scoreMomentum(signals: TechnicalSignals, changePercent: number, outlook: ScanOutlook, price: number): number {
-  // Max 15 pts — volume, ATR, recent price velocity
+  // Max 15 pts — volume MUST confirm the trade direction to score well.
+  // Flat/opposing volume is a red flag, not neutral.
   let score = 0;
 
-  // Volume confirmation (0–7): high vol in the direction of the trade
+  // Volume confirmation (0–8): directional volume is required, not just present
   if (outlook === "bullish") {
-    if (signals.volumeRatio >= 1.5 && changePercent > 0) score += 7;
-    else if (signals.volumeRatio >= 1.2 && changePercent > 0) score += 5;
-    else if (signals.volumeRatio >= 1.0) score += 3;
-    else score += 1;
+    if      (signals.volumeRatio >= 1.5 && changePercent > 0.5) score += 8;  // strong up volume
+    else if (signals.volumeRatio >= 1.2 && changePercent > 0)   score += 5;  // moderate up volume
+    else if (signals.volumeRatio >= 1.0 && changePercent > 0)   score += 2;  // mild up volume
+    // flat or down-volume day: 0 — not confirming the setup
   } else if (outlook === "bearish") {
-    if (signals.volumeRatio >= 1.5 && changePercent < 0) score += 7;
-    else if (signals.volumeRatio >= 1.2 && changePercent < 0) score += 5;
-    else if (signals.volumeRatio >= 1.0) score += 3;
-    else score += 1;
+    if      (signals.volumeRatio >= 1.5 && changePercent < -0.5) score += 8;
+    else if (signals.volumeRatio >= 1.2 && changePercent < 0)    score += 5;
+    else if (signals.volumeRatio >= 1.0 && changePercent < 0)    score += 2;
   } else {
-    // Neutral: want low volume (quiet market = good for credit strategies)
-    if (signals.volumeRatio < 0.8) score += 7;
-    else if (signals.volumeRatio < 1.2) score += 4;
-    else score += 1;
+    // Neutral: quiet volume is ideal — no big directional moves
+    if      (signals.volumeRatio < 0.7)  score += 8;
+    else if (signals.volumeRatio < 0.9)  score += 5;
+    else if (signals.volumeRatio < 1.15) score += 2;
+    // High volume in "neutral" environment: 0 — suggests breakout risk
   }
 
-  // Trend strength score (0–5)
-  score += Math.round((signals.strength / 10) * 5);
+  // Strength alignment (0–4): must match direction for full credit
+  if (outlook === "bullish" && signals.strength >= 7) score += 4;
+  else if (outlook === "bullish" && signals.strength >= 5) score += 2;
+  else if (outlook === "bearish" && signals.strength <= 4) score += 4;
+  else if (outlook === "bearish" && signals.strength <= 6) score += 2;
+  else if (outlook === "neutral") score += Math.round((1 - Math.abs(signals.strength - 5) / 5) * 4);
 
-  // ATR relative check: is volatility appropriate? (0–3)
-  // ATR < 3% of price = stable, good for credit; > 3% = high vol environment
+  // ATR environment check (0–3): volatility must suit the strategy type
   const atrPct = (signals.atr14 / price) * 100;
-  if (outlook === "neutral" && atrPct < 2.5) score += 3;
-  else if (outlook !== "neutral" && atrPct >= 1.5 && atrPct <= 4) score += 3;
-  else score += 1;
+  if (outlook === "neutral" && atrPct < 2.0) score += 3;       // low ATR = range-bound
+  else if (outlook !== "neutral" && atrPct >= 1.5 && atrPct <= 5) score += 3;
+  else if (outlook !== "neutral" && atrPct >= 1.0) score += 1;
+  // ATR > 5%: too chaotic for most options strategies, 0
 
   return Math.min(15, score);
 }

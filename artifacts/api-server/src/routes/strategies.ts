@@ -10,7 +10,7 @@ import {
 import { getQuote, getPriceHistory, getHistoricalVolatility } from "../lib/market-data.js";
 import { computeSignals } from "../lib/technical-analysis.js";
 import { buildStrategies, calcPnlCurve } from "../lib/strategy-engine.js";
-import { isTastytradeEnabled, isTastytradeAuthorized, getOptionsChain, makeContractLookup } from "../lib/tastytrade.js";
+import { isTastytradeEnabled, isTastytradeAuthorized, getOptionsChain, makeContractLookup, getMarketMetrics } from "../lib/tastytrade.js";
 
 const router: IRouter = Router();
 
@@ -33,18 +33,28 @@ router.get("/stocks/:symbol/strategies", async (req, res): Promise<void> => {
     const signals = computeSignals(history, quote.price);
 
     let lookupContract;
+    let ivRank = hv.ivRank;
+    let hv30   = hv.hv30;
     if (isTastytradeEnabled() && isTastytradeAuthorized()) {
       try {
-        const chain = await getOptionsChain(symbol);
+        const [chain, metricsMap] = await Promise.all([
+          getOptionsChain(symbol),
+          getMarketMetrics([symbol]),
+        ]);
         lookupContract = makeContractLookup(chain);
-      } catch { /* fall back to Black-Scholes */ }
+        const tt = metricsMap.get(symbol);
+        if (tt) {
+          ivRank = tt.ivRank;
+          hv30   = tt.hv30 || hv.hv30;
+        }
+      } catch { /* fall back to Black-Scholes + HV proxy */ }
     }
 
     const strategies = buildStrategies(
       symbol,
       quote.price,
-      hv.ivRank,
-      hv.hv30,
+      ivRank,
+      hv30,
       signals,
       outlook as "bullish" | "bearish" | "neutral",
       lookupContract,
@@ -80,14 +90,25 @@ router.post("/stocks/:symbol/pnl", async (req, res): Promise<void> => {
     // Fall back to searching all outlooks to find the matching strategy ID.
     const requestOutlook = (outlook ?? signals.trend ?? "bullish") as "bullish" | "bearish" | "neutral";
 
+    // Use TT market metrics for accurate IV rank + HV when available
+    let ivRankPnl = hv.ivRank;
+    let hv30Pnl   = hv.hv30;
+    if (isTastytradeEnabled() && isTastytradeAuthorized()) {
+      try {
+        const metricsMap = await getMarketMetrics([symbol]);
+        const tt = metricsMap.get(symbol);
+        if (tt) { ivRankPnl = tt.ivRank; hv30Pnl = tt.hv30 || hv.hv30; }
+      } catch { /* fall back to HV proxy */ }
+    }
+
     // Build strategies for the requested outlook first, then fall back to all
-    let strategy = buildStrategies(symbol, quote.price, hv.ivRank, hv.hv30, signals, requestOutlook)
+    let strategy = buildStrategies(symbol, quote.price, ivRankPnl, hv30Pnl, signals, requestOutlook)
       .find((s) => s.id === strategyId);
 
     if (!strategy) {
       for (const ol of ["bullish", "bearish", "neutral"] as const) {
         if (ol === requestOutlook) continue;
-        strategy = buildStrategies(symbol, quote.price, hv.ivRank, hv.hv30, signals, ol)
+        strategy = buildStrategies(symbol, quote.price, ivRankPnl, hv30Pnl, signals, ol)
           .find((s) => s.id === strategyId);
         if (strategy) break;
       }
@@ -98,7 +119,7 @@ router.post("/stocks/:symbol/pnl", async (req, res): Promise<void> => {
       return;
     }
 
-    const iv = impliedVolatility ?? hv.hv30;
+    const iv = impliedVolatility || hv.hv30;
 
     const result = calcPnlCurve(
       strategy.legs as any,

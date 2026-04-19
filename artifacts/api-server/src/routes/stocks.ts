@@ -12,6 +12,7 @@ import { getQuote, getPriceHistory, getHistoricalVolatility, DEFAULT_UNIVERSE } 
 import { computeSignals } from "../lib/technical-analysis.js";
 import { scanOpportunity } from "../lib/scanner.js";
 import { isPolygonEnabled } from "../lib/polygon.js";
+import { isTastytradeEnabled, isTastytradeAuthorized, getMarketMetrics } from "../lib/tastytrade.js";
 import {
   getScreenerData,
   getScreenerRow,
@@ -122,8 +123,17 @@ router.get("/stocks/:symbol", async (req, res): Promise<void> => {
     ]);
     const signals = computeSignals(history, quote.price);
     const dte     = daysUntilEarnings(quote.earningsDate);
-    const scan    = scanOpportunity(signals, hv.ivRank, quote.price, quote.changePercent, dte);
-    res.json(GetStockResponse.parse(quoteToStock(quote, signals, hv.ivRank, scan)));
+    // Prefer TT's true IV rank when available
+    let ivRank = hv.ivRank;
+    if (isTastytradeEnabled() && isTastytradeAuthorized()) {
+      try {
+        const mm = await getMarketMetrics([symbol]);
+        const tt = mm.get(symbol);
+        if (tt) ivRank = tt.ivRank;
+      } catch { /* fall back to HV proxy */ }
+    }
+    const scan    = scanOpportunity(signals, ivRank, quote.price, quote.changePercent, dte);
+    res.json(GetStockResponse.parse(quoteToStock(quote, signals, ivRank, scan)));
   } catch {
     res.status(404).json({ error: `Symbol not found: ${symbol}` });
   }
@@ -171,7 +181,7 @@ function screenerRowToStock(row: ScreenerRow) {
     fiftyTwoWeekLow:  row.fiftyTwoWeekLow,
     eps:  row.eps,
     pe:   row.pe,
-    dividendYield: row.dividendYield,
+    dividendYield: row.dividendYield / 100,
     ivRank: row.ivRank,
     relativeStrength: `${row.technicalStrength}/10`,
     supportPrice:    row.supportPrice,
@@ -235,7 +245,7 @@ function quoteToStock(
     earningsDate: quote.earningsDate,
     liquidity: quote.avgVolume > 1_000_000 ? "Liquid" : "Illiquid",
     priceAction: sig.priceAction,
-    opportunityScore: scan?.opportunityScore ?? 40,
+    opportunityScore: scan?.opportunityScore ?? 25,
     setupType: scan?.setupType ?? "Neutral",
     recommendedOutlook: scan?.recommendedOutlook ?? "neutral",
     setupDescription: scan?.setupDescription ?? "Insufficient data for analysis.",

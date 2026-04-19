@@ -257,7 +257,7 @@ export function StockDetailPanel({ symbol }: StockDetailPanelProps) {
             {/* Signal strip */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", borderTop: "1px solid rgba(255,255,255,0.05)" }}>
               {[
-                { label: "Trend", value: stock.priceAction.includes("bullish") ? "Bullish" : stock.priceAction.includes("bearish") ? "Bearish" : "Neutral", color: stock.priceAction.includes("bullish") ? "hsl(var(--success))" : stock.priceAction.includes("bearish") ? "hsl(var(--destructive))" : "hsl(var(--primary))" },
+                { label: "Trend", value: (stock as any).recommendedOutlook === "bullish" ? "Bullish" : (stock as any).recommendedOutlook === "bearish" ? "Bearish" : "Neutral", color: (stock as any).recommendedOutlook === "bullish" ? "hsl(var(--success))" : (stock as any).recommendedOutlook === "bearish" ? "hsl(var(--destructive))" : "hsl(var(--primary))" },
                 { label: "Support", value: formatCurrency(stock.supportPrice), color: "hsl(var(--success))" },
                 { label: "Resistance", value: formatCurrency(stock.resistancePrice), color: "hsl(var(--destructive))" },
                 { label: "IV Rank", value: `${stock.ivRank}%`, color: stock.ivRank >= 40 ? "hsl(var(--primary))" : "hsl(var(--muted-foreground))" },
