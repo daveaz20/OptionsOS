@@ -27,13 +27,24 @@ export default function ScannerPage() {
     } catch { return "AAPL"; }
   })();
 
+  const initialStockListTab = (() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      return params.get("tab") === "watchlist" ? "watchlist" : "ideas";
+    } catch { return "ideas"; }
+  })() as "ideas" | "watchlist";
+
   const [selectedSymbol, setSelectedSymbol] = useState<string>(initialSymbol);
+  const [stockListTab, setStockListTab] = useState<"ideas" | "watchlist">(initialStockListTab);
 
   useEffect(() => {
     try {
       const params = new URLSearchParams(window.location.search);
       const sym = params.get("symbol");
+      const tab = params.get("tab");
       if (sym) setSelectedSymbol(sym);
+      if (tab === "watchlist") setStockListTab("watchlist");
+      else if (!tab) setStockListTab("ideas");
     } catch { /* ignore */ }
   }, [location]);
 
@@ -49,13 +60,14 @@ export default function ScannerPage() {
             <StockListPanel
               selectedSymbol={selectedSymbol}
               onSelect={(sym) => { setSelectedSymbol(sym); setMobileTab("detail"); }}
+              initialTab={stockListTab}
             />
           )}
           {mobileTab === "detail" && (
             <StockDetailPanel symbol={selectedSymbol} />
           )}
           {mobileTab === "strategy" && (
-            <StrategyPanel symbol={selectedSymbol} currentPrice={stock?.price} />
+            <StrategyPanel symbol={selectedSymbol} currentPrice={stock?.price} recommendedOutlook={stock?.recommendedOutlook} />
           )}
         </div>
 
@@ -96,6 +108,7 @@ export default function ScannerPage() {
           <StockListPanel
             selectedSymbol={selectedSymbol}
             onSelect={setSelectedSymbol}
+            initialTab={stockListTab}
           />
         </ResizablePanel>
 
@@ -111,6 +124,7 @@ export default function ScannerPage() {
           <StrategyPanel
             symbol={selectedSymbol}
             currentPrice={stock?.price}
+            recommendedOutlook={stock?.recommendedOutlook}
           />
         </ResizablePanel>
       </ResizablePanelGroup>

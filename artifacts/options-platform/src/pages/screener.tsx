@@ -1,6 +1,8 @@
-import { useState, useMemo, useRef, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import React, { useState, useMemo, useRef, useEffect } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
+import { useGetWatchlist, useAddToWatchlist, useRemoveFromWatchlist, getGetWatchlistQueryKey } from "@workspace/api-client-react";
+import { useToast } from "@/hooks/use-toast";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -380,13 +382,19 @@ export default function Screener() {
   const [, setLocation] = useLocation();
   const { data: raw = [], isLoading, isFetching } = useScreenerData();
   const { data: sourceInfo } = useSourceInfo();
+  const { data: watchlist = [] } = useGetWatchlist();
+  const addToWatchlist    = useAddToWatchlist();
+  const removeFromWatchlist = useRemoveFromWatchlist();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
 
-  const [activeFilters, setActiveFilters] = useState<ActiveFilter[]>([]);
-  const [activePreset,  setActivePreset]  = useState("All");
-  const [sortKey,       setSortKey]       = useState("marketCap");
-  const [sortDir,       setSortDir]       = useState<"asc"|"desc">("desc");
-  const [tab,           setTab]           = useState<TabKey>("overview");
-  const [showPicker,    setShowPicker]    = useState(false);
+  const [activeFilters,   setActiveFilters]   = useState<ActiveFilter[]>([]);
+  const [activePreset,    setActivePreset]    = useState("All");
+  const [sortKey,         setSortKey]         = useState("marketCap");
+  const [sortDir,         setSortDir]         = useState<"asc"|"desc">("desc");
+  const [tab,             setTab]             = useState<TabKey>("overview");
+  const [showPicker,      setShowPicker]      = useState(false);
+  const [setupTypeFilter, setSetupTypeFilter] = useState<string>("");
   const pickerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -400,13 +408,48 @@ export default function Screener() {
   }, []);
 
   const factored = useMemo(() => computeFactors(raw), [raw]);
-  const filtered = useMemo(() => applyFilters(factored, activeFilters), [factored, activeFilters]);
+  const filtered = useMemo(() => {
+    const base = applyFilters(factored, activeFilters);
+    if (!setupTypeFilter) return base;
+    return base.filter(r => r.setupType === setupTypeFilter);
+  }, [factored, activeFilters, setupTypeFilter]);
   const sorted   = useMemo(() => {
     return [...filtered].sort((a,b) => {
       const va = (a as any)[sortKey] ?? 0, vb = (b as any)[sortKey] ?? 0;
       return sortDir === "desc" ? vb - va : va - vb;
     });
   }, [filtered, sortKey, sortDir]);
+
+  const setupTypes = useMemo(() => {
+    const types = new Set(factored.map(r => r.setupType).filter(Boolean));
+    return [...types].sort();
+  }, [factored]);
+
+  const watchlistSymbolMap = useMemo(() => {
+    const m = new Map<string, number>();
+    watchlist.forEach(w => m.set(w.symbol, w.id));
+    return m;
+  }, [watchlist]);
+
+  const handleWatchlistToggle = (symbol: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const watchlistId = watchlistSymbolMap.get(symbol);
+    if (watchlistId !== undefined) {
+      removeFromWatchlist.mutate({ id: watchlistId }, {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getGetWatchlistQueryKey() });
+          toast({ title: "Removed from watchlist", description: symbol });
+        },
+      });
+    } else {
+      addToWatchlist.mutate({ data: { symbol } }, {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getGetWatchlistQueryKey() });
+          toast({ title: "Added to watchlist", description: symbol });
+        },
+      });
+    }
+  };
 
   const addFilter   = (f: ActiveFilter) => { setActiveFilters(prev => [...prev.filter(x=>x.key!==f.key), f]); setShowPicker(false); };
   const removeFilter = (key: string)   => setActiveFilters(prev => prev.filter(x=>x.key!==key));
@@ -480,6 +523,26 @@ export default function Screener() {
                 ? "#0a84ff" : "rgba(255,255,255,0.55)",
             }}>{p.label}</button>
           ))}
+          {/* Strategy type filter */}
+          {setupTypes.length > 0 && (
+            <div style={{ position:"relative", marginLeft:"auto" }}>
+              <select
+                value={setupTypeFilter}
+                onChange={e => setSetupTypeFilter(e.target.value)}
+                style={{
+                  padding:"3px 22px 3px 10px", borderRadius:5, fontSize:11, fontWeight:600, cursor:"pointer",
+                  border: setupTypeFilter ? "1px solid rgba(10,132,255,0.5)" : "1px solid rgba(255,255,255,0.12)",
+                  background: setupTypeFilter ? "rgba(10,132,255,0.18)" : "rgba(255,255,255,0.06)",
+                  color: setupTypeFilter ? "#0a84ff" : "rgba(255,255,255,0.55)",
+                  outline:"none", appearance:"none", WebkitAppearance:"none",
+                }}
+              >
+                <option value="" style={{ background:"#1c1c1e", color:"#fff" }}>All Strategies</option>
+                {setupTypes.map(t => <option key={t} value={t} style={{ background:"#1c1c1e", color:"#fff" }}>{t}</option>)}
+              </select>
+              <span style={{ position:"absolute", right:7, top:"50%", transform:"translateY(-50%)", pointerEvents:"none", fontSize:9, color:"rgba(255,255,255,0.4)" }}>▾</span>
+            </div>
+          )}
         </div>
 
         {/* ── Filter chip bar ── */}
@@ -540,7 +603,7 @@ export default function Screener() {
         </div>
       ) : (
         <div style={{ flex:1, overflow:"auto" }}>
-          <StockTable rows={sorted} tab={tab} sortKey={sortKey} sortDir={sortDir} onSort={onSort} navigate={setLocation} />
+          <StockTable rows={sorted} tab={tab} sortKey={sortKey} sortDir={sortDir} onSort={onSort} navigate={setLocation} watchlistSymbolMap={watchlistSymbolMap} onWatchlistToggle={handleWatchlistToggle} />
           {sorted.length > 500 && (
             <div style={{ padding:"10px", color:"rgba(255,255,255,0.25)", fontSize:11, textAlign:"center" }}>
               Showing 500 of {sorted.length.toLocaleString()} — add filters to narrow results
@@ -554,9 +617,11 @@ export default function Screener() {
 
 // ─── Stock Table ──────────────────────────────────────────────────────────────
 
-function StockTable({ rows, tab, sortKey, sortDir, onSort, navigate }: {
+function StockTable({ rows, tab, sortKey, sortDir, onSort, navigate, watchlistSymbolMap, onWatchlistToggle }: {
   rows: FactoredRow[]; tab: TabKey; sortKey:string; sortDir:"asc"|"desc";
   onSort:(k:string)=>void; navigate:(p:string)=>void;
+  watchlistSymbolMap: Map<string, number>;
+  onWatchlistToggle: (symbol: string, e: React.MouseEvent) => void;
 }) {
   interface Col { key:string; label:string; width?:number; right?:boolean; render:(r:FactoredRow)=>React.ReactNode }
 
@@ -703,7 +768,10 @@ function StockTable({ rows, tab, sortKey, sortDir, onSort, navigate }: {
   return (
     <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12 }}>
       <thead>
-        <tr>{cols.map(c=><TH key={c.key} col={c} />)}</tr>
+        <tr>
+          {cols.map(c=><TH key={c.key} col={c} />)}
+          <th style={{ padding:"7px 8px", fontSize:10, fontWeight:700, color:"rgba(255,255,255,0.2)", textAlign:"right", position:"sticky", top:0, background:"#111", zIndex:2, borderBottom:"1px solid rgba(255,255,255,0.06)", width:36 }}>WL</th>
+        </tr>
       </thead>
       <tbody>
         {rows.slice(0,500).map((r,i)=>(
@@ -718,6 +786,21 @@ function StockTable({ rows, tab, sortKey, sortDir, onSort, navigate }: {
                 {c.render(r)}
               </td>
             ))}
+            <td style={{ padding:"4px 8px", textAlign:"right" }}>
+              <button
+                onClick={(e) => onWatchlistToggle(r.symbol, e)}
+                title={watchlistSymbolMap.has(r.symbol) ? "Remove from watchlist" : "Add to watchlist"}
+                style={{
+                  width:24, height:24, borderRadius:5, border:"none",
+                  background: watchlistSymbolMap.has(r.symbol) ? "rgba(10,132,255,0.18)" : "rgba(255,255,255,0.05)",
+                  color: watchlistSymbolMap.has(r.symbol) ? "#0a84ff" : "rgba(255,255,255,0.3)",
+                  cursor:"pointer", fontSize:12, display:"inline-flex", alignItems:"center", justifyContent:"center",
+                  transition:"all 0.12s",
+                }}
+              >
+                {watchlistSymbolMap.has(r.symbol) ? "★" : "☆"}
+              </button>
+            </td>
           </tr>
         ))}
       </tbody>

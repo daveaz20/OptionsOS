@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useListStocks, useGetWatchlist } from "@workspace/api-client-react";
-import { ArrowDownRight, ArrowUpRight, BarChart2, Search, SlidersHorizontal, Star, Zap } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, ChevronDown, Search, SlidersHorizontal, Star, Zap } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { formatCurrency, formatPercent } from "@/lib/format";
 import type { Stock } from "@workspace/api-client-react";
@@ -9,16 +9,16 @@ import type { Stock } from "@workspace/api-client-react";
 interface StockListPanelProps {
   selectedSymbol: string;
   onSelect: (symbol: string) => void;
+  initialTab?: MainTab;
 }
 
-type MainTab = "ideas" | "watchlist" | "portfolio";
+type MainTab = "ideas" | "watchlist";
 type IdeaFilter = "all" | "bullish" | "bearish" | "highIv" | "etfs";
 type SortKey = "opportunity" | "ivRank" | "move" | "symbol";
 
 const TABS: { id: MainTab; label: string }[] = [
   { id: "ideas", label: "Ideas" },
   { id: "watchlist", label: "Watchlist" },
-  { id: "portfolio", label: "Portfolio" },
 ];
 
 const FILTERS: { id: IdeaFilter; label: string }[] = [
@@ -83,22 +83,15 @@ function shortLabel(setupType?: string): string {
   return map[setupType] ?? setupType;
 }
 
-export function StockListPanel({ selectedSymbol, onSelect }: StockListPanelProps) {
-  const [search, setSearch]   = useState("");
-  const [tab, setTab]         = useState<MainTab>("ideas");
-  const [filter, setFilter]   = useState<IdeaFilter>("all");
-  const [sortKey, setSortKey] = useState<SortKey>("opportunity");
+export function StockListPanel({ selectedSymbol, onSelect, initialTab = "ideas" }: StockListPanelProps) {
+  const [search, setSearch]           = useState("");
+  const [tab, setTab]                 = useState<MainTab>(initialTab);
+  const [filter, setFilter]           = useState<IdeaFilter>("all");
+  const [sortKey, setSortKey]         = useState<SortKey>("opportunity");
+  const [setupTypeFilter, setSetupTypeFilter] = useState<string>("");
 
-  const [portfolioSymbols, setPortfolioSymbols] = useState<string[]>(() => {
-    try { return JSON.parse(localStorage.getItem("portfolio") ?? "[]"); } catch { return []; }
-  });
-
-  // Re-read portfolio from localStorage when tab switches to portfolio
-  useEffect(() => {
-    if (tab === "portfolio") {
-      try { setPortfolioSymbols(JSON.parse(localStorage.getItem("portfolio") ?? "[]")); } catch {}
-    }
-  }, [tab]);
+  // Sync initialTab if it changes (e.g. navigating to /scanner?tab=watchlist)
+  useEffect(() => { setTab(initialTab); }, [initialTab]);
 
   const { data: stocks = [], isLoading: loadingStocks }       = useListStocks({ search, limit: 200 });
   const { data: watchlist = [], isLoading: loadingWatchlist } = useGetWatchlist();
@@ -113,10 +106,8 @@ export function StockListPanel({ selectedSymbol, onSelect }: StockListPanelProps
   const watchlistSymbols = new Set(watchlist.map((w) => w.symbol));
 
   const items = useMemo(() => {
-    const portfolioSet = new Set(portfolioSymbols);
     const source: Stock[] =
       tab === "watchlist" ? (watchlist as Stock[]) :
-      tab === "portfolio" ? stocks.filter((s) => portfolioSet.has(s.symbol)) :
       stocks;
     const q = search.trim().toLowerCase();
 
@@ -128,10 +119,11 @@ export function StockListPanel({ selectedSymbol, onSelect }: StockListPanelProps
       const outlook = item.recommendedOutlook;
       const ivRank  = item.ivRank ?? 0;
 
-      if (filter === "bullish") return outlook === "bullish";
-      if (filter === "bearish") return outlook === "bearish";
-      if (filter === "highIv")  return ivRank >= 50;
-      if (filter === "etfs")    return !!(item.isETF || item.etfCategory);
+      if (filter === "bullish" && outlook !== "bullish") return false;
+      if (filter === "bearish" && outlook !== "bearish") return false;
+      if (filter === "highIv"  && ivRank < 50)           return false;
+      if (filter === "etfs"    && !(item.isETF || item.etfCategory)) return false;
+      if (setupTypeFilter && item.setupType !== setupTypeFilter) return false;
       return true;
     });
 
@@ -143,9 +135,15 @@ export function StockListPanel({ selectedSymbol, onSelect }: StockListPanelProps
     });
 
     return filtered;
-  }, [filter, search, sortKey, stocks, tab, watchlist]);
+  }, [filter, search, sortKey, stocks, tab, watchlist, setupTypeFilter]);
 
   const isLoading = tab === "watchlist" ? loadingWatchlist : loadingStocks;
+
+  // Dynamic setup types from Ideas data
+  const setupTypes = useMemo(() => {
+    const types = new Set(stocks.map(s => s.setupType).filter((t): t is string => !!t));
+    return [...types].sort();
+  }, [stocks]);
 
   // Real high-conviction count from full universe (not capped by list limit)
   const highConviction = screenerStats?.highConviction ?? stocks.filter((s) => (s.opportunityScore ?? 0) >= 75).length;
@@ -207,7 +205,7 @@ export function StockListPanel({ selectedSymbol, onSelect }: StockListPanelProps
 
         {/* Filter pills */}
         {tab === "ideas" && (
-          <div style={{ display: "flex", gap: 4, paddingBottom: 12 }}>
+          <div style={{ display: "flex", gap: 4, paddingBottom: 8 }}>
             {FILTERS.map((f) => (
               <button key={f.id} onClick={() => setFilter(f.id)} style={{
                 flex: 1, padding: "4px 0", borderRadius: 5,
@@ -223,13 +221,34 @@ export function StockListPanel({ selectedSymbol, onSelect }: StockListPanelProps
           </div>
         )}
 
+        {/* Strategy type filter — ideas tab only */}
+        {tab === "ideas" && setupTypes.length > 0 && (
+          <div style={{ position: "relative", marginBottom: 8 }}>
+            <select
+              value={setupTypeFilter}
+              onChange={e => setSetupTypeFilter(e.target.value)}
+              style={{
+                width: "100%", padding: "5px 24px 5px 10px", borderRadius: 6, fontSize: 11,
+                border: setupTypeFilter ? "1px solid hsl(var(--primary) / 0.4)" : "1px solid rgba(255,255,255,0.07)",
+                background: setupTypeFilter ? "hsl(var(--primary) / 0.08)" : "rgba(255,255,255,0.04)",
+                color: setupTypeFilter ? "hsl(var(--primary))" : "hsl(var(--muted-foreground))",
+                cursor: "pointer", outline: "none", appearance: "none", WebkitAppearance: "none",
+              }}
+            >
+              <option value="">All strategies</option>
+              {setupTypes.map(t => <option key={t} value={t} style={{ background: "#1c1c1e", color: "#fff" }}>{t}</option>)}
+            </select>
+            <ChevronDown style={{ position: "absolute", right: 7, top: "50%", transform: "translateY(-50%)", width: 11, height: 11, color: "hsl(var(--muted-foreground))", pointerEvents: "none" }} />
+          </div>
+        )}
+
         {/* Scanner summary */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: 8, paddingTop: 2 }}>
           <span style={{ fontSize: 11, color: "hsl(var(--muted-foreground))" }}>
-            {tab === "ideas" ? "Setups" : tab === "watchlist" ? "Watchlist" : "Portfolio"}
+            {tab === "ideas" ? "Setups" : "Watchlist"}
             {" · "}
             <span style={{ fontVariantNumeric: "tabular-nums" }}>
-              {tab === "ideas" && filter === "all" && !search
+              {tab === "ideas" && filter === "all" && !search && !setupTypeFilter
                 ? (screenerStats?.total ?? items.length)
                 : items.length}
             </span>
@@ -250,12 +269,6 @@ export function StockListPanel({ selectedSymbol, onSelect }: StockListPanelProps
             Array.from({ length: 8 }).map((_, i) => (
               <div key={i} style={{ height: 80, borderRadius: 8, background: "rgba(255,255,255,0.035)", margin: "3px 0", animation: "pulse 1.4s infinite" }} />
             ))
-          ) : tab === "portfolio" && items.length === 0 ? (
-            <div style={{ margin: "40px 8px", textAlign: "center", color: "hsl(var(--muted-foreground))", fontSize: 12, lineHeight: 1.6 }}>
-              <BarChart2 style={{ width: 26, height: 26, opacity: 0.2, margin: "0 auto 10px" }} />
-              <div style={{ fontWeight: 500, marginBottom: 4 }}>No portfolio positions</div>
-              <div style={{ opacity: 0.7 }}>Click <strong style={{ color: "hsl(var(--foreground))", opacity: 1 }}>+ Portfolio</strong> on any stock to track it here</div>
-            </div>
           ) : items.length === 0 ? (
             <div style={{ padding: "40px 8px", textAlign: "center", color: "hsl(var(--muted-foreground))", fontSize: 13 }}>
               No setups match this filter

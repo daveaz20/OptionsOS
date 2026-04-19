@@ -12,6 +12,7 @@ import type { OptionsStrategy, StrategyLeg, GetStrategiesOutlook, AccountPositio
 interface StrategyPanelProps {
   symbol: string;
   currentPrice?: number;
+  recommendedOutlook?: string;
 }
 
 const OUTLOOK_TABS: { id: GetStrategiesOutlook; label: string; color: string }[] = [
@@ -567,8 +568,11 @@ function ExistingPositionBanner({
 }
 
 // ── Main StrategyPanel ───────────────────────────────────────────────────
-export function StrategyPanel({ symbol, currentPrice = 0 }: StrategyPanelProps) {
-  const [outlook, setOutlook] = useState<GetStrategiesOutlook>("bullish");
+export function StrategyPanel({ symbol, currentPrice = 0, recommendedOutlook }: StrategyPanelProps) {
+  const initialOutlook: GetStrategiesOutlook =
+    recommendedOutlook === "bearish" ? "bearish" :
+    recommendedOutlook === "neutral" ? "neutral" : "bullish";
+  const [outlook, setOutlook] = useState<GetStrategiesOutlook>(initialOutlook);
   const [selectedStrategyId, setSelectedStrategyId] = useState<number | null>(null);
   const [modifying, setModifying] = useState(false);
   const [customStrategies, setCustomStrategies] = useState<Record<string, OptionsStrategy>>({});
@@ -607,6 +611,16 @@ export function StrategyPanel({ symbol, currentPrice = 0 }: StrategyPanelProps) 
     else if (strategies.length === 0) setSelectedStrategyId(null);
     setModifying(false);
   }, [strategies, outlook]);
+
+  // Sync outlook tab when stock changes to a different recommendedOutlook
+  useEffect(() => {
+    if (!recommendedOutlook) return;
+    const next: GetStrategiesOutlook =
+      recommendedOutlook === "bearish" ? "bearish" :
+      recommendedOutlook === "neutral" ? "neutral" : "bullish";
+    setOutlook(next);
+    setSelectedStrategyId(null);
+  }, [symbol, recommendedOutlook]);
 
   // Reset entry price override whenever symbol changes
   useEffect(() => { setEntryPriceOverride(null); }, [symbol]);
@@ -676,8 +690,9 @@ export function StrategyPanel({ symbol, currentPrice = 0 }: StrategyPanelProps) 
               <AlertCircle style={{ width: 22, height: 22, opacity: 0.3 }} />
               No {outlook} strategies available
             </div>
-          ) : (
-            strategies.map((strategy) => {
+          ) : (() => {
+            const topId = strategies.reduce((best, s) => s.score > best.score ? s : best, strategies[0]!).id;
+            return strategies.map((strategy) => {
               const custom = customStrategies[`${symbol}:${outlook}:${strategy.id}`];
               return (
                 <StrategyCard
@@ -685,11 +700,12 @@ export function StrategyPanel({ symbol, currentPrice = 0 }: StrategyPanelProps) 
                   strategy={custom ?? strategy}
                   isSelected={strategy.id === selectedStrategyId}
                   isModified={!!custom}
+                  isTopPick={strategy.id === topId}
                   onClick={() => { setSelectedStrategyId(strategy.id); setModifying(false); }}
                 />
               );
-            })
-          )}
+            });
+          })()}
 
           {/* Existing position banner */}
           {existingPosition && !isLoading && (
@@ -730,28 +746,34 @@ export function StrategyPanel({ symbol, currentPrice = 0 }: StrategyPanelProps) 
 }
 
 // ── Strategy Card (compact list item) ────────────────────────────────────
-function StrategyCard({ strategy, isSelected, isModified, onClick }: {
-  strategy: OptionsStrategy; isSelected: boolean; isModified: boolean; onClick: () => void;
+function StrategyCard({ strategy, isSelected, isModified, isTopPick, onClick }: {
+  strategy: OptionsStrategy; isSelected: boolean; isModified: boolean; isTopPick: boolean; onClick: () => void;
 }) {
   const pct = Math.min(Math.max(strategy.score / 200, 0), 1);
   const scoreColor = strategy.score > 120 ? "hsl(var(--success))" : strategy.score < 80 ? "hsl(var(--destructive))" : "hsl(var(--primary))";
+  const topBorder = isTopPick && !isSelected ? "1px solid hsl(var(--success) / 0.25)" : isSelected ? "1px solid hsl(var(--primary) / 0.3)" : "1px solid rgba(255,255,255,0.06)";
 
   return (
     <button
       onClick={onClick}
       style={{
         width: "100%", textAlign: "left", padding: "10px 12px", borderRadius: 8,
-        border: isSelected ? "1px solid hsl(var(--primary) / 0.3)" : "1px solid rgba(255,255,255,0.06)",
-        background: isSelected ? "hsl(var(--primary) / 0.07)" : "rgba(255,255,255,0.025)",
+        border: topBorder,
+        background: isSelected ? "hsl(var(--primary) / 0.07)" : isTopPick ? "hsl(var(--success) / 0.04)" : "rgba(255,255,255,0.025)",
         cursor: "pointer", transition: "all 0.12s",
       }}
       onMouseEnter={(e) => { if (!isSelected) (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.045)"; }}
-      onMouseLeave={(e) => { if (!isSelected) (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.025)"; }}
+      onMouseLeave={(e) => { if (!isSelected) (e.currentTarget as HTMLButtonElement).style.background = isTopPick ? "hsl(var(--success) / 0.04)" : "rgba(255,255,255,0.025)"; }}
     >
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
         <div style={{ minWidth: 0, paddingRight: 8 }}>
           <div style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: "-0.02em", color: "hsl(var(--foreground))", marginBottom: 2, display: "flex", alignItems: "center", gap: 5 }}>
             {strategy.name}
+            {isTopPick && (
+              <span style={{ fontSize: 8.5, fontWeight: 700, padding: "1px 5px", borderRadius: 3, background: "hsl(var(--success)/0.18)", color: "hsl(var(--success))", letterSpacing: "0.03em", flexShrink: 0 }}>
+                TOP PICK
+              </span>
+            )}
             {isModified && (
               <span style={{ fontSize: 8.5, fontWeight: 600, padding: "1px 4px", borderRadius: 3, background: "hsl(var(--primary)/0.15)", color: "hsl(var(--primary))", letterSpacing: "0.03em" }}>
                 MODIFIED

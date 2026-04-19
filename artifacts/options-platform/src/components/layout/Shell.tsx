@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { Activity, LayoutDashboard, Filter, LineChart, Briefcase, Settings } from "lucide-react";
+import { Activity, LayoutDashboard, Filter, LineChart, Briefcase, Bookmark, Settings } from "lucide-react";
 import { useState, useEffect } from "react";
 import { GlobalSearch } from "./GlobalSearch";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -9,10 +9,11 @@ interface ShellProps {
 }
 
 const NAV_ITEMS = [
-  { href: "/",          label: "Dashboard", icon: <LayoutDashboard size={18} /> },
-  { href: "/screener",  label: "Screener",  icon: <Filter size={18} /> },
-  { href: "/scanner",   label: "Analysis",  icon: <LineChart size={18} /> },
-  { href: "/positions", label: "Positions", icon: <Briefcase size={18} /> },
+  { href: "/",                    label: "Dashboard", icon: <LayoutDashboard size={18} /> },
+  { href: "/screener",            label: "Screener",  icon: <Filter size={18} /> },
+  { href: "/scanner",             label: "Analysis",  icon: <LineChart size={18} /> },
+  { href: "/scanner?tab=watchlist", label: "Watchlist", icon: <Bookmark size={18} /> },
+  { href: "/positions",           label: "Positions", icon: <Briefcase size={18} /> },
 ];
 
 function useMarketOpen() {
@@ -66,13 +67,14 @@ export function Shell({ children }: ShellProps) {
         <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
           <Link href="/" style={{ display: "flex", alignItems: "center", gap: 7, textDecoration: "none", color: "hsl(var(--foreground))" }}>
             <Activity style={{ width: 16, height: 16, color: "hsl(var(--primary))" }} />
-            <span style={{ fontSize: 14, fontWeight: 600, letterSpacing: "-0.02em" }}>OptionsPlay</span>
+            <span style={{ fontSize: 14, fontWeight: 600, letterSpacing: "-0.02em" }}>OptionsOS</span>
           </Link>
 
           {!isMobile && (
             <nav style={{ display: "flex", gap: 2 }}>
               {NAV_ITEMS.map((item) => {
-                const active = location === item.href;
+                const itemPath = item.href.split("?")[0]!;
+                const active = location === itemPath && (item.href === itemPath || item.href === location);
                 return (
                   <Link
                     key={item.href}
@@ -149,7 +151,8 @@ export function Shell({ children }: ShellProps) {
           }}
         >
           {NAV_ITEMS.map((item) => {
-            const active = location === item.href;
+            const itemPath2 = item.href.split("?")[0]!;
+            const active = location === itemPath2 && (item.href === itemPath2 || item.href === location);
             return (
               <Link
                 key={item.href}

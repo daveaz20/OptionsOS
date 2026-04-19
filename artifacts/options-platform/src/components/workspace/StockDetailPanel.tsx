@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { useGetStock, useGetStockPriceHistory, useGetWatchlist, useAddToWatchlist, useRemoveFromWatchlist, getGetWatchlistQueryKey } from "@workspace/api-client-react";
-import { AlertCircle, BarChart2, Bookmark, BookmarkCheck, BriefcaseBusiness, Check, TrendingDown, TrendingUp } from "lucide-react";
+import { AlertCircle, BarChart2, Bookmark, BookmarkCheck, TrendingDown, TrendingUp } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { formatCurrency, formatNumber, formatPercent } from "@/lib/format";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -8,17 +8,6 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import type { PricePoint } from "@workspace/api-client-react";
 
-// ── Portfolio stored in localStorage ────────────────────────────────────────
-function getPortfolio(): string[] {
-  try { return JSON.parse(localStorage.getItem("portfolio") ?? "[]"); } catch { return []; }
-}
-function addToPortfolio(symbol: string) {
-  const p = getPortfolio();
-  if (!p.includes(symbol)) localStorage.setItem("portfolio", JSON.stringify([...p, symbol]));
-}
-function removeFromPortfolio(symbol: string) {
-  localStorage.setItem("portfolio", JSON.stringify(getPortfolio().filter((s) => s !== symbol)));
-}
 
 interface StockDetailPanelProps {
   symbol: string;
@@ -29,7 +18,6 @@ type Period = (typeof PERIODS)[number];
 
 export function StockDetailPanel({ symbol }: StockDetailPanelProps) {
   const [period, setPeriod] = useState<Period>("3M");
-  const [inPortfolio, setInPortfolio] = useState(() => getPortfolio().includes(symbol));
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -57,18 +45,6 @@ export function StockDetailPanel({ symbol }: StockDetailPanelProps) {
           toast({ title: `Added to watchlist`, description: symbol });
         },
       });
-    }
-  };
-
-  const handlePortfolioToggle = () => {
-    if (inPortfolio) {
-      removeFromPortfolio(symbol);
-      setInPortfolio(false);
-      toast({ title: `Removed from portfolio`, description: symbol });
-    } else {
-      addToPortfolio(symbol);
-      setInPortfolio(true);
-      toast({ title: `Added to portfolio`, description: symbol });
     }
   };
 
@@ -167,15 +143,6 @@ export function StockDetailPanel({ symbol }: StockDetailPanelProps) {
                   activeLabel="Watching"
                   inactiveLabel="+ Watchlist"
                   activeColor="hsl(var(--primary))"
-                />
-                <ActionBtn
-                  active={inPortfolio}
-                  onClick={handlePortfolioToggle}
-                  activeIcon={<Check style={{ width: 11, height: 11 }} />}
-                  inactiveIcon={<BriefcaseBusiness style={{ width: 11, height: 11 }} />}
-                  activeLabel="In portfolio"
-                  inactiveLabel="+ Portfolio"
-                  activeColor="hsl(var(--success))"
                 />
               </div>
               <p style={{ fontSize: 13, color: "hsl(var(--muted-foreground))", fontWeight: 400 }}>{stock.name}</p>
