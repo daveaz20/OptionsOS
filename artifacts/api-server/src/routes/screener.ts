@@ -30,6 +30,8 @@ import {
   getPolygonTickers,
   getPolygonBars,
   getPolygonETFs,
+  getLastTradingDate,
+  getGroupedDailyBars,
 } from "../lib/polygon.js";
 import {
   isTastytradeEnabled,
@@ -55,7 +57,7 @@ export interface ScreenerRow {
   setupType: string; recommendedOutlook: string;
   supportPrice: number; resistancePrice: number;
   liquidity: "Liquid" | "Illiquid";
-  source: "polygon" | "yahoo";
+  source: "polygon" | "yahoo" | "polygon-eod";
   isETF?: boolean;
   etfCategory?: "leveraged-bull" | "leveraged-bear" | "leveraged-single" | "sector";
 }
@@ -170,11 +172,29 @@ async function buildYahooData(): Promise<ScreenerRow[]> {
 async function buildPolygonData(): Promise<ScreenerRow[]> {
   console.log("[screener] building from Polygon.io…");
 
-  const [snaps, tickerMap, etfRefs] = await Promise.all([
+  const [rawSnaps, tickerMap, etfRefs] = await Promise.all([
     getPolygonSnapshots(),
     getPolygonTickers(),
     getPolygonETFs(),
   ]);
+
+  let snaps = rawSnaps;
+  let isEod = false;
+
+  if (snaps.length === 0) {
+    const eodDate = getLastTradingDate();
+    console.log(`[polygon] snapshots empty, falling back to EOD bars for ${eodDate}`);
+    const eodBars = await getGroupedDailyBars(eodDate);
+    isEod = true;
+    snaps = [...eodBars.entries()].map(([ticker, bar]) => ({
+      ticker,
+      todaysChangePerc: 0,
+      todaysChange: 0,
+      updated: 0,
+      day:     { o: bar.open, h: bar.high, l: bar.low, c: bar.close, v: bar.volume, vw: bar.vwap },
+      prevDay: { o: 0, h: 0, l: 0, c: 0, v: 0, vw: 0 },
+    }));
+  }
 
   // Build fast-lookup map: ticker → ETF classification
   const etfMap = new Map(etfRefs.map(e => [e.ticker, e]));
@@ -243,7 +263,7 @@ async function buildPolygonData(): Promise<ScreenerRow[]> {
         pctFrom52Low:  r2(((price - lo52) / lo52) * 100),
         earningsDate: q?.earningsDate ?? "TBD",
         liquidity: (vol > 1_000_000 ? "Liquid" : "Illiquid") as const,
-        source: "polygon" as const,
+        source: (isEod ? "polygon-eod" : "polygon") as ScreenerRow["source"],
       };
 
       try {

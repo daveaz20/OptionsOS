@@ -172,6 +172,104 @@ export async function getPolygonBars(symbol: string, days = 90): Promise<Polygon
   return bars;
 }
 
+// ─── Last trading date + EOD grouped bars ────────────────────────────────────
+
+function getEaster(year: number): Date {
+  const a = year % 19;
+  const b = Math.floor(year / 100);
+  const c = year % 100;
+  const d = Math.floor(b / 4);
+  const e = b % 4;
+  const f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4);
+  const k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * m + 114) / 31);
+  const day   = ((h + l - 7 * m + 114) % 31) + 1;
+  return new Date(year, month - 1, day);
+}
+
+function isUSMarketHoliday(date: Date): boolean {
+  const y   = date.getFullYear();
+  const mo  = date.getMonth() + 1; // 1-based
+  const d   = date.getDate();
+
+  const nthWeekday = (year: number, month: number, weekday: number, n: number) => {
+    const first = new Date(year, month - 1, 1).getDay();
+    return 1 + ((weekday - first + 7) % 7) + (n - 1) * 7;
+  };
+  const lastWeekday = (year: number, month: number, weekday: number) => {
+    const last = new Date(year, month, 0);
+    return last.getDate() - ((last.getDay() - weekday + 7) % 7);
+  };
+  // Observed date for fixed holidays when they fall on a weekend
+  const observedMatch = (fixedMo: number, fixedD: number) => {
+    const dow = new Date(y, fixedMo - 1, fixedD).getDay();
+    if (dow === 6) return mo === fixedMo && d === fixedD - 1; // Sat → Fri
+    if (dow === 0) return mo === fixedMo && d === fixedD + 1; // Sun → Mon
+    return mo === fixedMo && d === fixedD;
+  };
+
+  if (observedMatch(1, 1)) return true;                             // New Year's Day
+  if (mo === 1 && d === nthWeekday(y, 1, 1, 3)) return true;       // MLK Day
+  if (mo === 2 && d === nthWeekday(y, 2, 1, 3)) return true;       // Presidents Day
+  const easter    = getEaster(y);
+  const goodFri   = new Date(easter.getTime() - 2 * 86_400_000);
+  if (mo === goodFri.getMonth() + 1 && d === goodFri.getDate()) return true; // Good Friday
+  if (mo === 5 && d === lastWeekday(y, 5, 1)) return true;         // Memorial Day
+  if (observedMatch(6, 19)) return true;                            // Juneteenth
+  if (observedMatch(7, 4)) return true;                             // Independence Day
+  if (mo === 9 && d === nthWeekday(y, 9, 1, 1)) return true;       // Labor Day
+  if (mo === 11 && d === nthWeekday(y, 11, 4, 4)) return true;     // Thanksgiving
+  if (observedMatch(12, 25)) return true;                           // Christmas
+  return false;
+}
+
+export function getLastTradingDate(): string {
+  const d = new Date();
+  d.setDate(d.getDate() - 1); // start from yesterday
+  for (let i = 0; i < 10; i++) {
+    const dow = d.getDay();
+    if (dow !== 0 && dow !== 6 && !isUSMarketHoliday(d)) {
+      return d.toISOString().slice(0, 10);
+    }
+    d.setDate(d.getDate() - 1);
+  }
+  // Fallback: 3 days ago (should never reach here)
+  const fallback = new Date();
+  fallback.setDate(fallback.getDate() - 3);
+  return fallback.toISOString().slice(0, 10);
+}
+
+export interface EodBar { open: number; high: number; low: number; close: number; volume: number; vwap: number }
+
+export async function getGroupedDailyBars(date: string): Promise<Map<string, EodBar>> {
+  try {
+    const url  = `${BASE}/v2/aggs/grouped/locale/us/market/stocks/${date}?adjusted=true`;
+    const json = await polyFetch(url);
+    const map  = new Map<string, EodBar>();
+    for (const r of (json.results ?? [])) {
+      if (!r.T || !r.c || r.c < 2 || !r.v || r.v < 100_000) continue;
+      map.set(r.T as string, {
+        open:   r.o ?? r.c,
+        high:   r.h ?? r.c,
+        low:    r.l ?? r.c,
+        close:  r.c,
+        volume: r.v,
+        vwap:   r.vw ?? r.c,
+      });
+    }
+    console.log(`[polygon] EOD grouped bars for ${date}: ${map.size} tickers`);
+    return map;
+  } catch (err) {
+    console.error("[polygon] getGroupedDailyBars error (non-fatal):", (err as Error)?.message ?? err);
+    return new Map();
+  }
+}
+
 // ─── ETF reference data + classification ──────────────────────────────────────
 
 /**

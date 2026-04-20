@@ -284,6 +284,7 @@ export function StockListPanel({ selectedSymbol, onSelect, initialTab = "ideas" 
               const label      = shortLabel(item.setupType);
               const sColor     = scoreColor(score);
               const etfCat     = item.etfCategory;
+              const isEod      = (item as any).source === "polygon-eod";
 
               return (
                 <button
@@ -328,6 +329,17 @@ export function StockListPanel({ selectedSymbol, onSelect, initialTab = "ideas" 
                             border: `1px solid color-mix(in srgb, ${ETF_BADGE_COLOR[etfCat]} 25%, transparent)`,
                           }}>
                             {ETF_BADGE_LABEL[etfCat]}
+                          </span>
+                        )}
+                        {isEod && (
+                          <span style={{
+                            fontSize: 9, fontWeight: 600, letterSpacing: "0.04em",
+                            padding: "1.5px 5px", borderRadius: 3, flexShrink: 0,
+                            color: "hsl(38 92% 50%)",
+                            background: "hsl(38 92% 50% / 0.10)",
+                            border: "1px solid hsl(38 92% 50% / 0.25)",
+                          }}>
+                            EOD
                           </span>
                         )}
                       </div>
