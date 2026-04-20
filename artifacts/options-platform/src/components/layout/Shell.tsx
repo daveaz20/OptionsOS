@@ -1,4 +1,4 @@
-import { Link, useLocation } from "wouter";
+import { Link, useLocation, useSearch } from "wouter";
 import { Activity, LayoutDashboard, Filter, LineChart, Briefcase, Bookmark, Settings } from "lucide-react";
 import { useState, useEffect } from "react";
 import { GlobalSearch } from "./GlobalSearch";
@@ -42,8 +42,9 @@ function useMarketOpen() {
 
 export function Shell({ children }: ShellProps) {
   const [location] = useLocation();
+  const search     = useSearch();
   const marketOpen = useMarketOpen();
-  const isMobile = useIsMobile();
+  const isMobile   = useIsMobile();
 
   const statusColor = marketOpen ? "hsl(var(--success))" : "hsl(var(--muted-foreground))";
 
@@ -52,11 +53,11 @@ export function Shell({ children }: ShellProps) {
       <header
         style={{
           display: "flex",
-          height: 48,
+          height: 58,
           flexShrink: 0,
           alignItems: "center",
           justifyContent: "space-between",
-          padding: "0 16px",
+          padding: "0 20px",
           borderBottom: "1px solid rgba(255,255,255,0.06)",
           background: "rgba(0,0,0,0.6)",
           backdropFilter: "blur(20px)",
@@ -64,25 +65,29 @@ export function Shell({ children }: ShellProps) {
         }}
       >
         {/* Left: logo + desktop nav */}
-        <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
-          <Link href="/" style={{ display: "flex", alignItems: "center", gap: 7, textDecoration: "none", color: "hsl(var(--foreground))" }}>
-            <Activity style={{ width: 16, height: 16, color: "hsl(var(--primary))" }} />
-            <span style={{ fontSize: 14, fontWeight: 600, letterSpacing: "-0.02em" }}>OptionsOS</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 28 }}>
+          <Link href="/" style={{ display: "flex", alignItems: "center", gap: 8, textDecoration: "none", color: "hsl(var(--foreground))" }}>
+            <Activity style={{ width: 18, height: 18, color: "hsl(var(--primary))" }} />
+            <span style={{ fontSize: 16, fontWeight: 700, letterSpacing: "-0.03em" }}>OptionsOS</span>
           </Link>
 
           {!isMobile && (
             <nav style={{ display: "flex", gap: 2 }}>
               {NAV_ITEMS.map((item) => {
                 const itemPath = item.href.split("?")[0]!;
-                const active = location === itemPath && (item.href === itemPath || item.href === location);
+                // Watchlist item is active when on /scanner with tab=watchlist param
+                const isWatchlistItem = item.href.includes("tab=watchlist");
+                const active = isWatchlistItem
+                  ? location === itemPath && search.includes("tab=watchlist")
+                  : location === itemPath && !search.includes("tab=watchlist");
                 return (
                   <Link
                     key={item.href}
                     href={item.href}
                     style={{
-                      padding: "4px 12px",
+                      padding: "5px 13px",
                       borderRadius: 6,
-                      fontSize: 13,
+                      fontSize: 14,
                       fontWeight: active ? 500 : 400,
                       color: active ? "hsl(var(--foreground))" : "hsl(var(--muted-foreground))",
                       background: active ? "rgba(255,255,255,0.07)" : "transparent",
@@ -113,7 +118,7 @@ export function Shell({ children }: ShellProps) {
               <span style={{ width: 6, height: 6, borderRadius: "50%", background: statusColor, position: "relative" }} />
             </span>
             {!isMobile && (
-              <span style={{ fontSize: 11, fontWeight: 500, color: statusColor }}>
+              <span style={{ fontSize: 12, fontWeight: 500, color: statusColor }}>
                 {marketOpen ? "Market Open" : "Market Closed"}
               </span>
             )}

@@ -17,7 +17,7 @@ interface ScreenerRow {
   opportunityScore: number; momentumScore?: number; technicalScore?: number;
   setupType: string; recommendedOutlook: string;
   supportPrice: number; resistancePrice: number; liquidity: string;
-  source?: "polygon" | "yahoo";
+  source?: "polygon" | "yahoo" | "polygon-eod";
 }
 
 interface FactoredRow extends ScreenerRow {
@@ -219,7 +219,7 @@ function useScreenerData() {
 }
 
 function useSourceInfo() {
-  return useQuery<{ source: "polygon" | "yahoo"; count: number; cachedAt: number }>({
+  return useQuery<{ source: "polygon" | "yahoo" | "polygon-eod"; count: number; cachedAt: number }>({
     queryKey: ["screener-source"],
     queryFn: async () => {
       const res = await fetch("/api/screener/source");
@@ -486,19 +486,18 @@ export default function Screener() {
               <div style={{
                 display:"flex", alignItems:"center", gap:5,
                 padding:"2px 8px", borderRadius:4,
-                background: sourceInfo.source === "polygon"
-                  ? "rgba(10,132,255,0.12)" : "rgba(255,255,255,0.06)",
-                border: `1px solid ${sourceInfo.source === "polygon" ? "rgba(10,132,255,0.3)" : "rgba(255,255,255,0.1)"}`,
+                background: "rgba(10,132,255,0.12)",
+                border: "1px solid rgba(10,132,255,0.3)",
               }}>
                 <div style={{
                   width:6, height:6, borderRadius:"50%",
-                  background: sourceInfo.source === "polygon" ? "#0a84ff" : "rgba(255,255,255,0.4)",
-                  boxShadow: sourceInfo.source === "polygon" ? "0 0 6px rgba(10,132,255,0.8)" : "none",
+                  background: "#0a84ff",
+                  boxShadow: "0 0 6px rgba(10,132,255,0.8)",
                 }} />
                 <span style={{ fontSize:10, fontWeight:600, letterSpacing:"0.04em",
-                  color: sourceInfo.source === "polygon" ? "#0a84ff" : "rgba(255,255,255,0.4)",
+                  color: "#0a84ff",
                   textTransform:"uppercase" }}>
-                  {sourceInfo.source === "polygon" ? "Polygon" : "Yahoo Finance"}
+                  Universe
                 </span>
                 <span style={{ fontSize:10, color:"rgba(255,255,255,0.3)" }}>
                   {sourceInfo.count.toLocaleString()} stocks

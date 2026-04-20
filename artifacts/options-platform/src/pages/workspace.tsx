@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { StockListPanel } from "@/components/workspace/StockListPanel";
 import { StockDetailPanel } from "@/components/workspace/StockDetailPanel";
@@ -17,36 +17,34 @@ const MOBILE_TABS: { key: MobileTab; label: string }[] = [
 
 export default function ScannerPage() {
   const [location] = useLocation();
-  const isMobile = useIsMobile();
+  const search     = useSearch();
+  const isMobile   = useIsMobile();
   const [mobileTab, setMobileTab] = useState<MobileTab>("detail");
 
   const initialSymbol = (() => {
-    try {
-      const params = new URLSearchParams(window.location.search);
-      return params.get("symbol") || "AAPL";
-    } catch { return "AAPL"; }
+    try { return new URLSearchParams(window.location.search).get("symbol") || "AAPL"; }
+    catch { return "AAPL"; }
   })();
 
   const initialStockListTab = (() => {
-    try {
-      const params = new URLSearchParams(window.location.search);
-      return params.get("tab") === "watchlist" ? "watchlist" : "ideas";
-    } catch { return "ideas"; }
+    try { return new URLSearchParams(window.location.search).get("tab") === "watchlist" ? "watchlist" : "ideas"; }
+    catch { return "ideas"; }
   })() as "ideas" | "watchlist";
 
   const [selectedSymbol, setSelectedSymbol] = useState<string>(initialSymbol);
   const [stockListTab, setStockListTab] = useState<"ideas" | "watchlist">(initialStockListTab);
 
+  // Reactive to both path and search changes (handles same-path navigation with different ?tab=)
   useEffect(() => {
     try {
-      const params = new URLSearchParams(window.location.search);
+      const params = new URLSearchParams(search || window.location.search);
       const sym = params.get("symbol");
       const tab = params.get("tab");
       if (sym) setSelectedSymbol(sym);
       if (tab === "watchlist") setStockListTab("watchlist");
       else if (!tab) setStockListTab("ideas");
     } catch { /* ignore */ }
-  }, [location]);
+  }, [location, search]);
 
   const { data: stock } = useGetStock(selectedSymbol, { query: { enabled: !!selectedSymbol } });
 

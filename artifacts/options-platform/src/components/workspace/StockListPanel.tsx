@@ -16,11 +16,6 @@ type MainTab = "ideas" | "watchlist";
 type IdeaFilter = "all" | "bullish" | "bearish" | "highIv" | "etfs";
 type SortKey = "opportunity" | "ivRank" | "move" | "symbol";
 
-const TABS: { id: MainTab; label: string }[] = [
-  { id: "ideas", label: "Ideas" },
-  { id: "watchlist", label: "Watchlist" },
-];
-
 const FILTERS: { id: IdeaFilter; label: string }[] = [
   { id: "all",     label: "All" },
   { id: "bullish", label: "Bullish" },
@@ -153,19 +148,6 @@ export function StockListPanel({ selectedSymbol, onSelect, initialTab = "ideas" 
 
       {/* Tab bar */}
       <div style={{ padding: "16px 16px 0", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
-        <div style={{ display: "flex", gap: 2, background: "rgba(255,255,255,0.04)", borderRadius: 8, padding: 3, marginBottom: 12 }}>
-          {TABS.map((t) => (
-            <button key={t.id} onClick={() => setTab(t.id)} style={{
-              flex: 1, padding: "5px 0", borderRadius: 6, border: "none",
-              fontSize: 12, fontWeight: tab === t.id ? 600 : 400,
-              color: tab === t.id ? "hsl(var(--foreground))" : "hsl(var(--muted-foreground))",
-              background: tab === t.id ? "rgba(255,255,255,0.09)" : "transparent",
-              cursor: "pointer", transition: "all 0.15s", letterSpacing: "-0.01em",
-            }}>
-              {t.label}
-            </button>
-          ))}
-        </div>
 
         {/* Search + sort cycle */}
         <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>

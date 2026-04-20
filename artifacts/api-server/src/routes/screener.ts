@@ -424,7 +424,8 @@ router.get("/screener/stats", async (_req, res): Promise<void> => {
     ? Math.round(ivVals.reduce((a, b) => a + b, 0) / ivVals.length)
     : 0;
 
-  const bestScore = rows.reduce((mx, r) => Math.max(mx, r.opportunityScore), 0);
+  const bestScore  = rows.reduce((mx, r) => Math.max(mx, r.opportunityScore), 0);
+  const setups60   = rows.filter(r => r.opportunityScore >= 60).length;
 
   const highIv = rows.filter(r => r.ivRank >= 50).length;
 
@@ -440,6 +441,7 @@ router.get("/screener/stats", async (_req, res): Promise<void> => {
     highIv,
     avgIv,
     bestScore,
+    setups60,
     marketOpen,
     source: isPolygonEnabled() ? "polygon" : "yahoo",
     cachedAt: cache.at,

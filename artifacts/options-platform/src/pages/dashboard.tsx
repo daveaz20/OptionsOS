@@ -238,7 +238,7 @@ function AccountSummaryModule() {
 interface MarketStats {
   total: number; bull: number; bear: number; neutral: number;
   breadth: number; highConviction: number; technicalsCount: number;
-  highIv: number; avgIv: number; bestScore: number; marketOpen: boolean;
+  highIv: number; avgIv: number; bestScore: number; setups60: number; marketOpen: boolean;
   source: string; cachedAt: number;
 }
 
@@ -280,7 +280,7 @@ function StatsModule({ stocks: _stocks, loadingStocks: _loadingStocks }: { stock
     {
       label: "UNIVERSE",
       value: total.toLocaleString(),
-      sub: mkt?.source === "polygon" ? "Polygon universe" : "Yahoo universe",
+      sub: `${mkt?.technicalsCount ?? 0} fully scored`,
     },
     {
       label: "SETUPS FOUND",
@@ -298,9 +298,9 @@ function StatsModule({ stocks: _stocks, loadingStocks: _loadingStocks }: { stock
       sub: "across scored universe",
     },
     {
-      label: "BEST SCORE",
-      value: <span style={{ color: "hsl(var(--success))" }}>{mkt?.bestScore ?? 0}</span>,
-      sub: "top opportunity score",
+      label: "ACTIONABLE SETUPS",
+      value: <span style={{ color: "hsl(var(--success))" }}>{mkt?.setups60 ?? 0}</span>,
+      sub: "opportunity score ≥ 60",
     },
     {
       label: "ADVANCES / DECLINES",
@@ -1000,7 +1000,7 @@ export default function DashboardPage() {
 
   return (
     <ScrollArea className="h-full w-full" style={{ background: "hsl(0 0% 4%)" }}>
-      <div style={{ maxWidth: 1360, margin: "0 auto", padding: isMobile ? "16px 12px 80px" : "28px 24px 60px" }}>
+      <div style={{ padding: isMobile ? "16px 12px 80px" : "28px 24px 60px" }}>
 
         {/* Header */}
         <div style={{ display: "flex", alignItems: isMobile ? "center" : "flex-start", justifyContent: "space-between", marginBottom: isMobile ? 14 : 22, flexWrap: "wrap", gap: 8 }}>

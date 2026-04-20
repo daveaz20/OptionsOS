@@ -1,36 +1,32 @@
 import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
 import { db, stocksTable, watchlistTable } from "@workspace/db";
-import {
-  AddToWatchlistBody,
-  RemoveFromWatchlistParams,
-  GetWatchlistResponse,
-} from "@workspace/api-zod";
+import { AddToWatchlistBody, RemoveFromWatchlistParams } from "@workspace/api-zod";
+import { isPolygonEnabled } from "../lib/polygon.js";
+import { getScreenerRow, ensureScreenerReady } from "./screener.js";
 
 const router: IRouter = Router();
 
+// Look up live stock data: screener cache first (Polygon path), then stocksTable fallback
+async function resolveStockData(symbol: string) {
+  if (isPolygonEnabled()) {
+    await ensureScreenerReady();
+    const row = getScreenerRow(symbol);
+    if (row) return { name: row.name, price: row.price, change: row.change, changePercent: row.changePercent, technicalStrength: row.technicalStrength, ivRank: row.ivRank, opportunityScore: row.opportunityScore, setupType: row.setupType, recommendedOutlook: row.recommendedOutlook };
+  }
+  const [stock] = await db.select().from(stocksTable).where(eq(stocksTable.symbol, symbol));
+  if (!stock) return null;
+  return { name: stock.name, price: stock.price, change: stock.change, changePercent: stock.changePercent, technicalStrength: stock.technicalStrength, ivRank: stock.ivRank, opportunityScore: undefined, setupType: undefined, recommendedOutlook: undefined };
+}
+
 router.get("/watchlist", async (_req, res): Promise<void> => {
-  const items = await db
-    .select({
-      id: watchlistTable.id,
-      symbol: watchlistTable.symbol,
-      name: stocksTable.name,
-      price: stocksTable.price,
-      change: stocksTable.change,
-      changePercent: stocksTable.changePercent,
-      technicalStrength: stocksTable.technicalStrength,
-      addedAt: watchlistTable.addedAt,
-    })
-    .from(watchlistTable)
-    .innerJoin(stocksTable, eq(watchlistTable.symbol, stocksTable.symbol))
-    .orderBy(watchlistTable.addedAt);
-
-  const serialized = items.map((item) => ({
-    ...item,
-    addedAt: item.addedAt.toISOString(),
+  const entries = await db.select().from(watchlistTable).orderBy(watchlistTable.addedAt);
+  const items = await Promise.all(entries.map(async (entry) => {
+    const data = await resolveStockData(entry.symbol);
+    if (!data) return null;
+    return { id: entry.id, symbol: entry.symbol, addedAt: entry.addedAt.toISOString(), ...data };
   }));
-
-  res.json(GetWatchlistResponse.parse(serialized));
+  res.json(items.filter(Boolean));
 });
 
 router.post("/watchlist", async (req, res): Promise<void> => {
@@ -40,46 +36,26 @@ router.post("/watchlist", async (req, res): Promise<void> => {
     return;
   }
 
-  const [stock] = await db
-    .select()
-    .from(stocksTable)
-    .where(eq(stocksTable.symbol, parsed.data.symbol.toUpperCase()));
-
-  if (!stock) {
+  const symbol = parsed.data.symbol.toUpperCase();
+  const data = await resolveStockData(symbol);
+  if (!data) {
     res.status(404).json({ error: "Stock not found" });
     return;
   }
 
-  const [existing] = await db
-    .select()
-    .from(watchlistTable)
-    .where(eq(watchlistTable.symbol, parsed.data.symbol.toUpperCase()));
-
+  const [existing] = await db.select().from(watchlistTable).where(eq(watchlistTable.symbol, symbol));
   if (existing) {
     res.status(409).json({ error: "Already in watchlist" });
     return;
   }
 
-  const [entry] = await db
-    .insert(watchlistTable)
-    .values({ symbol: parsed.data.symbol.toUpperCase() })
-    .returning();
-
+  const [entry] = await db.insert(watchlistTable).values({ symbol }).returning();
   if (!entry) {
     res.status(500).json({ error: "Insert failed" });
     return;
   }
 
-  res.status(201).json({
-    id: entry.id,
-    symbol: entry.symbol,
-    name: stock.name,
-    price: stock.price,
-    change: stock.change,
-    changePercent: stock.changePercent,
-    technicalStrength: stock.technicalStrength,
-    addedAt: entry.addedAt.toISOString(),
-  });
+  res.status(201).json({ id: entry.id, symbol: entry.symbol, addedAt: entry.addedAt.toISOString(), ...data });
 });
 
 router.delete("/watchlist/:id", async (req, res): Promise<void> => {
