@@ -12,7 +12,7 @@ const NAV_ITEMS = [
   { href: "/",                    label: "Dashboard", icon: <LayoutDashboard size={18} /> },
   { href: "/screener",            label: "Screener",  icon: <Filter size={18} /> },
   { href: "/scanner",             label: "Analysis",  icon: <LineChart size={18} /> },
-  { href: "/scanner?tab=watchlist", label: "Watchlist", icon: <Bookmark size={18} /> },
+  { href: "/watchlist",             label: "Watchlist", icon: <Bookmark size={18} /> },
   { href: "/positions",           label: "Positions", icon: <Briefcase size={18} /> },
 ];
 
@@ -75,11 +75,7 @@ export function Shell({ children }: ShellProps) {
             <nav style={{ display: "flex", gap: 2 }}>
               {NAV_ITEMS.map((item) => {
                 const itemPath = item.href.split("?")[0]!;
-                // Watchlist item is active when on /scanner with tab=watchlist param
-                const isWatchlistItem = item.href.includes("tab=watchlist");
-                const active = isWatchlistItem
-                  ? location === itemPath && search.includes("tab=watchlist")
-                  : location === itemPath && !search.includes("tab=watchlist");
+                const active = location === itemPath && !search.includes("tab=watchlist");
                 return (
                   <Link
                     key={item.href}

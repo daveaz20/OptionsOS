@@ -7,6 +7,7 @@ import ScannerPage from "@/pages/workspace";
 import DashboardPage from "@/pages/dashboard";
 import ScreenerPage from "@/pages/screener";
 import PositionsPage from "@/pages/positions";
+import WatchlistPage from "@/pages/watchlist";
 import NotFound from "@/pages/not-found";
 import { Shell } from "@/components/layout/Shell";
 
@@ -26,6 +27,7 @@ function Router() {
         <Route path="/" component={DashboardPage} />
         <Route path="/scanner" component={ScannerPage} />
         <Route path="/screener" component={ScreenerPage} />
+        <Route path="/watchlist" component={WatchlistPage} />
         <Route path="/positions" component={PositionsPage} />
         <Route component={NotFound} />
       </Switch>

@@ -173,12 +173,12 @@ export function GlobalSearch() {
     <div data-global-search style={{ position: "relative", width: "clamp(180px, 22vw, 380px)" }}>
       {/* Input */}
       <div style={{
-        display: "flex", alignItems: "center", gap: 6, height: 30, padding: "0 10px",
+        display: "flex", alignItems: "center", gap: 6, height: 36, padding: "0 12px",
         borderRadius: 7, background: "rgba(255,255,255,0.05)",
         border: `1px solid ${open ? "rgba(255,255,255,0.18)" : "rgba(255,255,255,0.08)"}`,
         transition: "border-color 0.15s",
       }}>
-        <Search style={{ width: 12, height: 12, color: "hsl(var(--muted-foreground))", flexShrink: 0 }} />
+        <Search style={{ width: 15, height: 15, color: "hsl(var(--muted-foreground))", flexShrink: 0 }} />
         <input
           ref={inputRef}
           value={query}
@@ -188,7 +188,7 @@ export function GlobalSearch() {
           placeholder="Search ticker…"
           style={{
             background: "transparent", border: "none", outline: "none",
-            color: "hsl(var(--foreground))", fontSize: 12, width: "100%",
+            color: "hsl(var(--foreground))", fontSize: 14, width: "100%",
             letterSpacing: "-0.01em",
           }}
           spellCheck={false}
@@ -205,7 +205,7 @@ export function GlobalSearch() {
             position: "absolute",
             top: "calc(100% + 4px)",
             right: 0,               // anchor to right edge of input
-            width: "min(360px, calc(100vw - 24px))",
+            width: "min(420px, calc(100vw - 24px))",
             background: "hsl(var(--card))",
             border: "1px solid rgba(255,255,255,0.1)",
             borderRadius: 8,
@@ -223,7 +223,7 @@ export function GlobalSearch() {
               onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); select(r.symbol); }}
               style={{
                 display: "flex", alignItems: "center", justifyContent: "space-between",
-                padding: "7px 12px", cursor: "pointer",
+                padding: "9px 14px", cursor: "pointer",
                 background: i === activeIndex ? "rgba(255,255,255,0.07)" : "transparent",
                 transition: "background 0.08s",
                 gap: 8,
@@ -233,7 +233,7 @@ export function GlobalSearch() {
               <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0, flex: 1 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
                   <span style={{
-                    fontSize: 12, fontWeight: 600, letterSpacing: "-0.01em",
+                    fontSize: 14, fontWeight: 600, letterSpacing: "-0.01em",
                     color: "hsl(var(--foreground))", flexShrink: 0,
                   }}>
                     {r.symbol}
@@ -248,7 +248,7 @@ export function GlobalSearch() {
                     </span>
                   ) : r.outlook ? (
                     <span style={{
-                      fontSize: 10, color: outlookColor(r.outlook),
+                      fontSize: 12, color: outlookColor(r.outlook),
                       textTransform: "capitalize", opacity: 0.8, flexShrink: 0,
                     }}>
                       {r.outlook}
@@ -256,7 +256,7 @@ export function GlobalSearch() {
                   ) : null}
                 </div>
                 <span style={{
-                  fontSize: 11, color: "hsl(var(--muted-foreground))",
+                  fontSize: 13, color: "hsl(var(--muted-foreground))",
                   overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                 }}>
                   {r.name}
@@ -265,12 +265,12 @@ export function GlobalSearch() {
 
               {/* Right: price + score */}
               <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2, flexShrink: 0 }}>
-                <span style={{ fontSize: 12, fontWeight: 500, color: "hsl(var(--foreground))", fontVariantNumeric: "tabular-nums" }}>
+                <span style={{ fontSize: 14, fontWeight: 500, color: "hsl(var(--foreground))", fontVariantNumeric: "tabular-nums" }}>
                   ${r.price.toFixed(2)}
                 </span>
                 {r.score > 0 && (
                   <span style={{
-                    fontSize: 10, fontVariantNumeric: "tabular-nums",
+                    fontSize: 12, fontVariantNumeric: "tabular-nums",
                     color: r.score >= 75 ? "#4ade80" : r.score >= 50 ? "#facc15" : "hsl(var(--muted-foreground))",
                   }}>
                     {r.score}

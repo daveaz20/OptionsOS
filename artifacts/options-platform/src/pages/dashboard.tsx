@@ -152,14 +152,13 @@ function useMarketOpen() {
 
 function MarketStatusPill() {
   const open = useMarketOpen();
-  const color = open ? "hsl(var(--success))" : "hsl(var(--muted-foreground))";
+  if (!open) return null;
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 12px", borderRadius: 99,
-      background: open ? "hsl(var(--success)/0.1)" : "rgba(255,255,255,0.04)",
-      border: `1px solid ${open ? "hsl(var(--success)/0.2)" : "rgba(255,255,255,0.08)"}` }}>
-      <div style={{ width: 6, height: 6, borderRadius: "50%", background: color,
-        boxShadow: open ? `0 0 6px ${color}` : "none" }} />
-      <span style={{ fontSize: 11, fontWeight: 600, color }}>{open ? "Market Open" : "Market Closed"}</span>
+      background: "hsl(var(--success)/0.1)", border: "1px solid hsl(var(--success)/0.2)" }}>
+      <div style={{ width: 6, height: 6, borderRadius: "50%", background: "hsl(var(--success))",
+        boxShadow: "0 0 6px hsl(var(--success))" }} />
+      <span style={{ fontSize: 11, fontWeight: 600, color: "hsl(var(--success))" }}>Market Open</span>
     </div>
   );
 }
@@ -1014,15 +1013,15 @@ export default function DashboardPage() {
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <MarketStatusPill />
             <button onClick={() => setCustomizing(true)} style={{
-              display: "flex", alignItems: "center", gap: 6, padding: "6px 14px", borderRadius: 7,
-              border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.05)",
-              color: "hsl(var(--foreground))", fontSize: 12, fontWeight: 500, cursor: "pointer",
+              display: "flex", alignItems: "center", gap: 7, padding: "9px 20px", borderRadius: 8,
+              border: "1px solid rgba(255,255,255,0.14)", background: "rgba(255,255,255,0.06)",
+              color: "hsl(var(--foreground))", fontSize: 14, fontWeight: 500, cursor: "pointer",
               transition: "all 0.12s", letterSpacing: "-0.01em",
             }}
-              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.09)"; }}
-              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.05)"; }}
+              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.10)"; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.06)"; }}
             >
-              <LayoutGrid style={{ width: 13, height: 13 }} />
+              <LayoutGrid style={{ width: 15, height: 15 }} />
               Customize
             </button>
           </div>
