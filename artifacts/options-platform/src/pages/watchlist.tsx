@@ -7,7 +7,6 @@ import {
   useRemoveFromWatchlist,
   getGetWatchlistQueryKey,
 } from "@workspace/api-client-react";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   ArrowDownRight,
   ArrowUpRight,
@@ -196,7 +195,8 @@ export default function WatchlistPage() {
   };
 
   return (
-    <ScrollArea className="h-full w-full" style={{ background: "hsl(0 0% 4%)" }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", background: "hsl(0 0% 4%)" }}>
+    <div style={{ flex: 1, overflowY: "auto" }}>
       <div style={{ padding: isMobile ? "16px 12px 80px" : "28px 28px 60px" }}>
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: isMobile ? 16 : 24, gap: 12, flexWrap: "wrap" }}>
           <div>
@@ -525,6 +525,7 @@ export default function WatchlistPage() {
           </div>
         )}
       </div>
-    </ScrollArea>
+    </div>
+    </div>
   );
 }

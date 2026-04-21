@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { useGetAccountPositions } from "@workspace/api-client-react";
 import type { AccountPosition } from "@workspace/api-client-react";
 import { formatCurrency, formatPercent } from "@/lib/format";
@@ -279,7 +278,8 @@ export default function PositionsPage() {
   };
 
   return (
-    <ScrollArea className="h-full w-full" style={{ background: "hsl(0 0% 4%)" }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", background: "hsl(0 0% 4%)" }}>
+    <div style={{ flex: 1, overflowY: "auto" }}>
       <div style={{ padding: isMobile ? "16px 12px 80px" : "28px 24px 60px" }}>
 
         {/* Header */}
@@ -341,6 +341,7 @@ export default function PositionsPage() {
           </>
         )}
       </div>
-    </ScrollArea>
+    </div>
+    </div>
   );
 }
