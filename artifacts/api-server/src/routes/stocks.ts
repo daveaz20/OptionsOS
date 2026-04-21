@@ -23,6 +23,13 @@ import {
 
 const router: IRouter = Router();
 
+function rankTier(symbol: string, upper: string): number {
+  if (symbol === upper) return 0;
+  if (symbol.startsWith(upper)) return 1;
+  if (symbol.includes(upper)) return 2;
+  return 3;
+}
+
 // ─── GET /stocks ─────────────────────────────────────────────────────────────
 // When Polygon is active: serve from the shared screener cache (same universe,
 // same scores — no duplication of work, instant response after warm-up).
@@ -98,6 +105,70 @@ router.get("/stocks", async (req, res): Promise<void> => {
 // Serves from the screener cache (fast, consistent data) when Polygon is on.
 // Falls back to live Yahoo Finance for symbols not yet in cache or when
 // Polygon is disabled.
+
+router.get("/stocks/search", async (req, res): Promise<void> => {
+  const rawQuery = typeof req.query.q === "string" ? req.query.q : "";
+  const rawLimit = typeof req.query.limit === "string" ? Number.parseInt(req.query.limit, 10) : 10;
+  const upper = rawQuery.trim().toUpperCase();
+  const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(rawLimit, 1), 25) : 10;
+
+  if (!upper) {
+    res.json([]);
+    return;
+  }
+
+  if (isPolygonEnabled()) {
+    await ensureScreenerReady();
+    const matches = getScreenerData()
+      .filter(
+        (row) =>
+          row.symbol.includes(upper) ||
+          row.name.toUpperCase().includes(upper)
+      )
+      .sort((a, b) => {
+        const tierA = rankTier(a.symbol, upper);
+        const tierB = rankTier(b.symbol, upper);
+        if (tierA !== tierB) return tierA - tierB;
+        return b.opportunityScore - a.opportunityScore;
+      })
+      .slice(0, limit)
+      .map((row) => ({
+        symbol: row.symbol,
+        name: row.name,
+        price: row.price,
+        score: row.opportunityScore,
+        outlook: row.recommendedOutlook,
+        isETF: row.isETF,
+        etfCategory: row.etfCategory,
+      }));
+
+    res.json(matches);
+    return;
+  }
+
+  const matchedSymbols = [...new Set(DEFAULT_UNIVERSE)]
+    .filter((symbol) => symbol.includes(upper))
+    .sort((a, b) => rankTier(a, upper) - rankTier(b, upper))
+    .slice(0, limit);
+
+  if (matchedSymbols.length === 0) {
+    res.json([]);
+    return;
+  }
+
+  const { getQuotes } = await import("../lib/market-data.js");
+  const quotes = await getQuotes(matchedSymbols);
+  const results = quotes
+    .sort((a, b) => rankTier(a.symbol, upper) - rankTier(b.symbol, upper))
+    .map((quote) => ({
+      symbol: quote.symbol,
+      name: quote.name,
+      price: quote.price,
+      score: 0,
+    }));
+
+  res.json(results);
+});
 
 router.get("/stocks/:symbol", async (req, res): Promise<void> => {
   const params = GetStockParams.safeParse(req.params);

@@ -1,15 +1,17 @@
+import { Suspense, lazy } from "react";
 import { Switch, Route, Router as WouterRouter } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "next-themes";
-import ScannerPage from "@/pages/workspace";
-import DashboardPage from "@/pages/dashboard";
-import ScreenerPage from "@/pages/screener";
-import PositionsPage from "@/pages/positions";
-import WatchlistPage from "@/pages/watchlist";
 import NotFound from "@/pages/not-found";
 import { Shell } from "@/components/layout/Shell";
+
+const ScannerPage = lazy(() => import("@/pages/workspace"));
+const DashboardPage = lazy(() => import("@/pages/dashboard"));
+const ScreenerPage = lazy(() => import("@/pages/screener"));
+const PositionsPage = lazy(() => import("@/pages/positions"));
+const WatchlistPage = lazy(() => import("@/pages/watchlist"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -23,14 +25,16 @@ const queryClient = new QueryClient({
 function Router() {
   return (
     <Shell>
-      <Switch>
-        <Route path="/" component={DashboardPage} />
-        <Route path="/scanner" component={ScannerPage} />
-        <Route path="/screener" component={ScreenerPage} />
-        <Route path="/watchlist" component={WatchlistPage} />
-        <Route path="/positions" component={PositionsPage} />
-        <Route component={NotFound} />
-      </Switch>
+      <Suspense fallback={<div className="h-full w-full bg-background" />}>
+        <Switch>
+          <Route path="/" component={DashboardPage} />
+          <Route path="/scanner" component={ScannerPage} />
+          <Route path="/screener" component={ScreenerPage} />
+          <Route path="/watchlist" component={WatchlistPage} />
+          <Route path="/positions" component={PositionsPage} />
+          <Route component={NotFound} />
+        </Switch>
+      </Suspense>
     </Shell>
   );
 }
