@@ -1,5 +1,9 @@
+import fs from "node:fs";
+import path from "node:path";
+
 const API_BASE_URL   = "https://api.tastytrade.com";
 const TOKEN_BASE_URL = "https://api.tastyworks.com";
+const REFRESH_TOKEN_PATH = process.env.TASTYTRADE_REFRESH_TOKEN_PATH ?? path.resolve(process.cwd(), ".tastytrade-refresh-token");
 
 
 // ─── Token management ─────────────────────────────────────────────────────
@@ -11,15 +15,41 @@ interface AccessToken {
 
 let _token: AccessToken | null = null;
 let _accountNumber: string | null = process.env.TASTYTRADE_ACCOUNT_NUMBER ?? null;
+let _fileRefreshToken: string | null | undefined;
 // Runtime override — set by OAuth callback, survives until process restart
 let _runtimeRefreshToken: string | null = null;
 
+function readPersistedRefreshToken(): string {
+  if (_fileRefreshToken !== undefined) {
+    return _fileRefreshToken ?? "";
+  }
+
+  try {
+    const token = fs.readFileSync(REFRESH_TOKEN_PATH, "utf8").trim();
+    _fileRefreshToken = token || null;
+  } catch {
+    _fileRefreshToken = null;
+  }
+
+  return _fileRefreshToken ?? "";
+}
+
 function getRefreshToken(): string {
-  return _runtimeRefreshToken ?? process.env.TASTYTRADE_REFRESH_TOKEN ?? "";
+  return _runtimeRefreshToken ?? process.env.TASTYTRADE_REFRESH_TOKEN ?? readPersistedRefreshToken();
+}
+
+function persistRefreshToken(rt: string): void {
+  try {
+    fs.writeFileSync(REFRESH_TOKEN_PATH, `${rt}\n`, { encoding: "utf8" });
+    _fileRefreshToken = rt;
+  } catch (err) {
+    console.warn("[TT] failed to persist refresh token:", (err as Error).message);
+  }
 }
 
 export function setRuntimeRefreshToken(rt: string): void {
   _runtimeRefreshToken = rt;
+  persistRefreshToken(rt);
 }
 
 export function isTastytradeOAuthConfigured(): boolean {
@@ -90,7 +120,7 @@ async function getToken(): Promise<string> {
 
   // Rotate refresh token if the server issued a new one
   if (json.refresh_token && json.refresh_token !== refreshToken) {
-    _runtimeRefreshToken = json.refresh_token as string;
+    setRuntimeRefreshToken(json.refresh_token as string);
     console.log("[TT] getToken: refresh token rotated");
   }
 
