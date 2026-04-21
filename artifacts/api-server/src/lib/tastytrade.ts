@@ -1,7 +1,6 @@
 const API_BASE_URL   = "https://api.tastytrade.com";
 const TOKEN_BASE_URL = "https://api.tastyworks.com";
 
-const ACCOUNT = process.env.TASTYTRADE_ACCOUNT_NUMBER ?? "5WI61720";
 
 // ─── Token management ─────────────────────────────────────────────────────
 
@@ -11,6 +10,7 @@ interface AccessToken {
 }
 
 let _token: AccessToken | null = null;
+let _accountNumber: string | null = process.env.TASTYTRADE_ACCOUNT_NUMBER ?? null;
 // Runtime override — set by OAuth callback, survives until process restart
 let _runtimeRefreshToken: string | null = null;
 
@@ -20,7 +20,6 @@ function getRefreshToken(): string {
 
 export function setRuntimeRefreshToken(rt: string): void {
   _runtimeRefreshToken = rt;
-  _token = null; // force re-auth with the new token
 }
 
 export function isTastytradeOAuthConfigured(): boolean {
@@ -36,7 +35,7 @@ export function isTastytradeEnabled(): boolean {
 }
 
 export function isTastytradeAuthorized(): boolean {
-  return _token !== null;
+  return _token !== null || !!getRefreshToken();
 }
 
 async function getToken(): Promise<string> {
@@ -221,13 +220,19 @@ interface TastytradeDataResponse<TData> {
 
 async function ttGet<T = unknown>(path: string): Promise<T> {
   const token = await getToken();
-  const res = await fetch(`${API_BASE_URL}${path}`, {
+  const request = async (bearer: string) => fetch(`${API_BASE_URL}${path}`, {
     headers: {
-      "Authorization": `Bearer ${token}`,
-      "User-Agent":    "tastytrade-api-client/1.0",
+      "Authorization": `Bearer ${bearer}`,
+      "User-Agent": "tastytrade-api-client/1.0",
     },
   });
-  if (!res.ok) throw new Error(`TT ${path} → ${res.status}`);
+  let res = await request(token);
+  if (res.status === 401) {
+    _token = null;
+    const refreshedToken = await getToken();
+    res = await request(refreshedToken);
+  }
+  if (!res.ok) throw new Error(`TT ${path} -> ${res.status}`);
   return await res.json() as T;
 }
 
@@ -411,8 +416,26 @@ export interface TtRawPosition {
   createdAt: string;
 }
 
+async function getAccountNumber(): Promise<string> {
+  if (_accountNumber) {
+    return _accountNumber;
+  }
+
+  const json = await ttGet<TastytradeItemsResponse<Record<string, unknown>>>("/customers/me/accounts");
+  const items = json.data?.items ?? [];
+  const account = items.find((item) => typeof item["account-number"] === "string");
+
+  if (!account || typeof account["account-number"] !== "string") {
+    throw new Error("TT account lookup failed: no account-number returned from /customers/me/accounts");
+  }
+
+  _accountNumber = account["account-number"];
+  return _accountNumber;
+}
+
 export async function getRawPositions(): Promise<TtRawPosition[]> {
-  const json = await ttGet<TastytradeItemsResponse<any>>(`/accounts/${ACCOUNT}/positions`);
+  const accountNumber = await getAccountNumber();
+  const json = await ttGet<TastytradeItemsResponse<any>>(`/accounts/${accountNumber}/positions`);
   return (json.data?.items ?? []).map((item: any) => ({
     symbol: (item.symbol as string) ?? "",
     instrumentType: (item["instrument-type"] as string) ?? "",
@@ -439,7 +462,8 @@ export interface TtBalances {
 }
 
 export async function getBalances(): Promise<TtBalances> {
-  const json = await ttGet<TastytradeDataResponse<Record<string, unknown>>>(`/accounts/${ACCOUNT}/balances`);
+  const accountNumber = await getAccountNumber();
+  const json = await ttGet<TastytradeDataResponse<Record<string, unknown>>>(`/accounts/${accountNumber}/balances`);
   const d = json.data ?? {};
   return {
     netLiquidatingValue: num(d["net-liquidating-value"]),
