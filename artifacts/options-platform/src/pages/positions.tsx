@@ -278,9 +278,19 @@ export default function PositionsPage() {
     }
   };
 
+  const pageStyle = isMobile
+    ? { width: "100%", padding: "16px 12px 80px", boxSizing: "border-box" as const }
+    : {
+        width: "100vw",
+        maxWidth: "100vw",
+        marginLeft: "calc(50% - 50vw)",
+        padding: "28px 24px 60px",
+        boxSizing: "border-box" as const,
+      };
+
   return (
     <ScrollArea className="h-full w-full" style={{ background: "hsl(0 0% 4%)" }}>
-      <div style={{ width: "100%", padding: isMobile ? "16px 12px 80px" : "28px 24px 60px" }}>
+      <div style={pageStyle}>
 
         {/* Header */}
         <div style={{ marginBottom: isMobile ? 16 : 24 }}>
