@@ -1,13 +1,7 @@
 const API_BASE_URL   = "https://api.tastytrade.com";
 const TOKEN_BASE_URL = "https://api.tastyworks.com";
 
-// Read account at module load (safe — always set before process start)
 const ACCOUNT = process.env.TASTYTRADE_ACCOUNT_NUMBER ?? "5WI61720";
-
-// CLIENT_SECRET and REFRESH_TOKEN are read lazily inside functions so they
-// are always fetched from the live process.env, not captured at import time.
-// PM2 injects env vars before spawning the process, but module caching means
-// a stale capture of "" would persist for the process lifetime if read here.
 
 // ─── Token management ─────────────────────────────────────────────────────
 
@@ -17,11 +11,28 @@ interface AccessToken {
 }
 
 let _token: AccessToken | null = null;
+// Runtime override — set by OAuth callback, survives until process restart
+let _runtimeRefreshToken: string | null = null;
+
+function getRefreshToken(): string {
+  return _runtimeRefreshToken ?? process.env.TASTYTRADE_REFRESH_TOKEN ?? "";
+}
+
+export function setRuntimeRefreshToken(rt: string): void {
+  _runtimeRefreshToken = rt;
+  _token = null; // force re-auth with the new token
+}
+
+export function isTastytradeOAuthConfigured(): boolean {
+  return !!(process.env.TASTYTRADE_CLIENT_ID && process.env.TASTYTRADE_CLIENT_SECRET);
+}
 
 export function isTastytradeEnabled(): boolean {
-  const secret  = process.env.TASTYTRADE_CLIENT_SECRET ?? "";
-  const refresh = process.env.TASTYTRADE_REFRESH_TOKEN ?? "";
-  return !!(secret && refresh);
+  return !!(
+    process.env.TASTYTRADE_CLIENT_ID &&
+    process.env.TASTYTRADE_CLIENT_SECRET &&
+    getRefreshToken()
+  );
 }
 
 export function isTastytradeAuthorized(): boolean {
@@ -29,26 +40,26 @@ export function isTastytradeAuthorized(): boolean {
 }
 
 async function getToken(): Promise<string> {
-  // Refresh 2 min before the 15-min expiry
   if (_token && Date.now() < _token.expiresAt - 2 * 60 * 1000) {
     return _token.value;
   }
 
+  const clientId      = process.env.TASTYTRADE_CLIENT_ID ?? "";
   const clientSecret  = process.env.TASTYTRADE_CLIENT_SECRET ?? "";
-  const refreshToken  = process.env.TASTYTRADE_REFRESH_TOKEN ?? "";
+  const refreshToken  = getRefreshToken();
 
-  console.log("[TT] getToken: clientSecret present =", !!clientSecret,
-    "| first8 =", clientSecret.slice(0, 8) || "(empty)");
-  console.log("[TT] getToken: refreshToken present =", !!refreshToken,
-    "| first8 =", refreshToken.slice(0, 8) || "(empty)");
+  console.log("[TT] getToken: clientId present =", !!clientId,
+    "| clientSecret present =", !!clientSecret,
+    "| refreshToken present =", !!refreshToken);
 
-  if (!clientSecret || !refreshToken) {
-    throw new Error("Missing TASTYTRADE_CLIENT_SECRET or TASTYTRADE_REFRESH_TOKEN in environment");
+  if (!clientId || !clientSecret || !refreshToken) {
+    throw new Error("Missing TASTYTRADE_CLIENT_ID, TASTYTRADE_CLIENT_SECRET, or TASTYTRADE_REFRESH_TOKEN");
   }
 
   const params = new URLSearchParams({
     grant_type:    "refresh_token",
     refresh_token: refreshToken,
+    client_id:     clientId,
     client_secret: clientSecret,
   });
 
@@ -61,7 +72,7 @@ async function getToken(): Promise<string> {
       "Content-Type": "application/x-www-form-urlencoded",
       "User-Agent":   "tastytrade-api-client/1.0",
     },
-    body:    params.toString(),
+    body: params.toString(),
   });
 
   console.log("[TT] getToken: response status =", res.status);
@@ -72,14 +83,20 @@ async function getToken(): Promise<string> {
     throw new Error(`TT token refresh failed (${res.status}): ${body}`);
   }
 
-  const json = await res.json();
+  const json = await res.json() as TastytradeTokenResponse;
   const accessToken = json.access_token as string | undefined;
-  const expiresIn   = json.expires_in as number;
-  console.log("[TT] getToken: access_token present =", !!accessToken,
-    "| expires_in =", expiresIn);
+  const expiresIn   = (json.expires_in as number) ?? 900;
+
+  console.log("[TT] getToken: access_token present =", !!accessToken, "| expires_in =", expiresIn);
 
   if (!accessToken) {
     throw new Error("TT token refresh succeeded but response missing access_token");
+  }
+
+  // Rotate refresh token if the server issued a new one
+  if (json.refresh_token && json.refresh_token !== refreshToken) {
+    _runtimeRefreshToken = json.refresh_token as string;
+    console.log("[TT] getToken: refresh token rotated");
   }
 
   _token = {
@@ -91,13 +108,18 @@ async function getToken(): Promise<string> {
 }
 
 export async function initTastytrade(log: { info: (msg: string) => void; warn: (msg: string) => void }): Promise<void> {
-  const secret  = process.env.TASTYTRADE_CLIENT_SECRET ?? "";
-  const refresh = process.env.TASTYTRADE_REFRESH_TOKEN ?? "";
+  const clientId = process.env.TASTYTRADE_CLIENT_ID ?? "";
+  const secret   = process.env.TASTYTRADE_CLIENT_SECRET ?? "";
+  const refresh  = getRefreshToken();
 
-  log.info(`[TT] initTastytrade: CLIENT_SECRET present=${!!secret} REFRESH_TOKEN present=${!!refresh}`);
+  log.info(`[TT] initTastytrade: CLIENT_ID=${!!clientId} CLIENT_SECRET=${!!secret} REFRESH_TOKEN=${!!refresh}`);
 
-  if (!secret || !refresh) {
-    log.warn("[TT] initTastytrade: one or more env vars missing — Tastytrade disabled");
+  if (!clientId || !secret) {
+    log.warn("[TT] initTastytrade: TASTYTRADE_CLIENT_ID or TASTYTRADE_CLIENT_SECRET missing — Tastytrade disabled");
+    return;
+  }
+  if (!refresh) {
+    log.warn("[TT] initTastytrade: TASTYTRADE_REFRESH_TOKEN missing — visit /api/auth/tastytrade to connect");
     return;
   }
   try {
@@ -112,6 +134,67 @@ export function getTastytradeTokenExpiry(): number | null {
   return _token?.expiresAt ?? null;
 }
 
+// ─── OAuth helpers ─────────────────────────────────────────────────────────
+
+export function getAuthorizationUrl(redirectUri: string): string {
+  const clientId = process.env.TASTYTRADE_CLIENT_ID ?? "";
+  const params = new URLSearchParams({
+    response_type: "code",
+    client_id:     clientId,
+    redirect_uri:  redirectUri,
+  });
+  return `${TOKEN_BASE_URL}/oauth/authorize?${params}`;
+}
+
+export async function exchangeAuthCode(
+  code: string,
+  redirectUri: string,
+): Promise<{ refreshToken: string; expiresIn: number }> {
+  const clientId     = process.env.TASTYTRADE_CLIENT_ID ?? "";
+  const clientSecret = process.env.TASTYTRADE_CLIENT_SECRET ?? "";
+
+  if (!clientId || !clientSecret) {
+    throw new Error("TASTYTRADE_CLIENT_ID and TASTYTRADE_CLIENT_SECRET must be set");
+  }
+
+  const params = new URLSearchParams({
+    grant_type:    "authorization_code",
+    code,
+    redirect_uri:  redirectUri,
+    client_id:     clientId,
+    client_secret: clientSecret,
+  });
+
+  const res = await fetch(`${TOKEN_BASE_URL}/oauth/token`, {
+    method:  "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "User-Agent":   "tastytrade-api-client/1.0",
+    },
+    body: params.toString(),
+  });
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`TT auth code exchange failed (${res.status}): ${body}`);
+  }
+
+  const json        = await res.json() as TastytradeTokenResponse;
+  const accessToken = json.access_token as string;
+  const newRefresh  = json.refresh_token as string;
+  const expiresIn   = (json.expires_in as number) ?? 900;
+
+  if (!accessToken || !newRefresh) {
+    throw new Error("TT code exchange missing access_token or refresh_token in response");
+  }
+
+  // Cache the new access token immediately
+  _token = { value: accessToken, expiresAt: Date.now() + expiresIn * 1000 };
+  setRuntimeRefreshToken(newRefresh);
+
+  return { refreshToken: newRefresh, expiresIn };
+}
+
 // ─── HTTP helper ──────────────────────────────────────────────────────────
 
 const num = (v: any): number => {
@@ -120,7 +203,23 @@ const num = (v: any): number => {
   return 0;
 };
 
-async function ttGet(path: string): Promise<any> {
+interface TastytradeTokenResponse {
+  access_token?: string;
+  expires_in?: number;
+  refresh_token?: string;
+}
+
+interface TastytradeItemsResponse<TItem> {
+  data?: {
+    items?: TItem[];
+  };
+}
+
+interface TastytradeDataResponse<TData> {
+  data?: TData;
+}
+
+async function ttGet<T = unknown>(path: string): Promise<T> {
   const token = await getToken();
   const res = await fetch(`${API_BASE_URL}${path}`, {
     headers: {
@@ -129,7 +228,7 @@ async function ttGet(path: string): Promise<any> {
     },
   });
   if (!res.ok) throw new Error(`TT ${path} → ${res.status}`);
-  return res.json();
+  return await res.json() as T;
 }
 
 // ─── Options Chain ────────────────────────────────────────────────────────
@@ -172,7 +271,7 @@ export async function getOptionsChain(symbol: string): Promise<OptionsChain> {
   const hit = chainCache.get(key);
   if (hit && Date.now() < hit.exp) return hit.data;
 
-  const json = await ttGet(`/option-chains/${encodeURIComponent(symbol)}/nested`);
+  const json = await ttGet<TastytradeItemsResponse<any>>(`/option-chains/${encodeURIComponent(symbol)}/nested`);
   const expirations: OptionsChainExpiry[] = [];
 
   for (const item of (json.data?.items ?? []) as any[]) {
@@ -274,7 +373,7 @@ export async function getMarketMetrics(symbols: string[]): Promise<Map<string, T
   for (let i = 0; i < missing.length; i += CHUNK) {
     const chunk = missing.slice(i, i + CHUNK);
     try {
-      const json = await ttGet(`/market-metrics?symbols=${chunk.map(encodeURIComponent).join(",")}`);
+      const json = await ttGet<TastytradeItemsResponse<any>>(`/market-metrics?symbols=${chunk.map(encodeURIComponent).join(",")}`);
       for (const item of (json.data?.items ?? []) as any[]) {
         const sym = item.symbol as string;
         if (!sym) continue;
@@ -313,8 +412,8 @@ export interface TtRawPosition {
 }
 
 export async function getRawPositions(): Promise<TtRawPosition[]> {
-  const json = await ttGet(`/accounts/${ACCOUNT}/positions`);
-  return ((json.data?.items ?? []) as any[]).map((item) => ({
+  const json = await ttGet<TastytradeItemsResponse<any>>(`/accounts/${ACCOUNT}/positions`);
+  return (json.data?.items ?? []).map((item: any) => ({
     symbol: (item.symbol as string) ?? "",
     instrumentType: (item["instrument-type"] as string) ?? "",
     underlying: (item["underlying-symbol"] as string) ?? "",
@@ -340,7 +439,7 @@ export interface TtBalances {
 }
 
 export async function getBalances(): Promise<TtBalances> {
-  const json = await ttGet(`/accounts/${ACCOUNT}/balances`);
+  const json = await ttGet<TastytradeDataResponse<Record<string, unknown>>>(`/accounts/${ACCOUNT}/balances`);
   const d = json.data ?? {};
   return {
     netLiquidatingValue: num(d["net-liquidating-value"]),

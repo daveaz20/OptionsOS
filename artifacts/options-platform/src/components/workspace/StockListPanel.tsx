@@ -4,7 +4,7 @@ import { useListStocks, useGetWatchlist } from "@workspace/api-client-react";
 import { ArrowDownRight, ArrowUpRight, ChevronDown, Search, SlidersHorizontal, Star, Zap } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { formatCurrency, formatPercent } from "@/lib/format";
-import type { Stock } from "@workspace/api-client-react";
+import type { Stock, WatchlistItem } from "@workspace/api-client-react";
 
 interface StockListPanelProps {
   selectedSymbol: string;
@@ -102,8 +102,14 @@ export function StockListPanel({ selectedSymbol, onSelect, initialTab = "ideas" 
 
   const items = useMemo(() => {
     const source: Stock[] =
-      tab === "watchlist" ? (watchlist as Stock[]) :
-      stocks;
+      tab === "watchlist"
+        ? watchlist.map((item: WatchlistItem) => ({
+            ...item,
+            volume: 0,
+            marketCap: 0,
+            sector: "Watchlist",
+          }))
+        : stocks;
     const q = search.trim().toLowerCase();
 
     let filtered = source.filter((item) => {

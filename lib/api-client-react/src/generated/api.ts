@@ -41,6 +41,10 @@ type AwaitedInput<T> = PromiseLike<T> | T;
 type Awaited<O> = O extends AwaitedInput<infer T> ? T : never;
 
 type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
+type QueryOptionsInput<TQueryFnData, TError, TData> = Omit<
+  UseQueryOptions<TQueryFnData, TError, TData>,
+  "queryKey" | "queryFn"
+>;
 
 /**
  * @summary Health check
@@ -238,7 +242,7 @@ export const getGetStockQueryOptions = <
 >(
   symbol: string,
   options?: {
-    query?: UseQueryOptions<
+    query?: QueryOptionsInput<
       Awaited<ReturnType<typeof getStock>>,
       TError,
       TData
@@ -248,7 +252,7 @@ export const getGetStockQueryOptions = <
 ) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
-  const queryKey = queryOptions?.queryKey ?? getGetStockQueryKey(symbol);
+  const queryKey = getGetStockQueryKey(symbol);
 
   const queryFn: QueryFunction<Awaited<ReturnType<typeof getStock>>> = ({
     signal,
@@ -279,7 +283,7 @@ export function useGetStock<
 >(
   symbol: string,
   options?: {
-    query?: UseQueryOptions<
+    query?: QueryOptionsInput<
       Awaited<ReturnType<typeof getStock>>,
       TError,
       TData
@@ -346,7 +350,7 @@ export const getGetStockPriceHistoryQueryOptions = <
   symbol: string,
   params?: GetStockPriceHistoryParams,
   options?: {
-    query?: UseQueryOptions<
+    query?: QueryOptionsInput<
       Awaited<ReturnType<typeof getStockPriceHistory>>,
       TError,
       TData
@@ -356,8 +360,7 @@ export const getGetStockPriceHistoryQueryOptions = <
 ) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
-  const queryKey =
-    queryOptions?.queryKey ?? getGetStockPriceHistoryQueryKey(symbol, params);
+  const queryKey = getGetStockPriceHistoryQueryKey(symbol, params);
 
   const queryFn: QueryFunction<
     Awaited<ReturnType<typeof getStockPriceHistory>>
@@ -392,7 +395,7 @@ export function useGetStockPriceHistory<
   symbol: string,
   params?: GetStockPriceHistoryParams,
   options?: {
-    query?: UseQueryOptions<
+    query?: QueryOptionsInput<
       Awaited<ReturnType<typeof getStockPriceHistory>>,
       TError,
       TData
@@ -708,7 +711,7 @@ export const getGetStrategiesQueryOptions = <
   symbol: string,
   params?: GetStrategiesParams,
   options?: {
-    query?: UseQueryOptions<
+    query?: QueryOptionsInput<
       Awaited<ReturnType<typeof getStrategies>>,
       TError,
       TData
@@ -718,8 +721,7 @@ export const getGetStrategiesQueryOptions = <
 ) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
-  const queryKey =
-    queryOptions?.queryKey ?? getGetStrategiesQueryKey(symbol, params);
+  const queryKey = getGetStrategiesQueryKey(symbol, params);
 
   const queryFn: QueryFunction<Awaited<ReturnType<typeof getStrategies>>> = ({
     signal,
@@ -753,7 +755,7 @@ export function useGetStrategies<
   symbol: string,
   params?: GetStrategiesParams,
   options?: {
-    query?: UseQueryOptions<
+    query?: QueryOptionsInput<
       Awaited<ReturnType<typeof getStrategies>>,
       TError,
       TData

@@ -30,8 +30,7 @@ import {
   getPolygonTickers,
   getPolygonBars,
   getPolygonETFs,
-  getLastTradingDate,
-  getGroupedDailyBars,
+  getLatestEodBars,
 } from "../lib/polygon.js";
 import {
   isTastytradeEnabled,
@@ -117,7 +116,7 @@ async function buildYahooData(): Promise<ScreenerRow[]> {
         pctFrom52High: r2(((q.price - hi) / hi) * 100),
         pctFrom52Low:  r2(((q.price - lo) / lo) * 100),
         earningsDate: q.earningsDate,
-        liquidity: (q.avgVolume > 1_000_000 ? "Liquid" : "Illiquid") as const,
+        liquidity: (q.avgVolume > 1_000_000 ? "Liquid" : "Illiquid") as ScreenerRow["liquidity"],
         source: "yahoo" as const,
       };
       try {
@@ -182,9 +181,9 @@ async function buildPolygonData(): Promise<ScreenerRow[]> {
   let isEod = false;
 
   if (snaps.length === 0) {
-    const eodDate = getLastTradingDate();
-    console.log(`[polygon] snapshots empty, falling back to EOD bars for ${eodDate}`);
-    const eodBars = await getGroupedDailyBars(eodDate);
+    console.log("[polygon] snapshots empty (market closed?), falling back to latest EOD bars");
+    const { date, bars: eodBars } = await getLatestEodBars();
+    console.log(`[polygon] EOD fallback using ${date} — ${eodBars.size} tickers`);
     isEod = true;
     snaps = [...eodBars.entries()].map(([ticker, bar]) => ({
       ticker,
@@ -262,7 +261,7 @@ async function buildPolygonData(): Promise<ScreenerRow[]> {
         pctFrom52High: r2(((price - hi52) / hi52) * 100),
         pctFrom52Low:  r2(((price - lo52) / lo52) * 100),
         earningsDate: q?.earningsDate ?? "TBD",
-        liquidity: (vol > 1_000_000 ? "Liquid" : "Illiquid") as const,
+        liquidity: (vol > 1_000_000 ? "Liquid" : "Illiquid") as ScreenerRow["liquidity"],
         source: (isEod ? "polygon-eod" : "polygon") as ScreenerRow["source"],
       };
 

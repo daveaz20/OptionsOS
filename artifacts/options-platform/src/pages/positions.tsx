@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useGetAccountPositions } from "@workspace/api-client-react";
-import type { AccountPosition } from "@workspace/api-zod";
+import type { AccountPosition } from "@workspace/api-client-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { formatCurrency, formatPercent } from "@/lib/format";
 import { ArrowDownRight, ArrowUpRight, Briefcase, ChevronDown, ChevronUp } from "lucide-react";

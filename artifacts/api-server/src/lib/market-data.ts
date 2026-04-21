@@ -7,6 +7,25 @@
 import YahooFinance from "yahoo-finance2";
 const yahooFinance = new YahooFinance({ suppressNotices: ["yahooSurvey"] });
 
+interface YahooChartQuote {
+  date: Date | string;
+  open?: number | null;
+  high?: number | null;
+  low?: number | null;
+  close?: number | null;
+  volume?: number | null;
+}
+
+interface YahooChartResult {
+  quotes?: YahooChartQuote[];
+}
+
+interface YahooAssetProfileSummary {
+  assetProfile?: {
+    sector?: string;
+  };
+}
+
 // In-memory cache to avoid hammering Yahoo Finance
 interface CacheEntry<T> { data: T; expiresAt: number }
 const cache = new Map<string, CacheEntry<unknown>>();
@@ -122,7 +141,11 @@ export async function getQuote(symbol: string): Promise<MarketQuote> {
   // Enrich with summary detail for sector if not available
   if (data.sector === "Equity") {
     try {
-      const summary = await yahooFinance.quoteSummary(symbol, { modules: ["assetProfile"] }, { validateResult: false });
+      const summary = await yahooFinance.quoteSummary(
+        symbol,
+        { modules: ["assetProfile"] },
+        { validateResult: false },
+      ) as YahooAssetProfileSummary;
       data.sector = summary.assetProfile?.sector ?? "Equity";
     } catch {}
   }
@@ -213,17 +236,20 @@ export async function getPriceHistory(symbol: string, period: string): Promise<O
   const result = await yahooFinance.chart(symbol, {
     interval,
     period1,
-  }, { validateResult: false });
+  }, { validateResult: false }) as YahooChartResult;
 
   const quotes = result.quotes ?? [];
   const data: OHLCV[] = quotes
-    .filter((q) => q.open && q.high && q.low && q.close)
+    .filter(
+      (q): q is YahooChartQuote & { open: number; high: number; low: number; close: number } =>
+        q.open != null && q.high != null && q.low != null && q.close != null,
+    )
     .map((q) => ({
       date: new Date(q.date).toISOString().split("T")[0],
-      open: round2(q.open!),
-      high: round2(q.high!),
-      low: round2(q.low!),
-      close: round2(q.close!),
+      open: round2(q.open),
+      high: round2(q.high),
+      low: round2(q.low),
+      close: round2(q.close),
       volume: Math.round(q.volume ?? 0),
     }));
 
@@ -254,14 +280,20 @@ export async function getHistoricalVolatility(symbol: string): Promise<{ hv30: n
   if (cached) return cached;
 
   const oneYearAgo = new Date(); oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-  let result: Awaited<ReturnType<typeof yahooFinance.chart>>;
+  let result: YahooChartResult;
   try {
-    result = await yahooFinance.chart(symbol, { interval: "1d", period1: oneYearAgo }, { validateResult: false });
+    result = await yahooFinance.chart(
+      symbol,
+      { interval: "1d", period1: oneYearAgo },
+      { validateResult: false },
+    ) as YahooChartResult;
   } catch (err) {
     console.warn(`[market-data] getHistoricalVolatility failed for ${symbol}:`, (err as Error)?.message ?? err);
     return { hv30: 25, hv252: 25, ivRank: 50 };
   }
-  const closes = (result.quotes ?? []).filter((q) => q.close).map((q) => q.close!);
+  const closes = (result.quotes ?? [])
+    .filter((q): q is YahooChartQuote & { close: number } => q.close != null)
+    .map((q) => q.close);
 
   const hv = (window: number) => {
     if (closes.length < window + 1) return 0.25;
