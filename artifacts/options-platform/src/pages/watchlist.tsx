@@ -146,7 +146,7 @@ export default function WatchlistPage() {
 
   return (
     <ScrollArea className="h-full w-full" style={{ background: "hsl(0 0% 4%)" }}>
-      <div style={{ padding: isMobile ? "16px 12px 80px" : "28px 28px 60px", maxWidth: 1200, margin: "0 auto" }}>
+      <div style={{ width: "100%", padding: isMobile ? "16px 12px 80px" : "28px 28px 60px" }}>
 
         {/* Header */}
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: isMobile ? 16 : 24, gap: 12, flexWrap: "wrap" }}>

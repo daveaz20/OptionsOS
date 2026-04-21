@@ -89,7 +89,7 @@ export function StockDetailPanel({ symbol }: StockDetailPanelProps) {
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "hsl(var(--background))" }}>
       <ScrollArea className="flex-1">
-        <div style={{ padding: "28px 32px 40px", maxWidth: 1100, margin: "0 auto", width: "100%" }}>
+        <div style={{ padding: "28px 32px 40px", width: "100%" }}>
 
           {/* Header */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 28 }}>

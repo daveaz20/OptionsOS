@@ -280,7 +280,7 @@ export default function PositionsPage() {
 
   return (
     <ScrollArea className="h-full w-full" style={{ background: "hsl(0 0% 4%)" }}>
-      <div style={{ maxWidth: 1200, margin: "0 auto", padding: isMobile ? "16px 12px 80px" : "28px 24px 60px" }}>
+      <div style={{ width: "100%", padding: isMobile ? "16px 12px 80px" : "28px 24px 60px" }}>
 
         {/* Header */}
         <div style={{ marginBottom: isMobile ? 16 : 24 }}>
