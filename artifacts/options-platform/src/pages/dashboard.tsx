@@ -545,20 +545,29 @@ function WatchlistModule({ watchlist, loading }: { watchlist: any[]; loading: bo
     </div>
   );
   return (
-    <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fill,minmax(200px,1fr))", gap: 1 }}>
-      {watchlist.map(item => {
+    <div style={{ display: "flex", flexDirection: "column", width: "100%" }}>
+      {watchlist.map((item, index) => {
         const isUp = item.changePercent >= 0;
         const iv = item.ivRank as number | undefined;
         return (
-          <div key={item.id} style={{ padding: "13px 15px", borderRight: "1px solid rgba(255,255,255,0.04)", cursor: "pointer", transition: "background 0.1s" }}
+          <div
+            key={item.id}
+            style={{
+              width: "100%",
+              padding: "13px 15px",
+              borderBottom: index < watchlist.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none",
+              cursor: "pointer",
+              transition: "background 0.1s",
+            }}
             onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.background = "rgba(255,255,255,0.025)"}
-            onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.background = "transparent"}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 7 }}>
-              <div>
+            onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.background = "transparent"}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, marginBottom: 7 }}>
+              <div style={{ minWidth: 0, flex: 1 }}>
                 <Link href={`/scanner?symbol=${item.symbol}`}><span style={{ fontSize: 13, fontWeight: 700, letterSpacing: "-0.02em" }}>{item.symbol}</span></Link>
-                <div style={{ fontSize: 10, color: "hsl(var(--muted-foreground))", marginTop: 2, maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.name}</div>
+                <div style={{ fontSize: 10, color: "hsl(var(--muted-foreground))", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.name}</div>
               </div>
-              <div style={{ textAlign: "right" }}>
+              <div style={{ textAlign: "right", flexShrink: 0 }}>
                 <div style={{ fontSize: 13, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{formatCurrency(item.price)}</div>
                 <div style={{ fontSize: 11, fontWeight: 600, color: isUp ? "hsl(var(--success))" : "hsl(var(--destructive))", display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 2 }}>
                   {isUp ? <ArrowUpRight style={{ width: 11, height: 11 }} /> : <ArrowDownRight style={{ width: 11, height: 11 }} />}
@@ -566,7 +575,7 @@ function WatchlistModule({ watchlist, loading }: { watchlist: any[]; loading: bo
                 </div>
               </div>
             </div>
-            <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+            <div style={{ display: "flex", gap: 4, alignItems: "center", flexWrap: "wrap" }}>
               <Pill label={`TS: ${item.technicalStrength}`} color={item.technicalStrength >= 7 ? "hsl(var(--success))" : item.technicalStrength <= 3 ? "hsl(var(--destructive))" : "hsl(var(--primary))"} />
               {iv != null && iv > 0 && <Pill label={`IV ${Math.round(iv)}%`} color={iv >= 60 ? "hsl(30 95% 60%)" : "hsl(var(--muted-foreground))"} />}
               <button onClick={() => removeFromWatchlist.mutate({ id: item.id }, { onSuccess: () => { queryClient.invalidateQueries({ queryKey: getGetWatchlistQueryKey() }); toast({ title: `${item.symbol} removed` }); } })}
@@ -774,23 +783,33 @@ function PortfolioModule({ stocks }: { stocks: Stock[] }) {
     </div>
   );
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(200px,1fr))", gap: 1 }}>
-      {positions.map(s => {
+    <div style={{ display: "flex", flexDirection: "column", width: "100%" }}>
+      {positions.map((s, index) => {
         const isUp = s.changePercent >= 0;
         return (
           <Link key={s.id} href={`/scanner?symbol=${s.symbol}`}>
-            <div style={{ padding: "13px 15px", cursor: "pointer", transition: "background 0.1s" }}
+            <div
+              style={{
+                width: "100%",
+                padding: "13px 15px",
+                borderBottom: index < positions.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none",
+                cursor: "pointer",
+                transition: "background 0.1s",
+              }}
               onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.background = "rgba(255,255,255,0.025)"}
-              onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.background = "transparent"}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                <span style={{ fontSize: 13, fontWeight: 700 }}>{s.symbol}</span>
-                <span style={{ fontSize: 13, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{formatCurrency(s.price)}</span>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span style={{ fontSize: 10, color: "hsl(var(--muted-foreground))" }}>{s.sector}</span>
-                <span style={{ fontSize: 11, color: isUp ? "hsl(var(--success))" : "hsl(var(--destructive))", fontVariantNumeric: "tabular-nums" }}>
-                  {isUp ? "+" : ""}{s.changePercent.toFixed(2)}%
-                </span>
+              onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.background = "transparent"}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, marginBottom: 6 }}>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <span style={{ fontSize: 13, fontWeight: 700 }}>{s.symbol}</span>
+                  <div style={{ fontSize: 10, color: "hsl(var(--muted-foreground))", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.sector}</div>
+                </div>
+                <div style={{ textAlign: "right", flexShrink: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{formatCurrency(s.price)}</div>
+                  <span style={{ fontSize: 11, color: isUp ? "hsl(var(--success))" : "hsl(var(--destructive))", fontVariantNumeric: "tabular-nums" }}>
+                    {isUp ? "+" : ""}{s.changePercent.toFixed(2)}%
+                  </span>
+                </div>
               </div>
             </div>
           </Link>
