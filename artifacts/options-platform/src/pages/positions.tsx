@@ -2,7 +2,6 @@ import { useMemo, useState } from "react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useGetAccountPositions } from "@workspace/api-client-react";
 import type { AccountPosition } from "@workspace/api-client-react";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { formatCurrency, formatPercent } from "@/lib/format";
 import { ArrowDownRight, ArrowUpRight, Briefcase, ChevronDown, ChevronUp } from "lucide-react";
 import { Link } from "wouter";
@@ -278,19 +277,9 @@ export default function PositionsPage() {
     }
   };
 
-  const pageStyle = isMobile
-    ? { width: "100%", padding: "16px 12px 80px", boxSizing: "border-box" as const }
-    : {
-        width: "100vw",
-        maxWidth: "100vw",
-        marginLeft: "calc(50% - 50vw)",
-        padding: "28px 24px 60px",
-        boxSizing: "border-box" as const,
-      };
-
   return (
-    <ScrollArea className="h-full w-full" style={{ background: "hsl(0 0% 4%)" }}>
-      <div style={pageStyle}>
+    <div style={{ height: "100%", width: "100%", overflowY: "auto", overflowX: "hidden", background: "hsl(0 0% 4%)" }}>
+      <div style={{ width: "100%", minWidth: 0, padding: isMobile ? "16px 12px 80px" : "28px 24px 60px", boxSizing: "border-box" }}>
 
         {/* Header */}
         <div style={{ marginBottom: isMobile ? 16 : 24 }}>
@@ -351,6 +340,6 @@ export default function PositionsPage() {
           </>
         )}
       </div>
-    </ScrollArea>
+    </div>
   );
 }
