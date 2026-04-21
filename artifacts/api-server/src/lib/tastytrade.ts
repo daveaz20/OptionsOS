@@ -27,11 +27,7 @@ export function isTastytradeOAuthConfigured(): boolean {
 }
 
 export function isTastytradeEnabled(): boolean {
-  return !!(
-    process.env.TASTYTRADE_CLIENT_ID &&
-    process.env.TASTYTRADE_CLIENT_SECRET &&
-    getRefreshToken()
-  );
+  return isTastytradeOAuthConfigured();
 }
 
 export function isTastytradeAuthorized(): boolean {

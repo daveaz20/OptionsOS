@@ -168,12 +168,29 @@ function MarketStatusPill() {
 function AccountSummaryModule() {
   const { data, isLoading, error } = useGetAccountSummary();
   const isMobile = useIsMobile();
+  const { data: authStatus } = useQuery<{ enabled: boolean; connected: boolean; oauthReady: boolean }>({
+    queryKey: ["tt-auth-status"],
+    queryFn: async () => {
+      const res = await fetch("/api/auth/status");
+      if (!res.ok) throw new Error("Failed to load Tastytrade auth status");
+      return res.json();
+    },
+    staleTime: 60 * 1000,
+  });
 
   if (error) {
-    const is503 = (error as any)?.status === 503;
+    const status = (error as any)?.status;
+    const isUnauthorized = status === 401;
+    const isUnavailable = status === 503;
     return (
       <div style={{ padding: "18px 20px", color: "hsl(var(--muted-foreground))", fontSize: 12 }}>
-        {is503 ? "Tastytrade credentials not configured." : `Account unavailable: ${(error as Error).message}`}
+        {isUnauthorized
+          ? "Tastytrade is not connected yet. Connect your account to load balances and positions."
+          : isUnavailable && authStatus?.oauthReady
+            ? "Tastytrade is ready to connect, but no account is linked yet."
+            : isUnavailable
+              ? "Tastytrade OAuth credentials are not configured on the server."
+              : `Account unavailable: ${(error as Error).message}`}
       </div>
     );
   }

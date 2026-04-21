@@ -146,7 +146,7 @@ router.get("/stocks/:symbol/options-chain", async (req, res): Promise<void> => {
     return;
   }
   if (!isTastytradeAuthorized()) {
-    res.status(503).json({ error: "Tastytrade not authorized", authUrl: "/auth/tastytrade" });
+    res.status(401).json({ error: "Tastytrade not authorized", authUrl: "/api/auth/tastytrade" });
     return;
   }
   try {

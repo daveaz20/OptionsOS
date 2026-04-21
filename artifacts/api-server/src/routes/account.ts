@@ -84,7 +84,7 @@ function inferStrategyType(legs: ParsedLeg[]): string {
 
 router.get("/account/balances", async (_req, res): Promise<void> => {
   if (!isTastytradeEnabled()) { res.status(503).json({ error: "Tastytrade OAuth credentials not configured" }); return; }
-  if (!isTastytradeAuthorized()) { res.status(503).json({ error: "Tastytrade not authorized", authUrl: "/api/auth/tastytrade" }); return; }
+  if (!isTastytradeAuthorized()) { res.status(401).json({ error: "Tastytrade not authorized", authUrl: "/api/auth/tastytrade" }); return; }
   try {
     const b = await getBalances();
     res.json({
@@ -104,7 +104,7 @@ router.get("/account/balances", async (_req, res): Promise<void> => {
 
 router.get("/account/positions", async (_req, res): Promise<void> => {
   if (!isTastytradeEnabled()) { res.status(503).json({ error: "Tastytrade OAuth credentials not configured" }); return; }
-  if (!isTastytradeAuthorized()) { res.status(503).json({ error: "Tastytrade not authorized", authUrl: "/api/auth/tastytrade" }); return; }
+  if (!isTastytradeAuthorized()) { res.status(401).json({ error: "Tastytrade not authorized", authUrl: "/api/auth/tastytrade" }); return; }
   try {
     const rawAll = await getRawPositions();
     const rawOpts = rawAll.filter(p =>
@@ -216,7 +216,7 @@ router.get("/account/positions", async (_req, res): Promise<void> => {
 
 router.get("/account/summary", async (_req, res): Promise<void> => {
   if (!isTastytradeEnabled()) { res.status(503).json({ error: "Tastytrade OAuth credentials not configured" }); return; }
-  if (!isTastytradeAuthorized()) { res.status(503).json({ error: "Tastytrade not authorized", authUrl: "/api/auth/tastytrade" }); return; }
+  if (!isTastytradeAuthorized()) { res.status(401).json({ error: "Tastytrade not authorized", authUrl: "/api/auth/tastytrade" }); return; }
   try {
     const [balances, rawAll] = await Promise.all([getBalances(), getRawPositions()]);
     const rawOpts = rawAll.filter(p =>
