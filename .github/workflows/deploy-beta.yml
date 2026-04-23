@@ -16,13 +16,23 @@ jobs:
           username: root
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           script: |
+            set -e
             cd /var/www/optionsos-beta
-            git pull origin dev
+
+            git fetch origin dev
+            git reset --hard origin/dev
+            git clean -fd
+
             pnpm install
             pnpm --filter api-server build
             PORT=3002 BASE_PATH=/ pnpm --filter options-platform build
             cp .env artifacts/api-server/.env
             cp .env lib/db/.env
-            pm2 restart optionsos-beta-api
-            pm2 restart optionsos-beta-frontend
+            pm2 restart optionsos-beta-api --update-env
+            pm2 restart optionsos-beta-frontend --update-env
+
+            echo "Deployed commit:"
+            git rev-parse --short HEAD
+            echo "Built frontend assets:"
+            ls -1 artifacts/options-platform/dist/public/assets | tail -n 20
             echo "Beta deploy complete"
