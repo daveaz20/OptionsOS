@@ -264,6 +264,7 @@ function screenerRowToStock(row: ScreenerRow) {
     setupType: row.setupType,
     recommendedOutlook: row.recommendedOutlook,
     setupDescription,
+    topStrategies: row.topStrategies,
     ...(row.isETF      ? { isETF: true }                   : {}),
     ...(row.etfCategory ? { etfCategory: row.etfCategory } : {}),
     createdAt: new Date(),
@@ -320,6 +321,7 @@ function quoteToStock(
     setupType: scan?.setupType ?? "Neutral",
     recommendedOutlook: scan?.recommendedOutlook ?? "neutral",
     setupDescription: scan?.setupDescription ?? "Insufficient data for analysis.",
+    topStrategies: scan?.topStrategies ?? [],
     createdAt: new Date(),
   };
 }
