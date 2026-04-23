@@ -45,6 +45,8 @@ export function StrategyFilterDropdown({
     [registry, value],
   );
   const groups = useMemo(() => getStrategyGroups(registry, search), [registry, search]);
+  const totalStrategies = registry.length;
+  const buttonLabel = selected?.name ?? (totalStrategies > 0 ? `Browse ${totalStrategies} strategies` : placeholder);
 
   return (
     <div ref={rootRef} style={{ position: "relative", minWidth: width }}>
@@ -69,9 +71,33 @@ export function StrategyFilterDropdown({
         }}
       >
         <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {selected?.name ?? placeholder}
+          {buttonLabel}
         </span>
-        <ChevronDown style={{ width: 12, height: 12, flexShrink: 0 }} />
+        <span
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 8,
+            flexShrink: 0,
+          }}
+        >
+          {!selected && totalStrategies > 0 && (
+            <span
+              style={{
+                padding: "2px 6px",
+                borderRadius: 999,
+                background: "rgba(255,255,255,0.08)",
+                color: "rgba(255,255,255,0.72)",
+                fontSize: 10,
+                fontWeight: 700,
+                lineHeight: 1.2,
+              }}
+            >
+              {totalStrategies}
+            </span>
+          )}
+          <ChevronDown style={{ width: 12, height: 12, flexShrink: 0 }} />
+        </span>
       </button>
 
       {open && (
@@ -81,8 +107,8 @@ export function StrategyFilterDropdown({
             top: "calc(100% + 6px)",
             left: 0,
             zIndex: 200,
-            width,
-            maxWidth: "min(360px, calc(100vw - 24px))",
+            width: Math.max(width, 320),
+            maxWidth: "min(420px, calc(100vw - 24px))",
             borderRadius: 10,
             border: "1px solid rgba(255,255,255,0.1)",
             background: "#17181b",
@@ -91,6 +117,40 @@ export function StrategyFilterDropdown({
           }}
         >
           <div style={{ padding: 10, borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12,
+                marginBottom: 8,
+              }}
+            >
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "#fff" }}>Strategy Catalog</div>
+                <div style={{ fontSize: 10, color: "rgba(255,255,255,0.45)" }}>
+                  {totalStrategies} strategies across all tiers
+                </div>
+              </div>
+              {selected && (
+                <button
+                  type="button"
+                  onClick={() => onChange("")}
+                  style={{
+                    padding: "5px 8px",
+                    borderRadius: 6,
+                    border: "1px solid rgba(255,255,255,0.08)",
+                    background: "rgba(255,255,255,0.04)",
+                    color: "rgba(255,255,255,0.72)",
+                    fontSize: 10,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  Clear
+                </button>
+              )}
+            </div>
             <div style={{ position: "relative" }}>
               <Search
                 style={{
@@ -107,7 +167,7 @@ export function StrategyFilterDropdown({
               <input
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search 40 strategies..."
+                placeholder={`Search ${totalStrategies || 40} strategies...`}
                 autoFocus
                 style={{
                   width: "100%",
@@ -144,7 +204,7 @@ export function StrategyFilterDropdown({
             </div>
           </div>
 
-          <div style={{ maxHeight: 320, overflowY: "auto", padding: 6 }}>
+          <div style={{ maxHeight: "min(70vh, 560px)", overflowY: "auto", padding: 6 }}>
             <button
               type="button"
               onClick={() => {
@@ -165,7 +225,7 @@ export function StrategyFilterDropdown({
                 marginBottom: 4,
               }}
             >
-              {placeholder}
+              {totalStrategies > 0 ? `All ${totalStrategies} strategies` : placeholder}
             </button>
 
             {groups.length === 0 ? (
@@ -178,6 +238,10 @@ export function StrategyFilterDropdown({
                   <div
                     style={{
                       padding: "8px 10px 4px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 8,
                       fontSize: 10,
                       fontWeight: 700,
                       letterSpacing: "0.06em",
@@ -185,7 +249,8 @@ export function StrategyFilterDropdown({
                       textTransform: "uppercase",
                     }}
                   >
-                    {STRATEGY_TIER_LABELS[group.tier] ?? group.tier}
+                    <span>{STRATEGY_TIER_LABELS[group.tier] ?? group.tier}</span>
+                    <span style={{ color: "rgba(255,255,255,0.24)" }}>{group.strategies.length}</span>
                   </div>
                   {group.strategies.map((strategy) => {
                     const active = strategy.id === value;
