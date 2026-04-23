@@ -153,18 +153,27 @@ function strategyTierFromId(setupType?: string): string | null {
   return REGISTRY_TIERS[setupType] ?? null;
 }
 
+interface RegistryEntry { id: string; name: string; tier: string; }
+
 export function StockListPanel({ selectedSymbol, onSelect, initialTab = "ideas" }: StockListPanelProps) {
   const [search, setSearch]           = useState("");
   const [tab, setTab]                 = useState<MainTab>(initialTab);
   const [filter, setFilter]           = useState<IdeaFilter>("all");
   const [sortKey, setSortKey]         = useState<SortKey>("opportunity");
-  const [setupTypeFilter, setSetupTypeFilter] = useState<string>("");
+  const [strategyFilter, setStrategyFilter] = useState<string>("");
 
   // Sync initialTab if it changes (e.g. navigating to /scanner?tab=watchlist)
   useEffect(() => { setTab(initialTab); }, [initialTab]);
 
   const { data: stocks = [], isLoading: loadingStocks }       = useListStocks({ search, limit: 200 });
   const { data: watchlist = [], isLoading: loadingWatchlist } = useGetWatchlist();
+
+  // Full 40-strategy registry — static, cache forever
+  const { data: registry = [] } = useQuery<RegistryEntry[]>({
+    queryKey: ["strategy-registry"],
+    queryFn: () => fetch("/api/strategies").then(r => r.json()),
+    staleTime: Infinity,
+  });
 
   // Fetch full-universe stats for accurate Setups and High Conviction counts
   const { data: screenerStats } = useQuery<{ total: number; highConviction: number; bull: number; bear: number; highIv: number }>({
@@ -191,7 +200,6 @@ export function StockListPanel({ selectedSymbol, onSelect, initialTab = "ideas" 
       if (q && !item.symbol.toLowerCase().includes(q) && !item.name.toLowerCase().includes(q)) return false;
       if (tab !== "ideas") return true;
 
-      // Server-computed outlook for filter accuracy
       const outlook = item.recommendedOutlook;
       const ivRank  = item.ivRank ?? 0;
 
@@ -199,11 +207,22 @@ export function StockListPanel({ selectedSymbol, onSelect, initialTab = "ideas" 
       if (filter === "bearish" && outlook !== "bearish") return false;
       if (filter === "highIv"  && ivRank < 50)           return false;
       if (filter === "etfs"    && !(item.isETF || item.etfCategory)) return false;
-      if (setupTypeFilter && item.setupType !== setupTypeFilter) return false;
+      if (strategyFilter) {
+        const matches = (item as any).topStrategies as Array<{ id: string; fitScore: number }> | undefined;
+        if (!matches?.some(s => s.id === strategyFilter)) return false;
+      }
       return true;
     });
 
     filtered = [...filtered].sort((a, b) => {
+      // When a strategy is active and sort is by score, rank by that strategy's fitScore
+      if (strategyFilter && sortKey === "opportunity") {
+        const getScore = (s: Stock) => {
+          const matches = (s as any).topStrategies as Array<{ id: string; fitScore: number }> | undefined;
+          return matches?.find(m => m.id === strategyFilter)?.fitScore ?? 0;
+        };
+        return getScore(b) - getScore(a);
+      }
       if (sortKey === "opportunity") return (b.opportunityScore ?? 0) - (a.opportunityScore ?? 0);
       if (sortKey === "ivRank")      return (b.ivRank ?? 0) - (a.ivRank ?? 0);
       if (sortKey === "move")        return Math.abs(b.changePercent) - Math.abs(a.changePercent);
@@ -211,15 +230,25 @@ export function StockListPanel({ selectedSymbol, onSelect, initialTab = "ideas" 
     });
 
     return filtered;
-  }, [filter, search, sortKey, stocks, tab, watchlist, setupTypeFilter]);
+  }, [filter, search, sortKey, stocks, tab, watchlist, strategyFilter]);
 
   const isLoading = tab === "watchlist" ? loadingWatchlist : loadingStocks;
 
-  // Dynamic setup types from Ideas data
-  const setupTypes = useMemo(() => {
-    const types = new Set(stocks.map(s => s.setupType).filter((t): t is string => !!t));
-    return [...types].sort();
-  }, [stocks]);
+  // Group registry by tier for the grouped dropdown
+  const registryByTier = useMemo(() => {
+    const order: RegistryEntry["tier"][] = ["rookie", "veteran", "seasoned-veteran", "all-star"];
+    const groups: Record<string, RegistryEntry[]> = {};
+    for (const t of order) groups[t] = [];
+    for (const s of registry) {
+      if (groups[s.tier]) groups[s.tier]!.push(s);
+    }
+    return order.map(t => ({ tier: t, strategies: groups[t]! })).filter(g => g.strategies.length > 0);
+  }, [registry]);
+
+  const TIER_LABELS: Record<string, string> = {
+    "rookie": "Rookie", "veteran": "Veteran",
+    "seasoned-veteran": "Seasoned Veteran", "all-star": "All-Star",
+  };
 
   // Real high-conviction count from full universe (not capped by list limit)
   const highConviction = screenerStats?.highConviction ?? stocks.filter((s) => (s.opportunityScore ?? 0) >= 75).length;
@@ -284,22 +313,30 @@ export function StockListPanel({ selectedSymbol, onSelect, initialTab = "ideas" 
           </div>
         )}
 
-        {/* Strategy type filter — ideas tab only */}
-        {tab === "ideas" && setupTypes.length > 0 && (
+        {/* Strategy filter — browse all 40 strategies, filter stocks by match */}
+        {tab === "ideas" && registryByTier.length > 0 && (
           <div style={{ position: "relative", marginBottom: 8 }}>
             <select
-              value={setupTypeFilter}
-              onChange={e => setSetupTypeFilter(e.target.value)}
+              value={strategyFilter}
+              onChange={e => setStrategyFilter(e.target.value)}
               style={{
                 width: "100%", padding: "5px 24px 5px 10px", borderRadius: 6, fontSize: 11,
-                border: setupTypeFilter ? "1px solid hsl(var(--primary) / 0.4)" : "1px solid rgba(255,255,255,0.07)",
-                background: setupTypeFilter ? "hsl(var(--primary) / 0.08)" : "rgba(255,255,255,0.04)",
-                color: setupTypeFilter ? "hsl(var(--primary))" : "hsl(var(--muted-foreground))",
+                border: strategyFilter ? "1px solid hsl(var(--primary) / 0.4)" : "1px solid rgba(255,255,255,0.07)",
+                background: strategyFilter ? "hsl(var(--primary) / 0.08)" : "rgba(255,255,255,0.04)",
+                color: strategyFilter ? "hsl(var(--primary))" : "hsl(var(--muted-foreground))",
                 cursor: "pointer", outline: "none", appearance: "none", WebkitAppearance: "none",
               }}
             >
-              <option value="">All strategies</option>
-              {setupTypes.map(t => <option key={t} value={t} style={{ background: "#1c1c1e", color: "#fff" }}>{t}</option>)}
+              <option value="" style={{ background: "#1c1c1e", color: "#aaa" }}>All strategies</option>
+              {registryByTier.map(({ tier, strategies }) => (
+                <optgroup key={tier} label={TIER_LABELS[tier] ?? tier} style={{ background: "#1c1c1e", color: "#888" }}>
+                  {strategies.map(s => (
+                    <option key={s.id} value={s.id} style={{ background: "#1c1c1e", color: "#fff" }}>
+                      {s.name}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
             </select>
             <ChevronDown style={{ position: "absolute", right: 7, top: "50%", transform: "translateY(-50%)", width: 11, height: 11, color: "hsl(var(--muted-foreground))", pointerEvents: "none" }} />
           </div>
@@ -311,7 +348,7 @@ export function StockListPanel({ selectedSymbol, onSelect, initialTab = "ideas" 
             {tab === "ideas" ? "Setups" : "Watchlist"}
             {" · "}
             <span style={{ fontVariantNumeric: "tabular-nums" }}>
-              {tab === "ideas" && filter === "all" && !search && !setupTypeFilter
+              {tab === "ideas" && filter === "all" && !search && !strategyFilter
                 ? (screenerStats?.total ?? items.length)
                 : items.length}
             </span>
