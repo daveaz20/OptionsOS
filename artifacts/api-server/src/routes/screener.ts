@@ -36,8 +36,10 @@ import {
   isTastytradeEnabled,
   isTastytradeAuthorized,
   getMarketMetrics,
+  getStreamedQuote,
+  subscribeQuotes,
 } from "../lib/tastytrade.js";
-import { db, screenerCacheTable } from "@workspace/db";
+import { db, screenerCacheTable, watchlistTable } from "@workspace/db";
 import { desc } from "drizzle-orm";
 
 const router: IRouter = Router();
@@ -57,6 +59,7 @@ export interface ScreenerRow {
   supportPrice: number; resistancePrice: number;
   liquidity: "Liquid" | "Illiquid";
   source: "polygon" | "yahoo" | "polygon-eod";
+  priceSource?: "tastytrade-live" | "polygon";
   isETF?: boolean;
   etfCategory?: "leveraged-bull" | "leveraged-bear" | "leveraged-single" | "sector";
   topStrategies?: Array<{
@@ -165,6 +168,7 @@ async function buildYahooData(): Promise<ScreenerRow[]> {
           opportunityScore: 25, technicalScore: 0, ivScore: 0, entryScore: 0, momentumScore: 0, vwapScore: 0,
           setupType: "long_call", recommendedOutlook: "neutral",
           supportPrice: r2(q.price * 0.94), resistancePrice: r2(q.price * 1.06),
+          topStrategies: [],
         } satisfies ScreenerRow;
       }
     }));
@@ -310,6 +314,7 @@ async function buildPolygonData(): Promise<ScreenerRow[]> {
           opportunityScore: 25, technicalScore: 0, ivScore: 0, entryScore: 0, momentumScore: 0, vwapScore: 0,
           setupType: "long_call", recommendedOutlook: "neutral",
           supportPrice: r2(price * 0.94), resistancePrice: r2(price * 1.06),
+          topStrategies: [],
         } satisfies ScreenerRow;
       }
     }));
@@ -371,14 +376,60 @@ async function doRefresh(): Promise<void> {
     const rows   = isPolygonEnabled()
       ? await buildPolygonData()
       : await buildYahooData();
-    cache.data = rows;
+    cache.data = await enrichWatchlistRows(rows);
     cache.at   = Date.now();
-    console.log(`[screener] cache updated: ${rows.length} rows (${source})`);
-    persistToDb(rows, source);  // fire-and-forget — don't block response
+    console.log(`[screener] cache updated: ${cache.data.length} rows (${source})`);
+    persistToDb(cache.data, source);  // fire-and-forget — don't block response
   } catch (err) {
     console.error("[screener] refresh error", err);
   } finally {
     cache.promise = null;
+  }
+}
+
+async function enrichWatchlistRows(rows: ScreenerRow[]): Promise<ScreenerRow[]> {
+  try {
+    const watchlistEntries = await db.select().from(watchlistTable);
+    const watchlistSymbols = new Set(watchlistEntries.map((entry) => entry.symbol.toUpperCase()));
+    const symbolsToEnrich = rows
+      .map((row) => row.symbol)
+      .filter((symbol) => watchlistSymbols.has(symbol.toUpperCase()));
+
+    if (symbolsToEnrich.length === 0) {
+      return rows.map((row) => ({ ...row, priceSource: row.priceSource ?? "polygon" }));
+    }
+
+    subscribeQuotes(symbolsToEnrich);
+
+    return rows.map((row) => {
+      if (!watchlistSymbols.has(row.symbol.toUpperCase())) {
+        return { ...row, priceSource: row.priceSource ?? "polygon" };
+      }
+
+      const liveQuote = getStreamedQuote(row.symbol);
+      const livePrice = liveQuote?.last || liveQuote?.mark || 0;
+      const previousClose = liveQuote?.previousClose ?? 0;
+
+      if (!liveQuote || livePrice <= 0) {
+        return { ...row, priceSource: row.priceSource ?? "polygon" };
+      }
+
+      const change = previousClose > 0 ? round2(livePrice - previousClose) : row.change;
+      const changePercent =
+        previousClose > 0 ? round2((change / previousClose) * 100) : row.changePercent;
+
+      return {
+        ...row,
+        price: round2(livePrice),
+        change,
+        changePercent,
+        volume: liveQuote.volume > 0 ? liveQuote.volume : row.volume,
+        priceSource: "tastytrade-live",
+      };
+    });
+  } catch (err) {
+    console.warn("[screener] watchlist live quote enrichment failed:", (err as Error).message);
+    return rows.map((row) => ({ ...row, priceSource: row.priceSource ?? "polygon" }));
   }
 }
 
@@ -473,6 +524,7 @@ function isUSMarketOpen(): boolean {
 }
 
 function r2(n: number) { return Math.round(n * 100) / 100; }
+function round2(n: number) { return Math.round(n * 100) / 100; }
 
 // ─── Cache access for other routes ────────────────────────────────────────────
 
