@@ -21,7 +21,7 @@ jobs:
 
             git fetch origin dev
             git reset --hard origin/dev
-            git clean -fd
+            git clean -fd -e .env
 
             pnpm install
             pnpm --filter api-server build
