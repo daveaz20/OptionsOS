@@ -26,6 +26,15 @@ export const ListStocksQueryParams = zod.object({
 
 export const listStocksResponseTechnicalStrengthMax = 10;
 
+const TopStrategySummary = zod.object({
+  id: zod.string(),
+  name: zod.string(),
+  fitScore: zod.number(),
+  fitReason: zod.string(),
+  tier: zod.string(),
+  url: zod.string(),
+});
+
 export const ListStocksResponseItem = zod.object({
   id: zod.number(),
   symbol: zod.string(),
@@ -55,6 +64,7 @@ export const ListStocksResponseItem = zod.object({
   setupDescription: zod.string().optional(),
   isETF: zod.boolean().optional(),
   etfCategory: zod.enum(["leveraged-bull", "leveraged-bear", "leveraged-single", "sector"]).optional(),
+  topStrategies: zod.array(TopStrategySummary).optional(),
 });
 export const ListStocksResponse = zod.array(ListStocksResponseItem);
 
@@ -92,6 +102,7 @@ export const GetStockResponse = zod.object({
   setupType: zod.string().optional(),
   recommendedOutlook: zod.enum(["bullish", "bearish", "neutral"]).optional(),
   setupDescription: zod.string().optional(),
+  topStrategies: zod.array(TopStrategySummary).optional(),
 });
 
 /**
