@@ -50,14 +50,14 @@ export function useGetAccountBalances(
 export const getAccountPositionsQueryKey = () => ["account-positions"] as const;
 
 export function useGetAccountPositions(
-  options?: { query?: { enabled?: boolean } },
+  options?: { query?: { enabled?: boolean; staleTime?: number; refetchInterval?: number } },
 ) {
   return useQuery<AccountPositionsResponse>({
     queryKey: getAccountPositionsQueryKey(),
     queryFn: () => customFetch<AccountPositionsResponse>("/api/account/positions"),
     enabled: options?.query?.enabled ?? true,
-    staleTime: 30 * 1000,
-    refetchInterval: 60 * 1000,
+    staleTime: options?.query?.staleTime ?? 15 * 1000,
+    refetchInterval: options?.query?.refetchInterval ?? 15 * 1000,
   });
 }
 

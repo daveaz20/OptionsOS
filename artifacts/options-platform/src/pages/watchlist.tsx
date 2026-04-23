@@ -55,7 +55,14 @@ function SortIcon({ col, sortKey, dir }: { col: SortKey; sortKey: SortKey; dir: 
 }
 
 export default function WatchlistPage() {
-  const { data: watchlist = [], isLoading } = useGetWatchlist();
+  const { data: watchlist = [], isLoading } = useGetWatchlist({
+    query: {
+      queryKey: getGetWatchlistQueryKey(),
+      staleTime: 5_000,
+      refetchInterval: 5_000,
+      refetchIntervalInBackground: true,
+    },
+  });
   const addToWatchlist = useAddToWatchlist();
   const removeFromWatchlist = useRemoveFromWatchlist();
   const queryClient = useQueryClient();

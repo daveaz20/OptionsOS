@@ -1070,7 +1070,14 @@ export default function DashboardPage() {
   const isMobile = useIsMobile();
 
   const { data: topMovers, isLoading: loadingMovers } = useGetTopMovers();
-  const { data: watchlist = [], isLoading: loadingWatchlist } = useGetWatchlist();
+  const { data: watchlist = [], isLoading: loadingWatchlist } = useGetWatchlist({
+    query: {
+      queryKey: getGetWatchlistQueryKey(),
+      staleTime: 5_000,
+      refetchInterval: 5_000,
+      refetchIntervalInBackground: true,
+    },
+  });
   const { data: stocks = [], isLoading: loadingStocks } = useListStocks();
 
   const persist = useCallback((next: DashboardConfig) => {

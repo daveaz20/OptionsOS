@@ -204,7 +204,7 @@ function PositionRow({ position }: { position: AccountPosition }) {
                   </div>
                   <div>
                     <div style={{ fontSize: 9, color: "hsl(var(--muted-foreground))" }}>Current</div>
-                    <div style={{ fontSize: 12, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{formatCurrency(leg.currentPrice)}</div>
+                    <div style={{ fontSize: 12, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{formatCurrency(leg.livePrice ?? leg.currentPrice)}</div>
                   </div>
                   <div style={{ textAlign: "right" }}>
                     <div style={{ fontSize: 9, color: "hsl(var(--muted-foreground))" }}>P&L</div>
@@ -261,7 +261,12 @@ export default function PositionsPage() {
   const [sortKey, setSortKey] = useState<SortKey>("dte");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
-  const { data, isLoading, error } = useGetAccountPositions();
+  const { data, isLoading, error } = useGetAccountPositions({
+    query: {
+      staleTime: 15_000,
+      refetchInterval: 15_000,
+    },
+  });
   const { data: authStatus } = useQuery<{ enabled: boolean; connected: boolean; oauthReady: boolean }>({
     queryKey: ["tt-auth-status"],
     queryFn: async () => {
