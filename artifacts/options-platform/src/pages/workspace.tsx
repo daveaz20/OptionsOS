@@ -5,6 +5,7 @@ import { StockListPanel } from "@/components/workspace/StockListPanel";
 import { StockDetailPanel } from "@/components/workspace/StockDetailPanel";
 import { StrategyPanel } from "@/components/workspace/StrategyPanel";
 import { useGetStock } from "@workspace/api-client-react";
+import type { Stock } from "@workspace/api-client-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 
 type MobileTab = "list" | "detail" | "strategy";
@@ -32,6 +33,7 @@ export default function ScannerPage() {
   })() as "ideas" | "watchlist";
 
   const [selectedSymbol, setSelectedSymbol] = useState<string>(initialSymbol);
+  const [selectedStock, setSelectedStock] = useState<Stock | null>(null);
   const [stockListTab, setStockListTab] = useState<"ideas" | "watchlist">(initialStockListTab);
 
   // Reactive to both path and search changes (handles same-path navigation with different ?tab=)
@@ -57,7 +59,7 @@ export default function ScannerPage() {
           {mobileTab === "list" && (
             <StockListPanel
               selectedSymbol={selectedSymbol}
-              onSelect={(sym) => { setSelectedSymbol(sym); setMobileTab("detail"); }}
+              onSelect={(sym, s) => { setSelectedSymbol(sym); if (s) setSelectedStock(s); setMobileTab("detail"); }}
               initialTab={stockListTab}
             />
           )}
@@ -65,7 +67,12 @@ export default function ScannerPage() {
             <StockDetailPanel symbol={selectedSymbol} />
           )}
           {mobileTab === "strategy" && (
-            <StrategyPanel symbol={selectedSymbol} currentPrice={stock?.price} recommendedOutlook={stock?.recommendedOutlook} />
+            <StrategyPanel
+              symbol={selectedSymbol}
+              currentPrice={stock?.price}
+              recommendedOutlook={stock?.recommendedOutlook}
+              topStrategies={selectedStock?.topStrategies}
+            />
           )}
         </div>
 
@@ -105,7 +112,7 @@ export default function ScannerPage() {
         <ResizablePanel defaultSize={20} minSize={15} maxSize={30} className="h-full">
           <StockListPanel
             selectedSymbol={selectedSymbol}
-            onSelect={setSelectedSymbol}
+            onSelect={(sym, s) => { setSelectedSymbol(sym); if (s) setSelectedStock(s); }}
             initialTab={stockListTab}
           />
         </ResizablePanel>
@@ -123,6 +130,7 @@ export default function ScannerPage() {
             symbol={selectedSymbol}
             currentPrice={stock?.price}
             recommendedOutlook={stock?.recommendedOutlook}
+            topStrategies={selectedStock?.topStrategies}
           />
         </ResizablePanel>
       </ResizablePanelGroup>

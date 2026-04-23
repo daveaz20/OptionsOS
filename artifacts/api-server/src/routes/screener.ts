@@ -59,6 +59,14 @@ export interface ScreenerRow {
   source: "polygon" | "yahoo" | "polygon-eod";
   isETF?: boolean;
   etfCategory?: "leveraged-bull" | "leveraged-bear" | "leveraged-single" | "sector";
+  topStrategies?: Array<{
+    id: string;
+    name: string;
+    fitScore: number;
+    fitReason: string;
+    tier: string;
+    url: string;
+  }>;
 }
 
 interface Cache { data: ScreenerRow[]; at: number; promise: Promise<void> | null }
@@ -143,9 +151,10 @@ async function buildYahooData(): Promise<ScreenerRow[]> {
           entryScore: scan?.entryScore ?? 0,
           momentumScore: scan?.momentumScore ?? 0,
           vwapScore: scan?.vwapScore ?? 0,
-          setupType: scan?.setupType ?? "Neutral",
+          setupType: scan?.setupType ?? "long_call",
           recommendedOutlook: scan?.recommendedOutlook ?? "neutral",
           supportPrice: sig.support, resistancePrice: sig.resistance,
+          topStrategies: scan?.topStrategies ?? [],
           ...(etfCat ? { isETF: true, etfCategory: etfCat } : {}),
         } satisfies ScreenerRow;
       } catch (err) {
@@ -154,7 +163,7 @@ async function buildYahooData(): Promise<ScreenerRow[]> {
           ...base,
           technicalStrength: 5, rsi14: 50, macdHistogram: 0, ivRank: 30,
           opportunityScore: 25, technicalScore: 0, ivScore: 0, entryScore: 0, momentumScore: 0, vwapScore: 0,
-          setupType: "Neutral", recommendedOutlook: "neutral",
+          setupType: "long_call", recommendedOutlook: "neutral",
           supportPrice: r2(q.price * 0.94), resistancePrice: r2(q.price * 1.06),
         } satisfies ScreenerRow;
       }
@@ -290,6 +299,7 @@ async function buildPolygonData(): Promise<ScreenerRow[]> {
           setupType: scan.setupType,
           recommendedOutlook: scan.recommendedOutlook,
           supportPrice: sig.support, resistancePrice: sig.resistance,
+          topStrategies: scan.topStrategies,
           ...(etfRef ? { isETF: true, etfCategory: etfRef.etfCategory } : {}),
         } satisfies ScreenerRow;
       } catch (err) {
@@ -298,7 +308,7 @@ async function buildPolygonData(): Promise<ScreenerRow[]> {
           ...base,
           technicalStrength: 5, rsi14: 50, macdHistogram: 0, ivRank: 30,
           opportunityScore: 25, technicalScore: 0, ivScore: 0, entryScore: 0, momentumScore: 0, vwapScore: 0,
-          setupType: "Neutral", recommendedOutlook: "neutral",
+          setupType: "long_call", recommendedOutlook: "neutral",
           supportPrice: r2(price * 0.94), resistancePrice: r2(price * 1.06),
         } satisfies ScreenerRow;
       }

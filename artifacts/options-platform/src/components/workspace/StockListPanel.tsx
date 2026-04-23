@@ -8,7 +8,7 @@ import type { Stock, WatchlistItem } from "@workspace/api-client-react";
 
 interface StockListPanelProps {
   selectedSymbol: string;
-  onSelect: (symbol: string) => void;
+  onSelect: (symbol: string, stock?: Stock) => void;
   initialTab?: MainTab;
 }
 
@@ -59,10 +59,55 @@ function setupTone(outlook?: string): "bull" | "bear" | "neutral" {
   return "neutral";
 }
 
-// Compact label for the setup badge (max 12 chars)
+// Compact label for the setup badge — handles registry IDs (snake_case) and legacy names
 function shortLabel(setupType?: string): string {
   if (!setupType) return "Neutral";
-  const map: Record<string, string> = {
+  // Registry ID → display name (truncated for badge width)
+  const registryMap: Record<string, string> = {
+    covered_call: "Cov. Call",
+    protective_put: "Prot. Put",
+    collar: "Collar",
+    cash_secured_put: "CSP",
+    long_call: "Long Call",
+    long_put: "Long Put",
+    fig_leaf: "Fig Leaf",
+    long_call_spread: "Call Spd",
+    long_put_spread: "Put Spd",
+    short_call_spread: "Short Call Spd",
+    short_put_spread: "Short Put Spd",
+    long_straddle: "Straddle",
+    long_strangle: "Strangle",
+    back_spread_calls: "Back Spd C",
+    back_spread_puts: "Back Spd P",
+    long_calendar_calls: "Cal Spd C",
+    long_calendar_puts: "Cal Spd P",
+    diagonal_spread_calls: "Diag C",
+    diagonal_spread_puts: "Diag P",
+    long_butterfly_calls: "Bfly C",
+    long_butterfly_puts: "Bfly P",
+    iron_butterfly: "Iron Bfly",
+    skip_strike_butterfly_calls: "Skip Bfly C",
+    skip_strike_butterfly_puts: "Skip Bfly P",
+    inverse_skip_strike_butterfly_calls: "Inv Skip C",
+    inverse_skip_strike_butterfly_puts: "Inv Skip P",
+    christmas_tree_butterfly_calls: "Xmas Tree C",
+    christmas_tree_butterfly_puts: "Xmas Tree P",
+    long_condor_calls: "Condor C",
+    long_condor_puts: "Condor P",
+    iron_condor: "Iron Condor",
+    short_call: "Short Call",
+    short_put: "Short Put",
+    short_straddle: "Sh. Straddle",
+    short_strangle: "Sh. Strangle",
+    long_combination: "Long Combo",
+    short_combination: "Short Combo",
+    front_spread_calls: "Front Spd C",
+    front_spread_puts: "Front Spd P",
+    double_diagonal: "Dbl Diag",
+  };
+  if (registryMap[setupType]) return registryMap[setupType]!;
+  // Legacy fallback
+  const legacyMap: Record<string, string> = {
     "Bull Put Spread":  "Bull Put Spd",
     "Call Spread":      "Call Spd",
     "Long Call":        "Long Call",
@@ -75,7 +120,37 @@ function shortLabel(setupType?: string): string {
     "Calendar":         "Calendar",
     "Neutral":          "Neutral",
   };
-  return map[setupType] ?? setupType;
+  return legacyMap[setupType] ?? setupType;
+}
+
+const TIER_BADGE_COLOR: Record<string, string> = {
+  "rookie":           "hsl(142 71% 45%)",
+  "veteran":          "hsl(217 91% 60%)",
+  "seasoned-veteran": "hsl(45 93% 47%)",
+  "all-star":         "hsl(var(--destructive))",
+};
+
+function strategyTierFromId(setupType?: string): string | null {
+  if (!setupType) return null;
+  const REGISTRY_TIERS: Record<string, string> = {
+    covered_call: "rookie", protective_put: "rookie", collar: "rookie", cash_secured_put: "rookie",
+    long_call: "veteran", long_put: "veteran", fig_leaf: "veteran", long_call_spread: "veteran", long_put_spread: "veteran",
+    short_call_spread: "seasoned-veteran", short_put_spread: "seasoned-veteran",
+    long_straddle: "seasoned-veteran", long_strangle: "seasoned-veteran",
+    back_spread_calls: "seasoned-veteran", back_spread_puts: "seasoned-veteran",
+    long_calendar_calls: "seasoned-veteran", long_calendar_puts: "seasoned-veteran",
+    diagonal_spread_calls: "seasoned-veteran", diagonal_spread_puts: "seasoned-veteran",
+    long_butterfly_calls: "seasoned-veteran", long_butterfly_puts: "seasoned-veteran",
+    iron_butterfly: "seasoned-veteran", skip_strike_butterfly_calls: "seasoned-veteran",
+    skip_strike_butterfly_puts: "seasoned-veteran", inverse_skip_strike_butterfly_calls: "seasoned-veteran",
+    inverse_skip_strike_butterfly_puts: "seasoned-veteran", christmas_tree_butterfly_calls: "seasoned-veteran",
+    christmas_tree_butterfly_puts: "seasoned-veteran", long_condor_calls: "seasoned-veteran",
+    long_condor_puts: "seasoned-veteran", iron_condor: "seasoned-veteran",
+    short_call: "all-star", short_put: "all-star", short_straddle: "all-star", short_strangle: "all-star",
+    long_combination: "all-star", short_combination: "all-star",
+    front_spread_calls: "all-star", front_spread_puts: "all-star", double_diagonal: "all-star",
+  };
+  return REGISTRY_TIERS[setupType] ?? null;
 }
 
 export function StockListPanel({ selectedSymbol, onSelect, initialTab = "ideas" }: StockListPanelProps) {
@@ -273,11 +348,14 @@ export function StockListPanel({ selectedSymbol, onSelect, initialTab = "ideas" 
               const sColor     = scoreColor(score);
               const etfCat     = item.etfCategory;
               const isEod      = (item as any).source === "polygon-eod";
+              const tier       = strategyTierFromId(item.setupType);
+              const tierColor  = tier ? (TIER_BADGE_COLOR[tier] ?? "hsl(var(--muted-foreground))") : null;
+              const stratDesc  = (item as any).topStrategies?.[0]?.fitReason ?? "";
 
               return (
                 <button
                   key={item.symbol}
-                  onClick={() => onSelect(item.symbol)}
+                  onClick={() => onSelect(item.symbol, item as Stock)}
                   style={{
                     width: "100%", display: "flex", flexDirection: "column", gap: 7,
                     padding: "10px 10px", borderRadius: 8,
@@ -299,13 +377,19 @@ export function StockListPanel({ selectedSymbol, onSelect, initialTab = "ideas" 
                           {item.symbol}
                         </span>
                         {isWatched && <Star style={{ width: 10, height: 10, fill: "hsl(var(--primary))", color: "hsl(var(--primary))", flexShrink: 0 }} />}
-                        <span style={{
-                          fontSize: 9, fontWeight: 600, letterSpacing: "0.04em",
-                          textTransform: "uppercase", padding: "1.5px 5px", borderRadius: 3,
-                          color: tone === "bull" ? "hsl(var(--success))" : tone === "bear" ? "hsl(var(--destructive))" : "hsl(var(--muted-foreground))",
-                          background: tone === "bull" ? "hsl(var(--success) / 0.10)" : tone === "bear" ? "hsl(var(--destructive) / 0.10)" : "rgba(255,255,255,0.05)",
-                          flexShrink: 0,
-                        }}>
+                        <span
+                          title={stratDesc || label}
+                          style={{
+                            fontSize: 9, fontWeight: 600, letterSpacing: "0.04em",
+                            textTransform: "uppercase", padding: "1.5px 5px", borderRadius: 3,
+                            color: tierColor ?? (tone === "bull" ? "hsl(var(--success))" : tone === "bear" ? "hsl(var(--destructive))" : "hsl(var(--muted-foreground))"),
+                            background: tierColor
+                              ? `color-mix(in srgb, ${tierColor} 12%, transparent)`
+                              : tone === "bull" ? "hsl(var(--success) / 0.10)" : tone === "bear" ? "hsl(var(--destructive) / 0.10)" : "rgba(255,255,255,0.05)",
+                            border: tierColor ? `1px solid color-mix(in srgb, ${tierColor} 25%, transparent)` : "none",
+                            flexShrink: 0,
+                          }}
+                        >
                           {label}
                         </span>
                         {etfCat && (

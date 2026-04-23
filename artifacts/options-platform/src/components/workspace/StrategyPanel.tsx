@@ -5,14 +5,24 @@ import { formatCurrency, formatPercent } from "@/lib/format";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Slider } from "@/components/ui/slider";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AlertCircle, BarChart2, Minus, Pencil, Plus, X, TrendingUp } from "lucide-react";
+import { AlertCircle, BarChart2, ChevronDown, ChevronRight, ExternalLink, Minus, Pencil, Plus, X, TrendingUp } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { OptionsStrategy, StrategyLeg, GetStrategiesOutlook, AccountPosition } from "@workspace/api-client-react";
+
+interface TopStrategyItem {
+  id: string;
+  name: string;
+  fitScore: number;
+  fitReason: string;
+  tier: string;
+  url: string;
+}
 
 interface StrategyPanelProps {
   symbol: string;
   currentPrice?: number;
   recommendedOutlook?: string;
+  topStrategies?: TopStrategyItem[];
 }
 
 const OUTLOOK_TABS: { id: GetStrategiesOutlook; label: string; color: string }[] = [
@@ -567,8 +577,194 @@ function ExistingPositionBanner({
   );
 }
 
+// ── Tier badge colors ─────────────────────────────────────────────────────
+const TIER_COLORS: Record<string, { bg: string; text: string; border: string }> = {
+  "rookie":           { bg: "hsl(142 71% 45% / 0.12)", text: "hsl(142 71% 55%)",   border: "hsl(142 71% 45% / 0.25)" },
+  "veteran":          { bg: "hsl(217 91% 60% / 0.12)", text: "hsl(217 91% 70%)",   border: "hsl(217 91% 60% / 0.25)" },
+  "seasoned-veteran": { bg: "hsl(45 93% 47% / 0.12)",  text: "hsl(45 93% 57%)",    border: "hsl(45 93% 47% / 0.25)" },
+  "all-star":         { bg: "hsl(var(--destructive) / 0.12)", text: "hsl(var(--destructive))", border: "hsl(var(--destructive) / 0.25)" },
+};
+
+function TierBadge({ tier }: { tier: string }) {
+  const c = TIER_COLORS[tier] ?? { bg: "rgba(255,255,255,0.06)", text: "hsl(var(--muted-foreground))", border: "transparent" };
+  const label = tier === "seasoned-veteran" ? "SV" : tier.charAt(0).toUpperCase() + tier.slice(1);
+  return (
+    <span style={{
+      fontSize: 8, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase",
+      padding: "1.5px 5px", borderRadius: 3, flexShrink: 0,
+      background: c.bg, color: c.text, border: `1px solid ${c.border}`,
+    }}>
+      {label}
+    </span>
+  );
+}
+
+// ── Strategy Match List ────────────────────────────────────────────────────
+function StrategyMatchList({ symbol, topStrategies }: { symbol: string; topStrategies: TopStrategyItem[] }) {
+  const [tierFilter, setTierFilter] = useState<string>("all");
+  const [definedRiskOnly, setDefinedRiskOnly] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  // Full registry fetched once to get description/riskProfile for expanded view
+  const [registry, setRegistry] = useState<Record<string, { description: string; riskProfile: string; outlook: string[]; ivPreference: string; timeDecay: string; legs: number }>>({});
+  useEffect(() => {
+    fetch("/api/strategies")
+      .then(r => r.json())
+      .then((data: Array<{ id: string; description: string; riskProfile: string; outlook: string[]; ivPreference: string; timeDecay: string; legs: number }>) => {
+        const map: typeof registry = {};
+        for (const s of data) map[s.id] = s;
+        setRegistry(map);
+      })
+      .catch(() => {});
+  }, []);
+
+  const DEFINED_RISK_IDS = new Set<string>();
+  for (const [id, s] of Object.entries(registry)) {
+    if (s.riskProfile === "defined") DEFINED_RISK_IDS.add(id);
+  }
+
+  const tiers = ["all", "rookie", "veteran", "seasoned-veteran", "all-star"];
+
+  const filtered = topStrategies.filter(s => {
+    if (tierFilter !== "all" && s.tier !== tierFilter) return false;
+    if (definedRiskOnly && DEFINED_RISK_IDS.size > 0 && !DEFINED_RISK_IDS.has(s.id)) return false;
+    return true;
+  });
+
+  if (topStrategies.length === 0) return null;
+
+  return (
+    <div style={{ marginTop: 16 }}>
+      {/* Section header */}
+      <div style={{ fontSize: 11, fontWeight: 600, color: "hsl(var(--muted-foreground))", letterSpacing: "0.04em", textTransform: "uppercase", marginBottom: 10 }}>
+        Strategy Matches · {symbol}
+      </div>
+
+      {/* Tier filter pills */}
+      <div style={{ display: "flex", gap: 3, flexWrap: "wrap", marginBottom: 8 }}>
+        {tiers.map(t => (
+          <button key={t} onClick={() => setTierFilter(t)} style={{
+            padding: "2px 7px", borderRadius: 4, fontSize: 9, fontWeight: 600,
+            letterSpacing: "0.02em", textTransform: "uppercase", cursor: "pointer",
+            border: tierFilter === t ? "1px solid hsl(var(--primary) / 0.4)" : "1px solid rgba(255,255,255,0.07)",
+            background: tierFilter === t ? "hsl(var(--primary) / 0.10)" : "transparent",
+            color: tierFilter === t ? "hsl(var(--primary))" : "hsl(var(--muted-foreground))",
+            transition: "all 0.12s",
+          }}>
+            {t === "all" ? "All" : t === "seasoned-veteran" ? "SV" : t}
+          </button>
+        ))}
+        <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 9, fontWeight: 500, color: "hsl(var(--muted-foreground))", cursor: "pointer", marginLeft: 4 }}>
+          <input
+            type="checkbox"
+            checked={definedRiskOnly}
+            onChange={e => setDefinedRiskOnly(e.target.checked)}
+            style={{ width: 10, height: 10, accentColor: "hsl(var(--primary))" }}
+          />
+          Defined risk only
+        </label>
+      </div>
+
+      {/* Strategy cards */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        {filtered.map(s => {
+          const expanded = expandedId === s.id;
+          const detail = registry[s.id];
+          return (
+            <div
+              key={s.id}
+              style={{
+                border: expanded ? "1px solid hsl(var(--primary) / 0.25)" : "1px solid rgba(255,255,255,0.07)",
+                borderRadius: 8,
+                background: expanded ? "hsl(var(--primary) / 0.04)" : "rgba(255,255,255,0.02)",
+                overflow: "hidden", transition: "all 0.12s",
+              }}
+            >
+              <button
+                onClick={() => setExpandedId(expanded ? null : s.id)}
+                style={{
+                  width: "100%", textAlign: "left", padding: "9px 11px",
+                  background: "transparent", border: "none", cursor: "pointer",
+                }}
+              >
+                {/* Card header row */}
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 5 }}>
+                  {expanded
+                    ? <ChevronDown style={{ width: 10, height: 10, color: "hsl(var(--muted-foreground))", flexShrink: 0 }} />
+                    : <ChevronRight style={{ width: 10, height: 10, color: "hsl(var(--muted-foreground))", flexShrink: 0 }} />
+                  }
+                  <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: "-0.01em", flex: 1, textAlign: "left" }}>{s.name}</span>
+                  <TierBadge tier={s.tier} />
+                  <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums",
+                    color: s.fitScore >= 70 ? "hsl(var(--success))" : s.fitScore >= 45 ? "hsl(var(--primary))" : "hsl(var(--muted-foreground))",
+                    flexShrink: 0 }}>
+                    {s.fitScore}
+                  </span>
+                </div>
+                {/* Fit score bar */}
+                <div style={{ height: 2, borderRadius: 99, background: "rgba(255,255,255,0.07)", overflow: "hidden", marginBottom: 5, marginLeft: 16 }}>
+                  <div style={{
+                    height: "100%", borderRadius: 99, transition: "width 0.4s",
+                    width: `${s.fitScore}%`,
+                    background: s.fitScore >= 70 ? "hsl(var(--success))" : s.fitScore >= 45 ? "hsl(var(--primary))" : "hsl(var(--muted-foreground))",
+                  }} />
+                </div>
+                {/* Fit reason */}
+                <div style={{ fontSize: 9.5, color: "hsl(var(--muted-foreground))", lineHeight: 1.4, marginLeft: 16, textAlign: "left" }}>
+                  {s.fitReason}
+                </div>
+              </button>
+
+              {/* Expanded detail */}
+              {expanded && detail && (
+                <div style={{ padding: "0 11px 10px 11px", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+                  <p style={{ fontSize: 10, color: "hsl(var(--muted-foreground))", lineHeight: 1.5, margin: "8px 0 8px" }}>
+                    {detail.description}
+                  </p>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 8 }}>
+                    {[
+                      { label: "IV preference", value: detail.ivPreference },
+                      { label: "Time decay",    value: detail.timeDecay },
+                      { label: "Risk profile",  value: detail.riskProfile },
+                      { label: "Legs",          value: String(detail.legs) },
+                    ].map((m, i) => (
+                      <div key={i}>
+                        <div style={{ fontSize: 9, color: "hsl(var(--muted-foreground))", marginBottom: 1 }}>{m.label}</div>
+                        <div style={{ fontSize: 10.5, fontWeight: 600, textTransform: "capitalize" }}>{m.value}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <a
+                    href={s.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={e => e.stopPropagation()}
+                    style={{
+                      display: "inline-flex", alignItems: "center", gap: 4,
+                      fontSize: 9.5, fontWeight: 600, color: "hsl(var(--primary))",
+                      textDecoration: "none",
+                    }}
+                  >
+                    Learn More on Options Playbook
+                    <ExternalLink style={{ width: 9, height: 9 }} />
+                  </a>
+                </div>
+              )}
+            </div>
+          );
+        })}
+        {filtered.length === 0 && (
+          <div style={{ fontSize: 11, color: "hsl(var(--muted-foreground))", padding: "12px 0", textAlign: "center" }}>
+            No strategies match this filter
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Main StrategyPanel ───────────────────────────────────────────────────
-export function StrategyPanel({ symbol, currentPrice = 0, recommendedOutlook }: StrategyPanelProps) {
+export function StrategyPanel({ symbol, currentPrice = 0, recommendedOutlook, topStrategies }: StrategyPanelProps) {
   const initialOutlook: GetStrategiesOutlook =
     recommendedOutlook === "bearish" ? "bearish" :
     recommendedOutlook === "neutral" ? "neutral" : "bullish";
@@ -738,6 +934,11 @@ export function StrategyPanel({ symbol, currentPrice = 0, recommendedOutlook }: 
                 />
               )}
             </div>
+          )}
+
+          {/* Strategy Match List from screener scoring */}
+          {topStrategies && topStrategies.length > 0 && !isLoading && (
+            <StrategyMatchList symbol={symbol} topStrategies={topStrategies} />
           )}
         </div>
       </ScrollArea>

@@ -44,6 +44,14 @@ export interface Stock {
   setupDescription?: string;
   isETF?: boolean;
   etfCategory?: "leveraged-bull" | "leveraged-bear" | "leveraged-single" | "sector";
+  topStrategies?: Array<{
+    id: string;
+    name: string;
+    fitScore: number;
+    fitReason: string;
+    tier: string;
+    url: string;
+  }>;
 }
 
 export type StockDetailLiquidity =
