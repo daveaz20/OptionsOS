@@ -5,6 +5,11 @@ import { ArrowDownRight, ArrowUpRight, ChevronDown, Search, SlidersHorizontal, S
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { formatCurrency, formatPercent } from "@/lib/format";
 import type { Stock, WatchlistItem } from "@workspace/api-client-react";
+import { StrategyFilterDropdown } from "@/components/strategy/StrategyFilterDropdown";
+import {
+  getMatchedStrategy,
+  useStrategyRegistry,
+} from "@/lib/strategy-catalog";
 
 interface StockListPanelProps {
   selectedSymbol: string;
@@ -153,8 +158,6 @@ function strategyTierFromId(setupType?: string): string | null {
   return REGISTRY_TIERS[setupType] ?? null;
 }
 
-interface RegistryEntry { id: string; name: string; tier: string; }
-
 export function StockListPanel({ selectedSymbol, onSelect, initialTab = "ideas" }: StockListPanelProps) {
   const [search, setSearch]           = useState("");
   const [tab, setTab]                 = useState<MainTab>(initialTab);
@@ -168,12 +171,7 @@ export function StockListPanel({ selectedSymbol, onSelect, initialTab = "ideas" 
   const { data: stocks = [], isLoading: loadingStocks }       = useListStocks({ search, limit: 200 });
   const { data: watchlist = [], isLoading: loadingWatchlist } = useGetWatchlist();
 
-  // Full 40-strategy registry — static, cache forever
-  const { data: registry = [] } = useQuery<RegistryEntry[]>({
-    queryKey: ["strategy-registry"],
-    queryFn: () => fetch("/api/strategies").then(r => r.json()),
-    staleTime: Infinity,
-  });
+  const { data: registry = [] } = useStrategyRegistry();
 
   // Fetch full-universe stats for accurate Setups and High Conviction counts
   const { data: screenerStats } = useQuery<{ total: number; highConviction: number; bull: number; bear: number; highIv: number }>({
@@ -208,8 +206,7 @@ export function StockListPanel({ selectedSymbol, onSelect, initialTab = "ideas" 
       if (filter === "highIv"  && ivRank < 50)           return false;
       if (filter === "etfs"    && !(item.isETF || item.etfCategory)) return false;
       if (strategyFilter) {
-        const matches = (item as any).topStrategies as Array<{ id: string; fitScore: number }> | undefined;
-        if (!matches?.some(s => s.id === strategyFilter)) return false;
+        if (!getMatchedStrategy(item, strategyFilter)) return false;
       }
       return true;
     });
@@ -217,10 +214,7 @@ export function StockListPanel({ selectedSymbol, onSelect, initialTab = "ideas" 
     filtered = [...filtered].sort((a, b) => {
       // When a strategy is active and sort is by score, rank by that strategy's fitScore
       if (strategyFilter && sortKey === "opportunity") {
-        const getScore = (s: Stock) => {
-          const matches = (s as any).topStrategies as Array<{ id: string; fitScore: number }> | undefined;
-          return matches?.find(m => m.id === strategyFilter)?.fitScore ?? 0;
-        };
+        const getScore = (s: Stock) => getMatchedStrategy(s, strategyFilter)?.fitScore ?? 0;
         return getScore(b) - getScore(a);
       }
       if (sortKey === "opportunity") return (b.opportunityScore ?? 0) - (a.opportunityScore ?? 0);
@@ -233,22 +227,6 @@ export function StockListPanel({ selectedSymbol, onSelect, initialTab = "ideas" 
   }, [filter, search, sortKey, stocks, tab, watchlist, strategyFilter]);
 
   const isLoading = tab === "watchlist" ? loadingWatchlist : loadingStocks;
-
-  // Group registry by tier for the grouped dropdown
-  const registryByTier = useMemo(() => {
-    const order: RegistryEntry["tier"][] = ["rookie", "veteran", "seasoned-veteran", "all-star"];
-    const groups: Record<string, RegistryEntry[]> = {};
-    for (const t of order) groups[t] = [];
-    for (const s of registry) {
-      if (groups[s.tier]) groups[s.tier]!.push(s);
-    }
-    return order.map(t => ({ tier: t, strategies: groups[t]! })).filter(g => g.strategies.length > 0);
-  }, [registry]);
-
-  const TIER_LABELS: Record<string, string> = {
-    "rookie": "Rookie", "veteran": "Veteran",
-    "seasoned-veteran": "Seasoned Veteran", "all-star": "All-Star",
-  };
 
   // Real high-conviction count from full universe (not capped by list limit)
   const highConviction = screenerStats?.highConviction ?? stocks.filter((s) => (s.opportunityScore ?? 0) >= 75).length;
@@ -314,31 +292,15 @@ export function StockListPanel({ selectedSymbol, onSelect, initialTab = "ideas" 
         )}
 
         {/* Strategy filter — browse all 40 strategies, filter stocks by match */}
-        {tab === "ideas" && registryByTier.length > 0 && (
-          <div style={{ position: "relative", marginBottom: 8 }}>
-            <select
+        {tab === "ideas" && registry.length > 0 && (
+          <div style={{ marginBottom: 8 }}>
+            <StrategyFilterDropdown
+              registry={registry}
               value={strategyFilter}
-              onChange={e => setStrategyFilter(e.target.value)}
-              style={{
-                width: "100%", padding: "5px 24px 5px 10px", borderRadius: 6, fontSize: 11,
-                border: strategyFilter ? "1px solid hsl(var(--primary) / 0.4)" : "1px solid rgba(255,255,255,0.07)",
-                background: strategyFilter ? "hsl(var(--primary) / 0.08)" : "rgba(255,255,255,0.04)",
-                color: strategyFilter ? "hsl(var(--primary))" : "hsl(var(--muted-foreground))",
-                cursor: "pointer", outline: "none", appearance: "none", WebkitAppearance: "none",
-              }}
-            >
-              <option value="" style={{ background: "#1c1c1e", color: "#aaa" }}>All strategies</option>
-              {registryByTier.map(({ tier, strategies }) => (
-                <optgroup key={tier} label={TIER_LABELS[tier] ?? tier} style={{ background: "#1c1c1e", color: "#888" }}>
-                  {strategies.map(s => (
-                    <option key={s.id} value={s.id} style={{ background: "#1c1c1e", color: "#fff" }}>
-                      {s.name}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
-            <ChevronDown style={{ position: "absolute", right: 7, top: "50%", transform: "translateY(-50%)", width: 11, height: 11, color: "hsl(var(--muted-foreground))", pointerEvents: "none" }} />
+              onChange={setStrategyFilter}
+              placeholder="Browse all 40 strategies"
+              width={296}
+            />
           </div>
         )}
 

@@ -3,6 +3,11 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { useGetWatchlist, useAddToWatchlist, useRemoveFromWatchlist, getGetWatchlistQueryKey } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
+import { StrategyFilterDropdown } from "@/components/strategy/StrategyFilterDropdown";
+import {
+  getMatchedStrategy,
+  useStrategyRegistry,
+} from "@/lib/strategy-catalog";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -18,6 +23,14 @@ interface ScreenerRow {
   setupType: string; recommendedOutlook: string;
   supportPrice: number; resistancePrice: number; liquidity: string;
   source?: "polygon" | "yahoo" | "polygon-eod";
+  topStrategies?: Array<{
+    id: string;
+    name: string;
+    fitScore: number;
+    fitReason: string;
+    tier: string;
+    url: string;
+  }>;
 }
 
 interface FactoredRow extends ScreenerRow {
@@ -394,8 +407,9 @@ export default function Screener() {
   const [sortDir,         setSortDir]         = useState<"asc"|"desc">("desc");
   const [tab,             setTab]             = useState<TabKey>("overview");
   const [showPicker,      setShowPicker]      = useState(false);
-  const [setupTypeFilter, setSetupTypeFilter] = useState<string>("");
+  const [strategyFilter,  setStrategyFilter]  = useState<string>("");
   const pickerRef = useRef<HTMLDivElement>(null);
+  const { data: strategyRegistry = [] } = useStrategyRegistry();
 
   useEffect(() => {
     function handler(e: MouseEvent) {
@@ -410,20 +424,19 @@ export default function Screener() {
   const factored = useMemo(() => computeFactors(raw), [raw]);
   const filtered = useMemo(() => {
     const base = applyFilters(factored, activeFilters);
-    if (!setupTypeFilter) return base;
-    return base.filter(r => r.setupType === setupTypeFilter);
-  }, [factored, activeFilters, setupTypeFilter]);
+    if (!strategyFilter) return base;
+    return base.filter((row) => Boolean(getMatchedStrategy(row, strategyFilter)));
+  }, [factored, activeFilters, strategyFilter]);
   const sorted   = useMemo(() => {
     return [...filtered].sort((a,b) => {
+      if (strategyFilter && sortKey === "marketCap") {
+        const strategyDelta = (getMatchedStrategy(b, strategyFilter)?.fitScore ?? 0) - (getMatchedStrategy(a, strategyFilter)?.fitScore ?? 0);
+        if (strategyDelta !== 0) return strategyDelta;
+      }
       const va = (a as any)[sortKey] ?? 0, vb = (b as any)[sortKey] ?? 0;
       return sortDir === "desc" ? vb - va : va - vb;
     });
-  }, [filtered, sortKey, sortDir]);
-
-  const setupTypes = useMemo(() => {
-    const types = new Set(factored.map(r => r.setupType).filter(Boolean));
-    return [...types].sort();
-  }, [factored]);
+  }, [filtered, sortKey, sortDir, strategyFilter]);
 
   const watchlistSymbolMap = useMemo(() => {
     const m = new Map<string, number>();
@@ -457,6 +470,7 @@ export default function Screener() {
   const applyPreset = (p: typeof PRESETS[0]) => {
     setActiveFilters(p.filters);
     setActivePreset(p.label);
+    setStrategyFilter("");
   };
 
   const onSort = (k: string) => {
@@ -475,8 +489,8 @@ export default function Screener() {
           <div style={{ fontSize:18, fontWeight:700, letterSpacing:"-0.03em" }}>
             {activePreset === "All" ? "All stocks" : activePreset}
           </div>
-          {activeFilters.length > 0 && (
-            <button onClick={() => { setActiveFilters([]); setActivePreset("All"); }}
+          {(activeFilters.length > 0 || strategyFilter) && (
+            <button onClick={() => { setActiveFilters([]); setActivePreset("All"); setStrategyFilter(""); }}
               style={{ fontSize:11, color:"rgba(255,69,58,0.8)", background:"none", border:"none", cursor:"pointer", padding:0 }}>
               Clear all
             </button>
@@ -522,24 +536,15 @@ export default function Screener() {
                 ? "#0a84ff" : "rgba(255,255,255,0.55)",
             }}>{p.label}</button>
           ))}
-          {/* Strategy type filter */}
-          {setupTypes.length > 0 && (
-            <div style={{ position:"relative", marginLeft:"auto" }}>
-              <select
-                value={setupTypeFilter}
-                onChange={e => setSetupTypeFilter(e.target.value)}
-                style={{
-                  padding:"3px 22px 3px 10px", borderRadius:5, fontSize:11, fontWeight:600, cursor:"pointer",
-                  border: setupTypeFilter ? "1px solid rgba(10,132,255,0.5)" : "1px solid rgba(255,255,255,0.12)",
-                  background: setupTypeFilter ? "rgba(10,132,255,0.18)" : "rgba(255,255,255,0.06)",
-                  color: setupTypeFilter ? "#0a84ff" : "rgba(255,255,255,0.55)",
-                  outline:"none", appearance:"none", WebkitAppearance:"none",
-                }}
-              >
-                <option value="" style={{ background:"#1c1c1e", color:"#fff" }}>All Strategies</option>
-                {setupTypes.map(t => <option key={t} value={t} style={{ background:"#1c1c1e", color:"#fff" }}>{t}</option>)}
-              </select>
-              <span style={{ position:"absolute", right:7, top:"50%", transform:"translateY(-50%)", pointerEvents:"none", fontSize:9, color:"rgba(255,255,255,0.4)" }}>▾</span>
+          {strategyRegistry.length > 0 && (
+            <div style={{ marginLeft:"auto" }}>
+              <StrategyFilterDropdown
+                registry={strategyRegistry}
+                value={strategyFilter}
+                onChange={setStrategyFilter}
+                placeholder="Browse all 40 strategies"
+                width={296}
+              />
             </div>
           )}
         </div>
@@ -556,6 +561,16 @@ export default function Screener() {
               <button onClick={()=>removeFilter(f.key)} style={{ background:"none", border:"none", color:"rgba(10,132,255,0.7)", cursor:"pointer", padding:"0 0 0 2px", lineHeight:1, fontSize:12 }}>✕</button>
             </div>
           ))}
+          {strategyFilter && (
+            <div style={{
+              display:"flex", alignItems:"center", gap:4, padding:"4px 8px 4px 10px",
+              background:"rgba(10,132,255,0.12)", border:"1px solid rgba(10,132,255,0.28)",
+              borderRadius:6, fontSize:11, color:"#0a84ff", fontWeight:500, whiteSpace:"nowrap",
+            }}>
+              Strategy: {strategyRegistry.find((strategy) => strategy.id === strategyFilter)?.name ?? strategyFilter}
+              <button onClick={() => setStrategyFilter("")} style={{ background:"none", border:"none", color:"rgba(10,132,255,0.7)", cursor:"pointer", padding:"0 0 0 2px", lineHeight:1, fontSize:12 }}>✕</button>
+            </div>
+          )}
 
           {/* Add filter button */}
           <div ref={pickerRef} style={{ position:"relative" }}>
