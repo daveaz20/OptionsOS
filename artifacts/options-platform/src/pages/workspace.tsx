@@ -4,7 +4,7 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/componen
 import { StockListPanel } from "@/components/workspace/StockListPanel";
 import { StockDetailPanel } from "@/components/workspace/StockDetailPanel";
 import { StrategyPanel } from "@/components/workspace/StrategyPanel";
-import { useGetStock } from "@workspace/api-client-react";
+import { useGetStock, useListStocks } from "@workspace/api-client-react";
 import type { Stock } from "@workspace/api-client-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 
@@ -42,13 +42,24 @@ export default function ScannerPage() {
       const params = new URLSearchParams(search || window.location.search);
       const sym = params.get("symbol");
       const tab = params.get("tab");
-      if (sym) setSelectedSymbol(sym);
+      if (sym && sym !== selectedSymbol) { setSelectedSymbol(sym); setSelectedStock(null); }
       if (tab === "watchlist") setStockListTab("watchlist");
       else if (!tab) setStockListTab("ideas");
     } catch { /* ignore */ }
   }, [location, search]);
 
   const { data: stock } = useGetStock(selectedSymbol, { query: { enabled: !!selectedSymbol } });
+
+  // Sync selectedStock from screener data (handles URL-based navigation / initial load)
+  const { data: screenerResults = [] } = useListStocks(
+    { search: selectedSymbol, limit: 5 },
+    { query: { enabled: !!selectedSymbol && !selectedStock } as any },
+  );
+  useEffect(() => {
+    if (selectedStock?.symbol === selectedSymbol) return;
+    const found = screenerResults.find(s => s.symbol === selectedSymbol);
+    if (found) setSelectedStock(found);
+  }, [screenerResults, selectedSymbol]);
 
   // Mobile: single-panel tab layout
   if (isMobile) {
