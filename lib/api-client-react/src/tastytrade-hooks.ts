@@ -5,6 +5,9 @@ import type {
   AccountBalances,
   AccountPositionsResponse,
   AccountSummary,
+  StreamerStatus,
+  NetLiqHistoryPoint,
+  TastytradeAuthStatus,
 } from "@workspace/api-zod";
 
 // ─── Options Chain ────────────────────────────────────────────────────────
@@ -71,5 +74,47 @@ export function useGetAccountSummary(
     enabled: options?.query?.enabled ?? true,
     staleTime: 60 * 1000,
     refetchInterval: 60 * 1000,
+  });
+}
+
+export const getTastytradeAuthStatusQueryKey = () => ["tt-auth-status"] as const;
+
+export function useGetTastytradeAuthStatus(
+  options?: { query?: { enabled?: boolean } },
+) {
+  return useQuery<TastytradeAuthStatus>({
+    queryKey: getTastytradeAuthStatusQueryKey(),
+    queryFn: () => customFetch<TastytradeAuthStatus>("/api/auth/status"),
+    enabled: options?.query?.enabled ?? true,
+    staleTime: 60 * 1000,
+    refetchInterval: 60 * 1000,
+  });
+}
+
+export const getTastytradeStreamerStatusQueryKey = () => ["tt-streamer-status"] as const;
+
+export function useGetTastytradeStreamerStatus(
+  options?: { query?: { enabled?: boolean } },
+) {
+  return useQuery<StreamerStatus>({
+    queryKey: getTastytradeStreamerStatusQueryKey(),
+    queryFn: () => customFetch<StreamerStatus>("/api/tastytrade/streamer-status"),
+    enabled: options?.query?.enabled ?? true,
+    staleTime: 15 * 1000,
+    refetchInterval: 15 * 1000,
+  });
+}
+
+export const getTastytradeNetLiqHistoryQueryKey = () => ["tt-netliq-history"] as const;
+
+export function useGetTastytradeNetLiqHistory(
+  options?: { query?: { enabled?: boolean } },
+) {
+  return useQuery<NetLiqHistoryPoint[]>({
+    queryKey: getTastytradeNetLiqHistoryQueryKey(),
+    queryFn: () => customFetch<NetLiqHistoryPoint[]>("/api/tastytrade/netliq-history"),
+    enabled: options?.query?.enabled ?? true,
+    staleTime: 5 * 60 * 1000,
+    refetchInterval: 5 * 60 * 1000,
   });
 }

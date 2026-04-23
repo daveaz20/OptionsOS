@@ -8,8 +8,11 @@ export type {
   AccountPosition,
   AccountPositionsResponse,
   AccountSummary,
+  NetLiqHistoryPoint,
   OptionContract,
   OptionsChain,
   OptionsChainExpiry,
+  StreamerStatus,
+  TastytradeAuthStatus,
 } from "@workspace/api-zod";
 export type { OptionLeg as StrategyLeg } from "./generated/api.schemas";

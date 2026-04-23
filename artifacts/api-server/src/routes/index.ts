@@ -6,6 +6,7 @@ import strategiesRouter from "./strategies";
 import dashboardRouter from "./dashboard";
 import screenerRouter from "./screener";
 import accountRouter from "./account";
+import tastytradeRouter from "./tastytrade";
 
 const router: IRouter = Router();
 
@@ -16,5 +17,6 @@ router.use(strategiesRouter);
 router.use(dashboardRouter);
 router.use(screenerRouter);
 router.use(accountRouter);
+router.use(tastytradeRouter);
 
 export default router;

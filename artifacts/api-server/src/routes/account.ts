@@ -1,7 +1,12 @@
 import { Router, type IRouter } from "express";
 import {
-  isTastytradeEnabled, isTastytradeAuthorized, getOptionsChain, getRawPositions, getBalances,
+  isTastytradeEnabled,
+  isTastytradeAuthorized,
+  getOptionsChain,
+  getPositions,
+  getAccountBalances,
   type OptionsChain,
+  type StreamedGreeks,
 } from "../lib/tastytrade.js";
 
 const router: IRouter = Router();
@@ -25,6 +30,7 @@ function parseOcc(symbol: string): { expiration: string; optionType: "call" | "p
 
 interface ParsedLeg {
   symbol: string;
+  streamerSymbol: string | null;
   underlying: string;
   optionType: "call" | "put";
   strikePrice: number;
@@ -33,6 +39,9 @@ interface ParsedLeg {
   direction: "Long" | "Short";
   openPrice: number;
   currentPrice: number;
+  livePrice: number | null;
+  liveGreeks: StreamedGreeks | null;
+  unrealizedPnl: number | null;
   multiplier: number;
 }
 
@@ -86,7 +95,7 @@ router.get("/account/balances", async (_req, res): Promise<void> => {
   if (!isTastytradeEnabled()) { res.status(503).json({ error: "Tastytrade OAuth credentials not configured" }); return; }
   if (!isTastytradeAuthorized()) { res.status(401).json({ error: "Tastytrade not authorized", authUrl: "/api/auth/tastytrade" }); return; }
   try {
-    const b = await getBalances();
+    const b = await getAccountBalances();
     res.json({
       netLiquidatingValue: b.netLiquidatingValue,
       optionBuyingPower:   b.optionBuyingPower,
@@ -106,7 +115,7 @@ router.get("/account/positions", async (_req, res): Promise<void> => {
   if (!isTastytradeEnabled()) { res.status(503).json({ error: "Tastytrade OAuth credentials not configured" }); return; }
   if (!isTastytradeAuthorized()) { res.status(401).json({ error: "Tastytrade not authorized", authUrl: "/api/auth/tastytrade" }); return; }
   try {
-    const rawAll = await getRawPositions();
+    const rawAll = await getPositions();
     const rawOpts = rawAll.filter(p =>
       p.instrumentType === "Equity Option" || p.instrumentType === "Future Option",
     );
@@ -117,11 +126,17 @@ router.get("/account/positions", async (_req, res): Promise<void> => {
       const occ = parseOcc(pos.symbol);
       if (!occ) continue;
       parsed.push({
-        symbol: pos.symbol, underlying: pos.underlying,
+        symbol: pos.symbol,
+        streamerSymbol: pos.streamerSymbol,
+        underlying: pos.underlying,
         optionType: occ.optionType, strikePrice: occ.strikePrice,
         expiration: occ.expiration,
         quantity: pos.quantity, direction: pos.direction,
-        openPrice: pos.openPrice, currentPrice: pos.currentPrice,
+        openPrice: pos.openPrice,
+        currentPrice: pos.currentPrice,
+        livePrice: pos.livePrice,
+        liveGreeks: pos.liveGreeks,
+        unrealizedPnl: pos.unrealizedPnl,
         multiplier: pos.multiplier,
       });
     }
@@ -151,29 +166,53 @@ router.get("/account/positions", async (_req, res): Promise<void> => {
 
       let totalPnl = 0;
       let totalCostBasis = 0;
+      let totalUnrealizedPnl = 0;
+      let livePriceAccumulator = 0;
+      let livePriceWeight = 0;
       for (const leg of legs) {
         const dir = leg.direction === "Long" ? 1 : -1;
-        totalPnl += (leg.currentPrice - leg.openPrice) * dir * leg.quantity * leg.multiplier;
+        const effectivePrice = leg.livePrice ?? leg.currentPrice;
+        totalPnl += (effectivePrice - leg.openPrice) * dir * leg.quantity * leg.multiplier;
         totalCostBasis += leg.openPrice * leg.quantity * leg.multiplier;
+        if (leg.unrealizedPnl != null) totalUnrealizedPnl += leg.unrealizedPnl;
+        if (leg.livePrice != null) {
+          livePriceAccumulator += leg.livePrice * leg.quantity;
+          livePriceWeight += leg.quantity;
+        }
       }
 
       // Greeks from chain
-      let delta = 0, gamma = 0, theta = 0, vega = 0;
+      let delta = 0, gamma = 0, theta = 0, vega = 0, rho = 0, iv = 0;
+      let liveGreeksCount = 0;
       const chain = chains.get(underlying!);
-      if (chain) {
+      for (const leg of legs) {
+        const dir = leg.direction === "Long" ? 1 : -1;
+        if (leg.liveGreeks) {
+          delta += leg.liveGreeks.delta * dir * leg.quantity;
+          gamma += leg.liveGreeks.gamma * dir * leg.quantity;
+          theta += leg.liveGreeks.theta * dir * leg.quantity * leg.multiplier;
+          vega += leg.liveGreeks.vega * dir * leg.quantity * leg.multiplier;
+          rho += leg.liveGreeks.rho * dir * leg.quantity * leg.multiplier;
+          iv += leg.liveGreeks.iv;
+          liveGreeksCount += 1;
+          continue;
+        }
+
+        if (!chain) continue;
         const expiry = chain.expirations.find(e => e.expiration === expiration);
-        if (expiry) {
-          for (const leg of legs) {
-            const contract = expiry.contracts.find(
-              c => c.optionType === leg.optionType && Math.abs(c.strikePrice - leg.strikePrice) < 0.01,
-            );
-            if (contract) {
-              const dir = leg.direction === "Long" ? 1 : -1;
-              delta += contract.delta * dir * leg.quantity;
-              gamma += contract.gamma * dir * leg.quantity;
-              theta += contract.theta * dir * leg.quantity * leg.multiplier;
-              vega  += contract.vega  * dir * leg.quantity * leg.multiplier;
-            }
+        if (!expiry) continue;
+        const contract = expiry.contracts.find(
+          c => c.optionType === leg.optionType && Math.abs(c.strikePrice - leg.strikePrice) < 0.01,
+        );
+        if (contract) {
+          delta += contract.delta * dir * leg.quantity;
+          gamma += contract.gamma * dir * leg.quantity;
+          theta += contract.theta * dir * leg.quantity * leg.multiplier;
+          vega += contract.vega * dir * leg.quantity * leg.multiplier;
+          rho += (contract.rho ?? 0) * dir * leg.quantity * leg.multiplier;
+          if (contract.impliedVolatility > 0) {
+            iv += contract.impliedVolatility;
+            liveGreeksCount += 1;
           }
         }
       }
@@ -187,16 +226,30 @@ router.get("/account/positions", async (_req, res): Promise<void> => {
         strikesLabel: sortedStrikes.join("/"),
         legs: legs.map(leg => ({
           symbol: leg.symbol,
+          streamerSymbol: leg.streamerSymbol,
           optionType: leg.optionType,
           action: leg.direction.toLowerCase() as "long" | "short",
           strikePrice: leg.strikePrice,
           quantity: leg.quantity,
           openPrice: leg.openPrice,
           currentPrice: leg.currentPrice,
-          pnl: Math.round((leg.currentPrice - leg.openPrice) * (leg.direction === "Long" ? 1 : -1) * leg.quantity * leg.multiplier * 100) / 100,
+          livePrice: leg.livePrice,
+          liveGreeks: leg.liveGreeks,
+          unrealizedPnl: leg.unrealizedPnl,
+          pnl: Math.round(((leg.livePrice ?? leg.currentPrice) - leg.openPrice) * (leg.direction === "Long" ? 1 : -1) * leg.quantity * leg.multiplier * 100) / 100,
         })),
         totalPnl:        Math.round(totalPnl * 100) / 100,
         totalPnlPercent: totalCostBasis !== 0 ? Math.round((totalPnl / totalCostBasis) * 10000) / 100 : 0,
+        livePrice: livePriceWeight > 0 ? Math.round((livePriceAccumulator / livePriceWeight) * 100) / 100 : null,
+        liveGreeks: liveGreeksCount > 0 ? {
+          delta: Math.round(delta * 1000) / 1000,
+          gamma: Math.round(gamma * 1000) / 1000,
+          theta: Math.round(theta * 100) / 100,
+          vega: Math.round(vega * 100) / 100,
+          rho: Math.round(rho * 100) / 100,
+          iv: Math.round((iv / liveGreeksCount) * 100) / 100,
+        } : null,
+        unrealizedPnl: Math.round(totalUnrealizedPnl * 100) / 100,
         greeks: {
           delta: Math.round(delta * 1000) / 1000,
           gamma: Math.round(gamma * 1000) / 1000,
@@ -218,7 +271,7 @@ router.get("/account/summary", async (_req, res): Promise<void> => {
   if (!isTastytradeEnabled()) { res.status(503).json({ error: "Tastytrade OAuth credentials not configured" }); return; }
   if (!isTastytradeAuthorized()) { res.status(401).json({ error: "Tastytrade not authorized", authUrl: "/api/auth/tastytrade" }); return; }
   try {
-    const [balances, rawAll] = await Promise.all([getBalances(), getRawPositions()]);
+    const [balances, rawAll] = await Promise.all([getAccountBalances(), getPositions()]);
     const rawOpts = rawAll.filter(p =>
       p.instrumentType === "Equity Option" || p.instrumentType === "Future Option",
     );

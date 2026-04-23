@@ -1,6 +1,6 @@
 import app from "./app";
 import { logger } from "./lib/logger";
-import { initTastytrade } from "./lib/tastytrade.js";
+import { initStreamer, initTastytrade } from "./lib/tastytrade.js";
 
 const rawPort = process.env["PORT"];
 
@@ -24,4 +24,5 @@ app.listen(port, (err) => {
 
   logger.info({ port }, "Server listening");
   initTastytrade({ info: (m) => logger.info(m), warn: (m) => logger.warn(m) });
+  initStreamer().catch((err) => logger.warn({ err }, "Tastytrade streamer init failed"));
 });

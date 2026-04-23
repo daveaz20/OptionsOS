@@ -5,18 +5,20 @@ import {
   useGetDashboardSummary, useGetTopMovers, useGetWatchlist,
   useListStocks, getGetWatchlistQueryKey, useRemoveFromWatchlist,
   useGetAccountSummary,
+  useGetTastytradeAuthStatus,
+  useGetTastytradeNetLiqHistory,
 } from "@workspace/api-client-react";
 import type { Stock } from "@workspace/api-client-react";
 import {
   BarChart, Bar, Cell, XAxis, YAxis, Tooltip as RechartsTooltip,
-  ResponsiveContainer, ReferenceLine,
+  ResponsiveContainer, ReferenceLine, LineChart as RechartsLineChart, Line, CartesianGrid,
 } from "recharts";
 import {
   Activity, ArrowDownRight, ArrowUpRight, ArrowUp, ArrowDown,
   BookOpen, Briefcase, ChevronDown, ChevronUp, CheckCircle2,
   Circle, Flame, LayoutDashboard, LayoutGrid, Pencil, Star,
   TrendingDown, TrendingUp, Volume2, Zap, X, Calendar, Bell,
-  BarChart2, Wallet,
+  BarChart2, Wallet, LineChart,
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { formatCurrency, formatPercent, formatNumber } from "@/lib/format";
@@ -38,6 +40,7 @@ export interface ModuleDef {
 
 const MODULE_REGISTRY: ModuleDef[] = [
   { id: "account_summary",  title: "Account",             description: "Tastytrade account: net liq, buying power, P&L, theta",   icon: <Wallet style={{ width: 13, height: 13 }} />,       cols: 12, defaultEnabled: true,  category: "personal" },
+  { id: "net_liq_history",  title: "Portfolio Performance", description: "Net liquidating value over the past year",               icon: <LineChart style={{ width: 13, height: 13 }} />,    cols: 12, defaultEnabled: true,  category: "personal" },
   { id: "stats",            title: "Market Stats",        description: "Live overview: sentiment, setups, IV rank, breadth",      icon: <Activity style={{ width: 13, height: 13 }} />,    cols: 12, defaultEnabled: true,  category: "market"   },
   { id: "opportunities",    title: "Top Opportunities",   description: "Highest-scoring setups from the scanner",                  icon: <Zap style={{ width: 13, height: 13 }} />,          cols: 12, defaultEnabled: true,  category: "analysis" },
   { id: "sector_perf",      title: "Sector Performance",  description: "Average daily change by sector",                           icon: <BarChart2 style={{ width: 13, height: 13 }} />,    cols: 6,  defaultEnabled: true,  category: "market"   },
@@ -168,15 +171,7 @@ function MarketStatusPill() {
 function AccountSummaryModule() {
   const { data, isLoading, error } = useGetAccountSummary();
   const isMobile = useIsMobile();
-  const { data: authStatus } = useQuery<{ enabled: boolean; connected: boolean; oauthReady: boolean }>({
-    queryKey: ["tt-auth-status"],
-    queryFn: async () => {
-      const res = await fetch("/api/auth/status");
-      if (!res.ok) throw new Error("Failed to load Tastytrade auth status");
-      return res.json();
-    },
-    staleTime: 60 * 1000,
-  });
+  const { data: authStatus } = useGetTastytradeAuthStatus();
 
   if (error) {
     const status = (error as any)?.status;
@@ -186,7 +181,7 @@ function AccountSummaryModule() {
       <div style={{ padding: "18px 20px", color: "hsl(var(--muted-foreground))", fontSize: 12 }}>
         {isUnauthorized
           ? "Tastytrade is not connected yet. Connect your account to load balances and positions."
-          : isUnavailable && authStatus?.oauthReady
+          : isUnavailable && authStatus?.enabled
             ? "Tastytrade is ready to connect, but no account is linked yet."
             : isUnavailable
               ? "Tastytrade OAuth credentials are not configured on the server."
@@ -245,6 +240,132 @@ function AccountSummaryModule() {
           }
         </div>
       ))}
+    </div>
+  );
+}
+
+function NetLiqHistoryModule() {
+  const { data: authStatus } = useGetTastytradeAuthStatus();
+  const { data, isLoading, error } = useGetTastytradeNetLiqHistory({
+    query: { enabled: Boolean(authStatus?.enabled && authStatus?.connected) },
+  });
+
+  if (!authStatus?.enabled) {
+    return (
+      <div style={{ padding: "18px 20px", color: "hsl(var(--muted-foreground))", fontSize: 12 }}>
+        Tastytrade OAuth credentials are not configured on the server.
+      </div>
+    );
+  }
+
+  if (!authStatus.connected) {
+    return (
+      <div style={{ padding: "18px 20px", color: "hsl(var(--muted-foreground))", fontSize: 12 }}>
+        Connect Tastytrade to load portfolio performance history.
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div style={{ padding: "18px 20px", color: "hsl(var(--muted-foreground))", fontSize: 12 }}>
+        Portfolio history unavailable: {(error as Error).message}
+      </div>
+    );
+  }
+
+  if (isLoading) {
+    return <Skeleton h={220} cols={1} />;
+  }
+
+  const history = (data ?? [])
+    .filter((point) => point.time && Number.isFinite(point.close))
+    .map((point) => ({
+      ...point,
+      label: new Date(point.time).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+    }));
+
+  if (history.length === 0) {
+    return (
+      <div style={{ padding: "18px 20px", color: "hsl(var(--muted-foreground))", fontSize: 12 }}>
+        No net liquidation history is available yet.
+      </div>
+    );
+  }
+
+  const latest = history[history.length - 1]!;
+  const first = history[0]!;
+  const change = latest.close - first.close;
+  const changePercent = first.close > 0 ? (change / first.close) * 100 : 0;
+  const changeColor = change >= 0 ? "hsl(var(--success))" : "hsl(var(--destructive))";
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
+        <div>
+          <div style={{ fontSize: 11, color: "hsl(var(--muted-foreground))", letterSpacing: "0.06em", fontWeight: 600 }}>
+            CURRENT NET LIQ
+          </div>
+          <div style={{ fontSize: 30, fontWeight: 700, letterSpacing: "-0.04em", marginTop: 6, fontVariantNumeric: "tabular-nums" }}>
+            {formatCurrency(latest.close)}
+          </div>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <div style={{ fontSize: 11, color: "hsl(var(--muted-foreground))", letterSpacing: "0.06em", fontWeight: 600 }}>
+            1Y CHANGE
+          </div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: changeColor, marginTop: 8, fontVariantNumeric: "tabular-nums" }}>
+            {change >= 0 ? "+" : "-"}{formatCurrency(Math.abs(change))}
+          </div>
+          <div style={{ fontSize: 12, color: changeColor, fontVariantNumeric: "tabular-nums", marginTop: 2 }}>
+            {change >= 0 ? "+" : ""}{changePercent.toFixed(2)}%
+          </div>
+        </div>
+      </div>
+
+      <div style={{ width: "100%", height: 240 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <RechartsLineChart data={history} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+            <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
+            <XAxis
+              dataKey="label"
+              tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }}
+              tickLine={false}
+              axisLine={false}
+              minTickGap={28}
+            />
+            <YAxis
+              tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }}
+              tickLine={false}
+              axisLine={false}
+              width={88}
+              tickFormatter={(value: number) => formatCurrency(value)}
+            />
+            <RechartsTooltip
+              contentStyle={{
+                background: "rgba(6,6,6,0.96)",
+                border: "1px solid rgba(255,255,255,0.08)",
+                borderRadius: 10,
+              }}
+              formatter={(value: number) => [formatCurrency(value), "Net Liq"]}
+              labelFormatter={(_, payload) => {
+                const point = payload?.[0]?.payload as { time?: string } | undefined;
+                return point?.time
+                  ? new Date(point.time).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+                  : "";
+              }}
+            />
+            <Line
+              type="monotone"
+              dataKey="close"
+              stroke="hsl(var(--primary))"
+              strokeWidth={2.5}
+              dot={false}
+              activeDot={{ r: 4, fill: "hsl(var(--primary))", stroke: "rgba(0,0,0,0)" }}
+            />
+          </RechartsLineChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 }
@@ -992,6 +1113,7 @@ export default function DashboardPage() {
   function renderModuleContent(mod: ModuleDef) {
     switch (mod.id) {
       case "account_summary": return <AccountSummaryModule />;
+      case "net_liq_history": return <Section title="Portfolio Performance" sub="Past year" icon={<LineChart style={{ width: 14, height: 14, color: "hsl(var(--primary))" }} />}><NetLiqHistoryModule /></Section>;
       case "stats":           return <StatsModule stocks={stocks} loadingStocks={loadingStocks} />;
       case "opportunities":   return <OpportunitiesModule stocks={stocks} loading={loadingStocks} />;
       case "sector_perf":     return <Section title="Sector Performance" sub="Avg daily change" icon={<BarChart2 style={{ width: 14, height: 14, color: "hsl(var(--primary))" }} />} noPad><SectorPerfModule stocks={stocks} loading={loadingStocks} /></Section>;

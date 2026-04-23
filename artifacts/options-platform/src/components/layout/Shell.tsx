@@ -3,6 +3,10 @@ import { Activity, LayoutDashboard, Filter, LineChart, Briefcase, Bookmark, Sett
 import { useState, useEffect } from "react";
 import { GlobalSearch } from "./GlobalSearch";
 import { useIsMobile } from "@/hooks/use-mobile";
+import {
+  useGetTastytradeAuthStatus,
+  useGetTastytradeStreamerStatus,
+} from "@workspace/api-client-react";
 
 interface ShellProps {
   children: React.ReactNode;
@@ -45,8 +49,17 @@ export function Shell({ children }: ShellProps) {
   const search     = useSearch();
   const marketOpen = useMarketOpen();
   const isMobile   = useIsMobile();
+  const { data: authStatus } = useGetTastytradeAuthStatus();
+  const { data: streamerStatus } = useGetTastytradeStreamerStatus({
+    query: { enabled: Boolean(authStatus?.enabled && authStatus?.connected) },
+  });
 
   const statusColor = marketOpen ? "hsl(var(--success))" : "hsl(var(--muted-foreground))";
+  const showTastytradeBadge = Boolean(authStatus?.enabled && authStatus?.connected);
+  const streamerLive = Boolean(showTastytradeBadge && streamerStatus?.connected);
+  const ttTone = streamerLive ? "hsl(var(--success))" : "hsl(43 96% 56%)";
+  const ttBorder = streamerLive ? "hsl(var(--success)/0.22)" : "hsl(43 96% 56% / 0.24)";
+  const ttBg = streamerLive ? "hsl(var(--success)/0.1)" : "hsl(43 96% 56% / 0.12)";
 
   return (
     <div className="flex h-[100dvh] w-full flex-col overflow-hidden bg-background text-foreground font-sans">
@@ -105,6 +118,26 @@ export function Shell({ children }: ShellProps) {
 
         {/* Right */}
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          {showTastytradeBadge && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                padding: isMobile ? "5px 8px" : "6px 10px",
+                borderRadius: 999,
+                border: `1px solid ${ttBorder}`,
+                background: ttBg,
+              }}
+            >
+              <span style={{ fontSize: 11, fontWeight: 700, color: "hsl(var(--foreground))", letterSpacing: "0.02em" }}>
+                TT
+              </span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: ttTone, letterSpacing: "0.04em" }}>
+                {streamerLive ? "LIVE" : "REST"}
+              </span>
+            </div>
+          )}
           {/* Market status dot — always visible */}
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <span style={{ position: "relative", display: "flex", width: 6, height: 6 }}>

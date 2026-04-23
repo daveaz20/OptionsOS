@@ -466,8 +466,3 @@ export async function getPolygonETFs(): Promise<PolygonETFRef[]> {
   }
 }
 
-export async function getLatestEodBars(): Promise<{ date: string; bars: Map<string, EodBar> }> {
-  const date = getLastTradingDate();
-  const bars = await getGroupedDailyBars(date);
-  return { date, bars };
-}
