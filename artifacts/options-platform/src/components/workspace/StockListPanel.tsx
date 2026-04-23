@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from "react";
+import { useDeferredValue, useMemo, useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useListStocks, useGetWatchlist } from "@workspace/api-client-react";
 import { ArrowDownRight, ArrowUpRight, ChevronDown, Search, SlidersHorizontal, Star, Zap } from "lucide-react";
@@ -164,11 +164,15 @@ export function StockListPanel({ selectedSymbol, onSelect, initialTab = "ideas" 
   const [filter, setFilter]           = useState<IdeaFilter>("all");
   const [sortKey, setSortKey]         = useState<SortKey>("opportunity");
   const [strategyFilter, setStrategyFilter] = useState<string>("");
+  const deferredSearch = useDeferredValue(search);
 
   // Sync initialTab if it changes (e.g. navigating to /scanner?tab=watchlist)
   useEffect(() => { setTab(initialTab); }, [initialTab]);
 
-  const { data: stocks = [], isLoading: loadingStocks }       = useListStocks({ search, limit: 200 });
+  const { data: stocks = [], isLoading: loadingStocks } = useListStocks(
+    { search: deferredSearch, limit: 200 },
+    { query: { enabled: tab === "ideas" } as any },
+  );
   const { data: watchlist = [], isLoading: loadingWatchlist } = useGetWatchlist();
 
   const { data: registry = [] } = useStrategyRegistry();
@@ -192,7 +196,7 @@ export function StockListPanel({ selectedSymbol, onSelect, initialTab = "ideas" 
             sector: "Watchlist",
           }))
         : stocks;
-    const q = search.trim().toLowerCase();
+    const q = deferredSearch.trim().toLowerCase();
 
     let filtered = source.filter((item) => {
       if (q && !item.symbol.toLowerCase().includes(q) && !item.name.toLowerCase().includes(q)) return false;
@@ -224,7 +228,7 @@ export function StockListPanel({ selectedSymbol, onSelect, initialTab = "ideas" 
     });
 
     return filtered;
-  }, [filter, search, sortKey, stocks, tab, watchlist, strategyFilter]);
+  }, [deferredSearch, filter, sortKey, stocks, tab, watchlist, strategyFilter]);
 
   const isLoading = tab === "watchlist" ? loadingWatchlist : loadingStocks;
 

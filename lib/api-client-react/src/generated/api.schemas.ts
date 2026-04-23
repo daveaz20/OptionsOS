@@ -91,6 +91,14 @@ export interface StockDetail {
   setupType?: string;
   recommendedOutlook?: "bullish" | "bearish" | "neutral";
   setupDescription?: string;
+  topStrategies?: Array<{
+    id: string;
+    name: string;
+    fitScore: number;
+    fitReason: string;
+    tier: string;
+    url: string;
+  }>;
 }
 
 export interface PricePoint {
