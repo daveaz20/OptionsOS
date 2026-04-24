@@ -156,9 +156,9 @@ export function Shell({ children }: ShellProps) {
           {!isMobile && (
             <>
               <div style={{ width: 1, height: 16, background: "rgba(255,255,255,0.08)" }} />
-              <button style={{ display: "flex", padding: 5, borderRadius: 6, border: "none", background: "transparent", color: "hsl(var(--muted-foreground))", cursor: "pointer" }}>
+              <Link href="/settings" style={{ display: "flex", padding: 5, borderRadius: 6, color: location === "/settings" ? "hsl(var(--foreground))" : "hsl(var(--muted-foreground))", background: location === "/settings" ? "rgba(255,255,255,0.07)" : "transparent", transition: "all 0.12s" }}>
                 <Settings style={{ width: 14, height: 14 }} />
-              </button>
+              </Link>
             </>
           )}
         </div>

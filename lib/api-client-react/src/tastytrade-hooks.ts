@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { customFetch } from "./custom-fetch";
 import type {
   OptionsChain,
@@ -116,5 +116,51 @@ export function useGetTastytradeNetLiqHistory(
     enabled: options?.query?.enabled ?? true,
     staleTime: 5 * 60 * 1000,
     refetchInterval: 5 * 60 * 1000,
+  });
+}
+
+// ─── User Settings ────────────────────────────────────────────────────────
+
+export const getUserSettingsQueryKey = () => ["user-settings"] as const;
+
+export function useGetUserSettings() {
+  return useQuery<Record<string, unknown>>({
+    queryKey: getUserSettingsQueryKey(),
+    queryFn: () =>
+      customFetch<{ settings: Record<string, unknown> }>("/api/settings").then(
+        (r) => r.settings,
+      ),
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+  });
+}
+
+export function usePatchUserSettings() {
+  const queryClient = useQueryClient();
+  return useMutation<
+    Record<string, unknown>,
+    Error,
+    Record<string, unknown>
+  >({
+    mutationFn: (partial) =>
+      customFetch<{ settings: Record<string, unknown> }>("/api/settings", {
+        method: "PATCH",
+        body: JSON.stringify(partial),
+        headers: { "Content-Type": "application/json" },
+      }).then((r) => r.settings),
+    onSuccess: (data) => {
+      queryClient.setQueryData(getUserSettingsQueryKey(), data);
+    },
+  });
+}
+
+export function useDeleteUserSettings() {
+  const queryClient = useQueryClient();
+  return useMutation<void, Error, void>({
+    mutationFn: () =>
+      customFetch<void>("/api/settings", { method: "DELETE" }),
+    onSuccess: () => {
+      queryClient.setQueryData(getUserSettingsQueryKey(), {});
+    },
   });
 }

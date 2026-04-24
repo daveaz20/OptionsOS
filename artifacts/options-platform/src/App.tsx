@@ -12,6 +12,7 @@ const DashboardPage = lazy(() => import("@/pages/dashboard"));
 const ScreenerPage = lazy(() => import("@/pages/screener"));
 const PositionsPage = lazy(() => import("@/pages/positions"));
 const WatchlistPage = lazy(() => import("@/pages/watchlist"));
+const SettingsPage = lazy(() => import("@/pages/settings"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -32,6 +33,7 @@ function Router() {
           <Route path="/screener" component={ScreenerPage} />
           <Route path="/watchlist" component={WatchlistPage} />
           <Route path="/positions" component={PositionsPage} />
+          <Route path="/settings" component={SettingsPage} />
           <Route component={NotFound} />
         </Switch>
       </Suspense>
