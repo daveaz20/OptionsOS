@@ -1315,7 +1315,7 @@ export async function getTransactions(limit = 100): Promise<TtTransaction[]> {
 export async function getNetLiqHistory(timeBack = "1y"): Promise<TtNetLiqPoint[]> {
   const accountNumber = await getAccountNumber();
   const json = await ttGet<TastytradeItemsResponse<Record<string, unknown>> | TastytradeDataResponse<Record<string, unknown>>>(
-    `/accounts/${accountNumber}/net-liquidating-value-history?time-back=${encodeURIComponent(timeBack)}`,
+    `/accounts/${accountNumber}/net-liq-history?time-back=${encodeURIComponent(timeBack)}`,
   );
 
   const items =
