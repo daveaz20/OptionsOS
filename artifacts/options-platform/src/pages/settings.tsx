@@ -288,11 +288,33 @@ const CATEGORIES: CategoryDef[] = [
     icon: <BarChart2 size={14} />,
     description: "How positions are valued, performance is calculated, and P&L is reported.",
     settings: [
-      { key: "pnlMethod", label: "P&L calculation method", type: "select", default: "mark", options: [{ label: "Mark price", value: "mark" }, { label: "Last price", value: "last" }, { label: "Theoretical value", value: "theoretical" }] },
-      { key: "benchmark", label: "Performance benchmark", type: "select", default: "SPY", options: [{ label: "None", value: "none" }, { label: "SPY", value: "SPY" }, { label: "QQQ", value: "QQQ" }, { label: "IWM", value: "IWM" }, { label: "DIA", value: "DIA" }] },
-      { key: "showUnrealizedPnl", label: "Show unrealized P&L", type: "toggle", default: true },
-      { key: "showRealizedPnl", label: "Show realized P&L", type: "toggle", default: true },
-      { key: "taxMethod", label: "Tax lot method", type: "select", default: "FIFO", options: [{ label: "FIFO", value: "FIFO" }, { label: "LIFO", value: "LIFO" }, { label: "Specific lot", value: "SpecificLot" }] },
+      { key: "commissionPerContract", label: "Commission per contract", type: "number", default: 0.65, min: 0, step: 0.01, unit: "$" },
+      { key: "perLegCommission", label: "Per-leg commission", type: "number", default: 0, min: 0, step: 0.01, unit: "$" },
+      { key: "exchangeFeePerContract", label: "Exchange fees per contract", type: "number", default: 0.1, min: 0, step: 0.01, unit: "$" },
+      { key: "includeCommissionsInPnl", label: "Include commissions in P&L calculations", type: "toggle", default: true },
+      { key: "includeFeesInBreakeven", label: "Include fees in breakeven calculation", type: "toggle", default: true },
+      { key: "contractMultiplier", label: "Default contract multiplier", type: "number", default: 100, min: 1, step: 1 },
+      { key: "defaultContracts", label: "Default number of contracts", type: "slider", default: 1, min: 1, max: 50 },
+      { key: "pnlDisplayMode", label: "Default P&L view", type: "select", default: "both", options: [{ label: "$ amount", value: "amount" }, { label: "% return", value: "percent" }, { label: "Both", value: "both" }] },
+      { key: "showMaxProfitOnPnlCurve", label: "Show max profit in P&L curve", type: "toggle", default: true },
+      { key: "showMaxLossOnPnlCurve", label: "Show max loss in P&L curve", type: "toggle", default: true },
+      { key: "showBreakevenOnPnlCurve", label: "Show breakeven points on P&L curve", type: "toggle", default: true },
+      { key: "showCurrentPriceOnPnlCurve", label: "Show current price marker on P&L curve", type: "toggle", default: true },
+      { key: "pnlCurveResolution", label: "P&L curve resolution", type: "select", default: 100, options: [{ label: "50 points", value: 50 }, { label: "100 points", value: 100 }, { label: "200 points", value: 200 }] },
+      { key: "scenarioUnderlyingMovePct", label: "Default underlying move", type: "slider", default: 5, min: 1, max: 50, unit: "%" },
+      { key: "scenarioIvChangePct", label: "Default IV change", type: "slider", default: 10, min: 0, max: 100, unit: "%" },
+      { key: "scenarioDteStepDays", label: "Default DTE steps", type: "number", default: 7, min: 1, max: 60, unit: "days" },
+      { key: "showGreeksImpactInScenario", label: "Show Greeks impact in scenario", type: "toggle", default: true },
+      { key: "showProbabilityOfProfit", label: "Show probability of profit in strategy panel", type: "toggle", default: true },
+      { key: "defaultProfitTargetPct", label: "Default profit target", type: "slider", default: 50, min: 1, max: 100, unit: "%" },
+      { key: "defaultStopLossPct", label: "Default stop loss", type: "slider", default: 100, min: 1, max: 300, unit: "%" },
+      { key: "showProfitTargetLine", label: "Show profit target line on P&L curve", type: "toggle", default: true },
+      { key: "showStopLossLine", label: "Show stop loss line on P&L curve", type: "toggle", default: true },
+      { key: "autoCalculateProfitTarget", label: "Auto-calculate suggested profit target", type: "toggle", default: true },
+      { key: "defaultIvAssumption", label: "Default IV assumption", type: "select", default: "current", options: [{ label: "Use current IV rank", value: "current" }, { label: "Use manual IV", value: "manual" }] },
+      { key: "riskFreeRatePct", label: "Default risk-free rate", type: "number", default: 4.5, min: 0, step: 0.1, unit: "%" },
+      { key: "dividendYieldAssumptionPct", label: "Default dividend yield assumption", type: "number", default: 0, min: 0, step: 0.1, unit: "%" },
+      { key: "useHistoricalVolatilityForSimulation", label: "Use historical volatility instead of IV", type: "toggle", default: false },
     ],
   },
   {
@@ -1322,6 +1344,63 @@ function ChartAnalysisPanel({
   );
 }
 
+const PNL_SECTION_SLICES = [
+  { label: "Commission & Fees", start: 0, end: 5 },
+  { label: "Contract Settings", start: 5, end: 7 },
+  { label: "P&L Display", start: 7, end: 13 },
+  { label: "Scenario Analysis", start: 13, end: 18 },
+  { label: "Profit & Loss Targets", start: 18, end: 23 },
+  { label: "Simulation", start: 23, end: 27 },
+] as const;
+
+function PnlSimulationPanel({
+  settings,
+  onChange,
+  onReset,
+}: {
+  settings: AppSettings;
+  onChange: (key: string, value: unknown) => void;
+  onReset: () => void;
+}) {
+  const pnlSettings = CATEGORIES.find(category => category.id === "pnl")!.settings;
+  const contracts = Math.max(1, Number(settings.defaultContracts));
+  const optionLegs = 2;
+  const estimatedFees =
+    (settings.includeCommissionsInPnl ? settings.commissionPerContract * contracts * optionLegs + settings.perLegCommission * optionLegs : 0) +
+    settings.exchangeFeePerContract * contracts * optionLegs;
+
+  return (
+    <div style={{ paddingTop: 8, display: "grid", gap: 24 }}>
+      <div style={{ border: "1px solid rgba(255,255,255,0.07)", borderRadius: 8, background: "rgba(255,255,255,0.02)", padding: 14 }}>
+        <div style={{ fontSize: 14, fontWeight: 700 }}>P&L Cost Preview</div>
+        <div style={{ fontSize: 11.5, color: "hsl(var(--muted-foreground))", marginTop: 3 }}>Estimated round-trip cost for a 2-leg strategy using the default contract count.</div>
+        <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
+          <RiskSummaryItem label="Contracts" value={String(contracts)} />
+          <RiskSummaryItem label="Multiplier" value={String(settings.contractMultiplier)} />
+          <RiskSummaryItem label="Estimated Fees" value={formatSettingCurrency(estimatedFees)} tone={estimatedFees > 0 ? "warning" : "default"} />
+          <RiskSummaryItem label="Curve Points" value={String(settings.pnlCurveResolution)} />
+        </div>
+      </div>
+
+      {PNL_SECTION_SLICES.map(section => (
+        <div key={section.label}>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: "hsl(var(--muted-foreground))", textTransform: "uppercase" }}>{section.label}</div>
+          {pnlSettings.slice(section.start, section.end).map(setting => (
+            <SettingRow key={setting.key} setting={setting} value={settings[setting.key as keyof AppSettings]} onChange={onChange} />
+          ))}
+        </div>
+      ))}
+
+      <ActionRow
+        label="Reset to Defaults"
+        description="Restore every P&L & Simulation option to its default value"
+        icon={<RotateCcw size={13} />}
+        onClick={onReset}
+      />
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const isMobile = useIsMobile();
   const [activeCategory, setActiveCategory] = useState("general");
@@ -1482,6 +1561,14 @@ export default function SettingsPage() {
               />
             )}
 
+            {activeCategory === "pnl" && (
+              <PnlSimulationPanel
+                settings={settings}
+                onChange={handleChange}
+                onReset={() => handleResetCategory(activeCategoryDef)}
+              />
+            )}
+
             {activeCategory === "security" && (
               <div style={{ paddingTop: 8 }}>
                 {activeCategoryDef.settings.map(s => (
@@ -1515,7 +1602,7 @@ export default function SettingsPage() {
             )}
 
             {/* All other categories */}
-            {activeCategory !== "security" && activeCategory !== "data" && activeCategory !== "strategy" && activeCategory !== "risk" && activeCategory !== "timeHorizon" && activeCategory !== "chartAnalysis" && (
+            {activeCategory !== "security" && activeCategory !== "data" && activeCategory !== "strategy" && activeCategory !== "risk" && activeCategory !== "timeHorizon" && activeCategory !== "chartAnalysis" && activeCategory !== "pnl" && (
               <div style={{ paddingTop: 8 }}>
                 {activeCategoryDef.settings.map(s => (
                   <SettingRow key={s.key} setting={s} value={settings[s.key as keyof AppSettings]} onChange={handleChange} />

@@ -10,7 +10,14 @@ import {
 } from "@workspace/api-zod";
 import { getQuote, getPriceHistory, getHistoricalVolatility } from "../lib/market-data.js";
 import { computeSignals } from "../lib/technical-analysis.js";
-import { buildStrategies, calcPnlCurve, DEFAULT_STRATEGY_RISK_PREFERENCES, type StrategyRiskPreferences } from "../lib/strategy-engine.js";
+import {
+  buildStrategies,
+  calcPnlCurve,
+  DEFAULT_PNL_CALCULATION_SETTINGS,
+  DEFAULT_STRATEGY_RISK_PREFERENCES,
+  type PnlCalculationSettings,
+  type StrategyRiskPreferences,
+} from "../lib/strategy-engine.js";
 import { isTastytradeEnabled, isTastytradeAuthorized, getOptionsChain, makeContractLookup, getMarketMetrics } from "../lib/tastytrade.js";
 import { db, userSettingsTable } from "@workspace/db";
 
@@ -22,6 +29,34 @@ async function getRiskPreferences(): Promise<StrategyRiskPreferences> {
   return {
     riskMinDTE: typeof values.minDTE === "number" ? values.minDTE : typeof values.riskMinDTE === "number" ? values.riskMinDTE : DEFAULT_STRATEGY_RISK_PREFERENCES.riskMinDTE,
     riskMaxDTE: typeof values.maxDTE === "number" ? values.maxDTE : typeof values.riskMaxDTE === "number" ? values.riskMaxDTE : DEFAULT_STRATEGY_RISK_PREFERENCES.riskMaxDTE,
+  };
+}
+
+function numberSetting(values: Record<string, unknown>, key: string, fallback: number): number {
+  const value = values[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function booleanSetting(values: Record<string, unknown>, key: string, fallback: boolean): boolean {
+  const value = values[key];
+  return typeof value === "boolean" ? value : fallback;
+}
+
+async function getPnlPreferences(): Promise<{ riskFreeRate: number; settings: PnlCalculationSettings; defaultContracts: number }> {
+  const rows = await db.select().from(userSettingsTable);
+  const values = Object.fromEntries(rows.map((row) => [row.key, row.value])) as Record<string, unknown>;
+  return {
+    riskFreeRate: numberSetting(values, "riskFreeRatePct", 4.5) / 100,
+    defaultContracts: Math.max(1, Math.floor(numberSetting(values, "defaultContracts", 1))),
+    settings: {
+      commissionPerContract: numberSetting(values, "commissionPerContract", DEFAULT_PNL_CALCULATION_SETTINGS.commissionPerContract),
+      perLegCommission: numberSetting(values, "perLegCommission", DEFAULT_PNL_CALCULATION_SETTINGS.perLegCommission),
+      exchangeFeePerContract: numberSetting(values, "exchangeFeePerContract", DEFAULT_PNL_CALCULATION_SETTINGS.exchangeFeePerContract),
+      includeCommissionsInPnl: booleanSetting(values, "includeCommissionsInPnl", DEFAULT_PNL_CALCULATION_SETTINGS.includeCommissionsInPnl),
+      includeFeesInBreakeven: booleanSetting(values, "includeFeesInBreakeven", DEFAULT_PNL_CALCULATION_SETTINGS.includeFeesInBreakeven),
+      contractMultiplier: Math.max(1, Math.floor(numberSetting(values, "contractMultiplier", DEFAULT_PNL_CALCULATION_SETTINGS.contractMultiplier))),
+      pnlCurveResolution: Math.max(10, Math.floor(numberSetting(values, "pnlCurveResolution", DEFAULT_PNL_CALCULATION_SETTINGS.pnlCurveResolution))),
+    },
   };
 }
 
@@ -114,11 +149,12 @@ router.post("/stocks/:symbol/pnl", async (req, res): Promise<void> => {
   const { strategyId, targetPrice, targetDate, impliedVolatility, outlook } = parsed.data;
 
   try {
-    const [quote, history, hv, riskPreferences] = await Promise.all([
+    const [quote, history, hv, riskPreferences, pnlPreferences] = await Promise.all([
       getQuote(symbol),
       getPriceHistory(symbol, "3M"),
       getHistoricalVolatility(symbol),
       getRiskPreferences(),
+      getPnlPreferences(),
     ]);
 
     const signals = computeSignals(history, quote.price);
@@ -156,6 +192,11 @@ router.post("/stocks/:symbol/pnl", async (req, res): Promise<void> => {
       return;
     }
 
+    strategy = {
+      ...strategy,
+      legs: strategy.legs.map((leg) => ({ ...leg, quantity: leg.quantity * pnlPreferences.defaultContracts })),
+    };
+
     const iv = impliedVolatility || hv.hv30;
 
     const result = calcPnlCurve(
@@ -164,6 +205,8 @@ router.post("/stocks/:symbol/pnl", async (req, res): Promise<void> => {
       targetPrice,
       targetDate,
       iv,
+      pnlPreferences.riskFreeRate,
+      pnlPreferences.settings,
     );
 
     res.json(CalculatePnlResponse.parse(result));

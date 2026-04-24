@@ -245,9 +245,9 @@ function StrategyDetail({
 }) {
   const { toast } = useToast();
   const { settings } = useSettings();
-  const [contracts, setContracts] = useState(1);
+  const [contracts, setContracts] = useState(Math.max(1, Number(settings.defaultContracts || 1)));
   // Reset contracts when the strategy changes (different expiry/type)
-  useEffect(() => { setContracts(1); }, [strategy.id, strategy.expirationDate]);
+  useEffect(() => { setContracts(Math.max(1, Number(settings.defaultContracts || 1))); }, [strategy.id, strategy.expirationDate, settings.defaultContracts]);
 
   const exp = strategy.expirationDate;
   const dte = Math.max(0, Math.round((new Date(exp).getTime() - Date.now()) / 86_400_000));
@@ -310,7 +310,7 @@ function StrategyDetail({
           },
           { label: "Max reward",  value: formatCurrency(strategy.maxProfit * contracts), color: strategy.maxProfit >= 0 ? "hsl(var(--success))" : "hsl(var(--destructive))" },
           { label: "Max risk",    value: formatCurrency(Math.abs(strategy.maxLoss) * contracts), color: "hsl(var(--destructive))" },
-          { label: "POP",         value: `${pop}%`, color: pop >= 60 ? "hsl(var(--success))" : "hsl(var(--foreground))" },
+          ...(settings.showProbabilityOfProfit ? [{ label: "POP", value: `${pop}%`, color: pop >= 60 ? "hsl(var(--success))" : "hsl(var(--foreground))" }] : []),
           { label: "Breakeven",   value: formatCurrency(strategy.breakeven), color: "hsl(var(--foreground))" },
           { label: "Days to exp", value: `${dte}`, color: "hsl(var(--foreground))" },
         ].map((m, i) => (
@@ -1110,9 +1110,18 @@ function computePnlClient(
   targetDate: string,
   iv: number,
   currentPrice: number,
+  settings: AppSettings,
 ) {
   const ivDecimal = Math.max(0.05, iv / 100);
   const targetMs  = new Date(targetDate).getTime();
+  const multiplier = Math.max(1, Number(settings.contractMultiplier || 100));
+  const optionLegs = legs.filter(l => l.optionType !== "stock");
+  const optionContracts = optionLegs.reduce((sum, leg) => sum + Math.abs(leg.quantity), 0);
+  const commissionImpact = settings.includeCommissionsInPnl
+    ? optionContracts * Number(settings.commissionPerContract || 0) + optionLegs.length * Number(settings.perLegCommission || 0)
+    : 0;
+  const feeImpact = optionContracts * Number(settings.exchangeFeePerContract || 0);
+  const totalFeeImpact = commissionImpact + feeImpact;
 
   const evalAtPrice = (S: number): number =>
     legs.reduce((total, leg) => {
@@ -1122,15 +1131,15 @@ function computePnlClient(
       // Use per-leg expiry if available (set by Modify), else fall back to strategy expiry
       const legExpiry = (leg as any).expiration ?? strategyExpirationDate;
       const legT = Math.max(0, (new Date(legExpiry).getTime() - targetMs) / (365 * 24 * 60 * 60 * 1000));
-      const optVal  = bsPrice(S, leg.strikePrice, legT, ivDecimal, leg.optionType as "call" | "put") * 100;
-      const openVal = leg.premium * 100;
+      const optVal  = bsPrice(S, leg.strikePrice, legT, ivDecimal, leg.optionType as "call" | "put") * multiplier;
+      const openVal = leg.premium * multiplier;
       return total + (optVal - openVal) * (leg.action === "buy" ? 1 : -1) * leg.quantity;
-    }, 0);
+    }, 0) - totalFeeImpact;
 
   // Curve spanning ±30 % around current price, 80 points
   const lo = currentPrice * 0.7;
   const hi = currentPrice * 1.3;
-  const POINTS = 80;
+  const POINTS = Number(settings.pnlCurveResolution || 100);
   const pnlCurve = Array.from({ length: POINTS + 1 }, (_, i) => {
     const price = lo + (i / POINTS) * (hi - lo);
     return { price: Math.round(price * 100) / 100, pnl: Math.round(evalAtPrice(price) * 100) / 100 };
@@ -1141,7 +1150,7 @@ function computePnlClient(
   // Cost = net premium outflow (for % calculation)
   const cost = legs.reduce((s, l) => {
     if (l.optionType === "stock") return s;
-    return s + l.premium * 100 * (l.action === "buy" ? 1 : -1);
+    return s + l.premium * multiplier * (l.action === "buy" ? 1 : -1);
   }, 0);
   const profitLossPercent = cost !== 0 ? Math.round((profitLoss / Math.abs(cost)) * 10000) / 100 : 0;
 
@@ -1155,7 +1164,7 @@ function computePnlClient(
     }
   }
 
-  return { profitLoss, profitLossPercent, breakeven, pnlCurve };
+  return { profitLoss, profitLossPercent, breakeven, pnlCurve, commissionImpact: totalFeeImpact };
 }
 
 // ── P&L Simulator ────────────────────────────────────────────────────────
@@ -1166,22 +1175,23 @@ function PnlSimulator({
   strategy: OptionsStrategy; currentPrice: number; symbol: string; initialIv?: number;
   contracts: number; onContractsChange: (n: number) => void;
 }) {
+  const { settings } = useSettings();
   const [targetPrice, setTargetPrice] = useState(currentPrice || 100);
   const [targetDate, setTargetDate] = useState(strategy.expirationDate);
-  const [iv, setIv] = useState(initialIv);
+  const [iv, setIv] = useState(settings.useHistoricalVolatilityForSimulation ? Math.max(10, initialIv * 0.8) : initialIv);
   const [dollarDraft, setDollarDraft] = useState<string | null>(null);
 
   // Sync when strategy expiry changes (e.g. after Modify → Apply)
   useEffect(() => { setTargetDate(strategy.expirationDate); }, [strategy.expirationDate]);
   // Sync IV when strategy changes (different strategies may have different estimated IVs)
-  useEffect(() => { setIv(initialIv); }, [initialIv]);
+  useEffect(() => { setIv(settings.useHistoricalVolatilityForSimulation ? Math.max(10, initialIv * 0.8) : initialIv); }, [initialIv, settings.useHistoricalVolatilityForSimulation]);
   useEffect(() => { if (currentPrice > 0 && targetPrice === 0) setTargetPrice(currentPrice); }, [currentPrice]);
 
   // Net cost per contract (absolute value of net debit/credit × 100)
   const costPerContract = Math.abs(
     strategy.legs
       .filter(l => l.optionType !== "stock")
-      .reduce((s, l) => s + l.premium * 100 * (l.action === "buy" ? 1 : -1), 0)
+      .reduce((s, l) => s + l.premium * settings.contractMultiplier * (l.action === "buy" ? 1 : -1), 0)
   );
   const dollarAmount = Math.round(contracts * costPerContract * 100) / 100;
 
@@ -1194,8 +1204,8 @@ function PnlSimulator({
   };
 
   const pnlData = useMemo(
-    () => computePnlClient(strategy.legs, strategy.expirationDate, targetPrice, targetDate, iv, currentPrice),
-    [strategy.legs, strategy.expirationDate, targetPrice, targetDate, iv, currentPrice],
+    () => computePnlClient(strategy.legs, strategy.expirationDate, targetPrice, targetDate, iv, currentPrice, settings),
+    [strategy.legs, strategy.expirationDate, targetPrice, targetDate, iv, currentPrice, settings],
   );
   const scaledCurve = useMemo(
     () => pnlData.pnlCurve.map(p => ({ ...p, pnl: Math.round(p.pnl * contracts * 100) / 100 })),
@@ -1220,11 +1230,22 @@ function PnlSimulator({
 
   const minP = currentPrice * 0.7;
   const maxP = currentPrice * 1.3;
+  const scaledPnls = scaledCurve.map(point => point.pnl);
+  const maxProfit = Math.max(...scaledPnls);
+  const maxLoss = Math.min(...scaledPnls);
+  const profitTarget = Math.abs(strategy.maxProfit * contracts) * (settings.defaultProfitTargetPct / 100);
+  const stopLoss = -Math.abs(strategy.maxLoss * contracts) * (settings.defaultStopLossPct / 100);
+  const showAmount = settings.pnlDisplayMode === "amount" || settings.pnlDisplayMode === "both";
+  const showPercent = settings.pnlDisplayMode === "percent" || settings.pnlDisplayMode === "both";
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       <div style={{ background: "rgba(255,255,255,0.03)", borderRadius: 8, border: "1px solid rgba(255,255,255,0.06)", padding: "12px", display: "flex", flexDirection: "column", gap: 12 }}>
         <SimSlider label="Goes to this price" value={[targetPrice]} min={minP} max={maxP} step={0.5} prefix="$" onChange={([v]) => setTargetPrice(v!)} />
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          <button type="button" onClick={() => setTargetPrice(Math.round(currentPrice * (1 + settings.scenarioUnderlyingMovePct / 100) * 100) / 100)} style={{ padding: "5px 8px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.04)", color: "hsl(var(--success))", fontSize: 10, fontWeight: 700 }}>+{settings.scenarioUnderlyingMovePct}% scenario</button>
+          <button type="button" onClick={() => setTargetPrice(Math.round(currentPrice * (1 - settings.scenarioUnderlyingMovePct / 100) * 100) / 100)} style={{ padding: "5px 8px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.04)", color: "hsl(var(--destructive))", fontSize: 10, fontWeight: 700 }}>-{settings.scenarioUnderlyingMovePct}% scenario</button>
+        </div>
 
         {/* Date row — date input + Today→Expiry slider */}
         <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
@@ -1259,6 +1280,15 @@ function PnlSimulator({
         </div>
 
         <SimSlider label="Implied volatility" value={[iv]} min={10} max={150} step={1} suffix="%" onChange={([v]) => setIv(v!)} />
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          <button type="button" onClick={() => setIv(Math.min(150, iv + settings.scenarioIvChangePct))} style={{ padding: "5px 8px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.04)", color: "hsl(var(--primary))", fontSize: 10, fontWeight: 700 }}>+{settings.scenarioIvChangePct}% IV</button>
+          <button type="button" onClick={() => setIv(Math.max(10, iv - settings.scenarioIvChangePct))} style={{ padding: "5px 8px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.04)", color: "hsl(var(--primary))", fontSize: 10, fontWeight: 700 }}>-{settings.scenarioIvChangePct}% IV</button>
+        </div>
+        {settings.showGreeksImpactInScenario && (
+          <div style={{ fontSize: 10, color: "hsl(var(--muted-foreground))" }}>
+            Scenario step: {settings.scenarioDteStepDays}d · Risk-free {settings.riskFreeRatePct}% · Dividend {settings.dividendYieldAssumptionPct}%
+          </div>
+        )}
       </div>
 
       {/* Position size */}
@@ -1318,12 +1348,13 @@ function PnlSimulator({
             background: (pnlData.profitLoss * contracts) >= 0 ? "hsl(var(--success) / 0.06)" : "hsl(var(--destructive) / 0.06)",
           }}>
             <div style={{ fontSize: 10, color: "hsl(var(--muted-foreground))", marginBottom: 5 }}>P&L</div>
-            <div style={{ fontSize: 17, fontWeight: 700, letterSpacing: "-0.03em", color: pnlData.profitLoss >= 0 ? "hsl(var(--success))" : "hsl(var(--destructive))", fontVariantNumeric: "tabular-nums" }}>
+            {showAmount && <div style={{ fontSize: 17, fontWeight: 700, letterSpacing: "-0.03em", color: pnlData.profitLoss >= 0 ? "hsl(var(--success))" : "hsl(var(--destructive))", fontVariantNumeric: "tabular-nums" }}>
               {formatCurrency(pnlData.profitLoss * contracts)}
-            </div>
-            <div style={{ fontSize: 11, color: pnlData.profitLoss >= 0 ? "hsl(var(--success))" : "hsl(var(--destructive))", marginTop: 2, fontVariantNumeric: "tabular-nums" }}>
+            </div>}
+            {showPercent && <div style={{ fontSize: 11, color: pnlData.profitLoss >= 0 ? "hsl(var(--success))" : "hsl(var(--destructive))", marginTop: 2, fontVariantNumeric: "tabular-nums" }}>
               {formatPercent(pnlData.profitLossPercent)}
-            </div>
+            </div>}
+            {pnlData.commissionImpact > 0 && <div style={{ fontSize: 9, color: "hsl(var(--muted-foreground))", marginTop: 3 }}>Fees: {formatCurrency(pnlData.commissionImpact * contracts)}</div>}
           </div>
           <div style={{ padding: "10px", borderRadius: 8, textAlign: "center", border: "1px solid rgba(255,255,255,0.06)", background: "rgba(255,255,255,0.02)" }}>
             <div style={{ fontSize: 10, color: "hsl(var(--muted-foreground))", marginBottom: 5 }}>Breakeven</div>
@@ -1353,7 +1384,13 @@ function PnlSimulator({
                 );
               }} />
               <ReferenceLine y={0} stroke="rgba(255,255,255,0.15)" strokeDasharray="3 3" />
-              <ReferenceLine x={currentPrice} stroke="rgba(255,255,255,0.12)" strokeDasharray="3 3" />
+              {settings.showCurrentPriceOnPnlCurve && <ReferenceLine x={currentPrice} stroke="rgba(255,255,255,0.12)" strokeDasharray="3 3" />}
+              {settings.showBreakevenOnPnlCurve && <ReferenceLine x={pnlData.breakeven} stroke="hsl(var(--primary))" strokeDasharray="4 4" />}
+              {settings.showMaxProfitOnPnlCurve && Number.isFinite(maxProfit) && <ReferenceLine y={maxProfit} stroke="hsl(var(--success))" strokeOpacity={0.35} strokeDasharray="4 4" />}
+              {settings.showMaxLossOnPnlCurve && Number.isFinite(maxLoss) && <ReferenceLine y={maxLoss} stroke="hsl(var(--destructive))" strokeOpacity={0.35} strokeDasharray="4 4" />}
+              {settings.showProfitTargetLine && <ReferenceLine y={profitTarget} stroke="hsl(var(--success))" strokeDasharray="6 5" />}
+              {settings.showStopLossLine && <ReferenceLine y={stopLoss} stroke="hsl(var(--destructive))" strokeDasharray="6 5" />}
+              {pnlData.commissionImpact > 0 && <ReferenceLine y={-pnlData.commissionImpact * contracts} stroke="hsl(38 92% 50%)" strokeOpacity={0.55} strokeDasharray="2 4" />}
               <Area type="monotone" dataKey="pnl" stroke="hsl(var(--primary))" strokeWidth={2} fillOpacity={1} fill="url(#pnlGrad)" animationDuration={400} />
             </AreaChart>
           </ResponsiveContainer>

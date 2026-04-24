@@ -616,13 +616,34 @@ function buildDescription(type: string, symbol: string, outlook: Outlook, price:
 
 export interface PnlPoint { price: number; pnl: number }
 
+export interface PnlCalculationSettings {
+  commissionPerContract: number;
+  perLegCommission: number;
+  exchangeFeePerContract: number;
+  includeCommissionsInPnl: boolean;
+  includeFeesInBreakeven: boolean;
+  contractMultiplier: number;
+  pnlCurveResolution: number;
+}
+
+export const DEFAULT_PNL_CALCULATION_SETTINGS: PnlCalculationSettings = {
+  commissionPerContract: 0.65,
+  perLegCommission: 0,
+  exchangeFeePerContract: 0.1,
+  includeCommissionsInPnl: true,
+  includeFeesInBreakeven: true,
+  contractMultiplier: 100,
+  pnlCurveResolution: 100,
+};
+
 export function calcPnlCurve(
   legs: StrategyLeg[],
   currentPrice: number,
   targetPrice: number,
   targetDate: string | undefined,
   impliedVolatility: number,
-  riskFreeRate = 0.045
+  riskFreeRate = 0.045,
+  settings: PnlCalculationSettings = DEFAULT_PNL_CALCULATION_SETTINGS,
 ): { profitLoss: number; profitLossPercent: number; breakeven: number; maxProfit: number; maxLoss: number; pnlCurve: PnlPoint[] } {
   // Default target date: use earliest leg expiry (or 45 DTE if no legs have expiration)
   const firstLegExpiry = legs.find(l => l.optionType !== "stock")?.expiration;
@@ -633,14 +654,22 @@ export function calcPnlCurve(
     : new Date(Date.now() + 45 * 24 * 60 * 60 * 1000);
 
   const iv = impliedVolatility / 100;
+  const multiplier = Math.max(1, settings.contractMultiplier);
+  const optionLegs = legs.filter(l => l.optionType !== "stock");
+  const optionContracts = optionLegs.reduce((sum, leg) => sum + Math.abs(leg.quantity), 0);
+  const commissionImpact = settings.includeCommissionsInPnl
+    ? optionContracts * settings.commissionPerContract + optionLegs.length * settings.perLegCommission
+    : 0;
+  const feeImpact = optionContracts * settings.exchangeFeePerContract;
+  const totalFeeImpact = commissionImpact + feeImpact;
 
   // Build a range that always covers both current price and target price
   const lo = Math.min(currentPrice, targetPrice) * 0.72;
   const hi = Math.max(currentPrice, targetPrice) * 1.28;
-  const points = 80;
+  const points = Math.max(10, settings.pnlCurveResolution);
   const step = (hi - lo) / points;
 
-  const evalLegs = (p: number): number => {
+  const evalLegs = (p: number, includeFees = true): number => {
     let value = 0;
     for (const leg of legs) {
       if (leg.optionType === "stock") {
@@ -655,14 +684,14 @@ export function calcPnlCurve(
           : target.getTime() + 45 * 24 * 60 * 60 * 1000;
         const legT = Math.max(0, (legExpiryMs - target.getTime()) / (365 * 24 * 60 * 60 * 1000));
         // optVal: BS price at target date * 100 = per-contract dollar value
-        const optVal = bsCall(p, leg.strikePrice, riskFreeRate, iv, legT, leg.optionType as "call" | "put") * 100;
+        const optVal = bsCall(p, leg.strikePrice, riskFreeRate, iv, legT, leg.optionType as "call" | "put") * multiplier;
         // openVal: premium * 100 = per-contract cost basis (premium stored per-share, × 100 = contract)
-        const openVal = leg.premium * 100;
+        const openVal = leg.premium * multiplier;
         // P&L = (current value − cost basis) × direction (+1 long, −1 short)
-        value += (optVal - openVal) * (leg.action === "buy" ? 1 : -1);
+        value += (optVal - openVal) * (leg.action === "buy" ? 1 : -1) * leg.quantity;
       }
     }
-    return value;
+    return value - (includeFees ? totalFeeImpact : 0);
   };
 
   const curve: PnlPoint[] = [];
@@ -677,8 +706,11 @@ export function calcPnlCurve(
 
   // Find first zero-crossing for breakeven
   let breakeven = currentPrice;
-  for (let i = 0; i < curve.length - 1; i++) {
-    const a = curve[i]!, b = curve[i + 1]!;
+  const breakevenCurve = settings.includeFeesInBreakeven
+    ? curve
+    : curve.map((pt) => ({ price: pt.price, pnl: round2(evalLegs(pt.price, false)) }));
+  for (let i = 0; i < breakevenCurve.length - 1; i++) {
+    const a = breakevenCurve[i]!, b = breakevenCurve[i + 1]!;
     if ((a.pnl < 0 && b.pnl >= 0) || (a.pnl >= 0 && b.pnl < 0)) {
       breakeven = round2(a.price + (b.price - a.price) * (-a.pnl / (b.pnl - a.pnl)));
       break;
@@ -691,7 +723,7 @@ export function calcPnlCurve(
   // credit spreads show return relative to credit received.
   const totalCost = legs
     .filter(l => l.optionType !== "stock")
-    .reduce((s, l) => s + l.premium * 100 * (l.action === "buy" ? 1 : -1), 0);
+    .reduce((s, l) => s + l.premium * multiplier * (l.action === "buy" ? 1 : -1) * l.quantity, 0);
   const profitLossPercent = totalCost !== 0 ? round2((pnlAtTarget / Math.abs(totalCost)) * 100) : 0;
 
   return {

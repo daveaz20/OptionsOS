@@ -122,6 +122,31 @@ export interface AppSettings {
   useTheoreticalValue: boolean;
   // Portfolio & P&L
   pnlMethod: string;
+  commissionPerContract: number;
+  perLegCommission: number;
+  exchangeFeePerContract: number;
+  includeCommissionsInPnl: boolean;
+  includeFeesInBreakeven: boolean;
+  contractMultiplier: number;
+  pnlDisplayMode: string;
+  showMaxProfitOnPnlCurve: boolean;
+  showMaxLossOnPnlCurve: boolean;
+  showBreakevenOnPnlCurve: boolean;
+  showCurrentPriceOnPnlCurve: boolean;
+  pnlCurveResolution: number;
+  scenarioUnderlyingMovePct: number;
+  scenarioIvChangePct: number;
+  scenarioDteStepDays: number;
+  showGreeksImpactInScenario: boolean;
+  defaultProfitTargetPct: number;
+  defaultStopLossPct: number;
+  showProfitTargetLine: boolean;
+  showStopLossLine: boolean;
+  autoCalculateProfitTarget: boolean;
+  defaultIvAssumption: string;
+  riskFreeRatePct: number;
+  dividendYieldAssumptionPct: number;
+  useHistoricalVolatilityForSimulation: boolean;
   benchmark: string;
   showUnrealizedPnl: boolean;
   showRealizedPnl: boolean;
@@ -342,6 +367,31 @@ export const SETTING_DEFAULTS: AppSettings = {
   useTheoreticalValue: false,
   // Portfolio & P&L
   pnlMethod: "mark",
+  commissionPerContract: 0.65,
+  perLegCommission: 0,
+  exchangeFeePerContract: 0.1,
+  includeCommissionsInPnl: true,
+  includeFeesInBreakeven: true,
+  contractMultiplier: 100,
+  pnlDisplayMode: "both",
+  showMaxProfitOnPnlCurve: true,
+  showMaxLossOnPnlCurve: true,
+  showBreakevenOnPnlCurve: true,
+  showCurrentPriceOnPnlCurve: true,
+  pnlCurveResolution: 100,
+  scenarioUnderlyingMovePct: 5,
+  scenarioIvChangePct: 10,
+  scenarioDteStepDays: 7,
+  showGreeksImpactInScenario: true,
+  defaultProfitTargetPct: 50,
+  defaultStopLossPct: 100,
+  showProfitTargetLine: true,
+  showStopLossLine: true,
+  autoCalculateProfitTarget: true,
+  defaultIvAssumption: "current",
+  riskFreeRatePct: 4.5,
+  dividendYieldAssumptionPct: 0,
+  useHistoricalVolatilityForSimulation: false,
   benchmark: "SPY",
   showUnrealizedPnl: true,
   showRealizedPnl: true,
