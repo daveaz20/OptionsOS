@@ -1,7 +1,15 @@
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const ENV_PATH = path.resolve(process.cwd(), ".env");
+const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+const API_SERVER_ENV_PATH = moduleDir.endsWith(`${path.sep}src${path.sep}lib`)
+  ? path.resolve(moduleDir, "..", "..", ".env")
+  : path.resolve(moduleDir, "..", ".env");
+const ROOT_ENV_PATH = path.resolve(process.cwd(), ".env");
+const SERVER_ENV_PATH = process.env.OPTIONSOS_API_ENV_PATH
+  ? path.resolve(process.env.OPTIONSOS_API_ENV_PATH)
+  : API_SERVER_ENV_PATH;
 
 const SERVER_ENV_KEYS = [
   "POLYGON_API_KEY",
@@ -40,23 +48,27 @@ function serializeValue(value: string): string {
   return value;
 }
 
-function readEnvFile(): Map<string, string> {
+function readEnvFile(envPath = SERVER_ENV_PATH): Map<string, string> {
   try {
-    return parseEnv(fs.readFileSync(ENV_PATH, "utf8"));
+    return parseEnv(fs.readFileSync(envPath, "utf8"));
   } catch {
     return new Map();
   }
 }
 
+function readServerEnvFiles(): Map<string, string> {
+  return new Map([...readEnvFile(ROOT_ENV_PATH), ...readEnvFile(SERVER_ENV_PATH)]);
+}
+
 export function getServerEnv(): Record<ServerEnvKey, string> {
-  const fileEnv = readEnvFile();
+  const fileEnv = readServerEnvFiles();
   return Object.fromEntries(
     SERVER_ENV_KEYS.map((key) => [key, process.env[key] ?? fileEnv.get(key) ?? ""]),
   ) as Record<ServerEnvKey, string>;
 }
 
 export function loadServerEnvIntoProcess(): void {
-  const fileEnv = readEnvFile();
+  const fileEnv = readServerEnvFiles();
   for (const [key, value] of fileEnv.entries()) {
     if (process.env[key] == null) {
       process.env[key] = value;
@@ -65,7 +77,7 @@ export function loadServerEnvIntoProcess(): void {
 }
 
 export function updateServerEnv(patch: ServerEnvPatch): Record<ServerEnvKey, string> {
-  const env = readEnvFile();
+  const env = readEnvFile(SERVER_ENV_PATH);
 
   for (const [key, value] of Object.entries(patch) as Array<[ServerEnvKey, string | undefined]>) {
     if (!SERVER_ENV_KEYS.includes(key)) continue;
@@ -75,7 +87,8 @@ export function updateServerEnv(patch: ServerEnvPatch): Record<ServerEnvKey, str
   }
 
   const lines = [...env.entries()].map(([key, value]) => `${key}=${serializeValue(value)}`);
-  fs.writeFileSync(ENV_PATH, `${lines.join("\n")}\n`, "utf8");
+  fs.mkdirSync(path.dirname(SERVER_ENV_PATH), { recursive: true });
+  fs.writeFileSync(SERVER_ENV_PATH, `${lines.join("\n")}\n`, "utf8");
 
   return getServerEnv();
 }
