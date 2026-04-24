@@ -500,7 +500,7 @@ export default function Screener() {
             </button>
           )}
           <div style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:8 }}>
-            {sourceInfo && (
+            {settings.showDataSourceTags && sourceInfo && (
               <div style={{
                 display:"flex", alignItems:"center", gap:5,
                 padding:"2px 8px", borderRadius:4,
@@ -657,8 +657,17 @@ function StockTable({ rows, tab, sortKey, sortDir, onSort, navigate, watchlistSy
           display:"flex", alignItems:"center", justifyContent:"center",
           fontSize:9, fontWeight:800, color:"#0a84ff", flexShrink:0,
         }}>{r.symbol.slice(0,2)}</div>
-        <div>
-          <div style={{ fontWeight:700, fontSize:12 }}>{r.symbol}</div>
+          <div>
+          <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+            <span style={{ fontWeight:700, fontSize:12 }}>{r.symbol}</span>
+            {settings.showDataSourceTags && r.source && (
+              <span style={{
+                padding:"1px 4px", borderRadius:3, fontSize:8, fontWeight:800, letterSpacing:"0.04em",
+                color: r.source === "yahoo" ? "hsl(38 92% 50%)" : "hsl(var(--primary))",
+                background: r.source === "yahoo" ? "hsl(38 92% 50% / 0.10)" : "hsl(var(--primary) / 0.10)",
+              }}>{r.source === "polygon-eod" ? "EOD" : r.source.toUpperCase()}</span>
+            )}
+          </div>
           <div style={{ fontSize:9, color:"rgba(255,255,255,0.3)", maxWidth:110, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{r.name}</div>
         </div>
       </div>

@@ -104,6 +104,9 @@ export interface AppSettings {
   tableRowHeight: string;
   sidebarDefaultOpen: boolean;
   // Data & Sources
+  universeMode: string;
+  cacheRefreshInterval: number;
+  showDataSourceTags: boolean;
   polygonRefreshRate: number;
   marketDataSource: string;
   screenerUniverseSize: number;
@@ -236,6 +239,9 @@ export const SETTING_DEFAULTS: AppSettings = {
   tableRowHeight: "default",
   sidebarDefaultOpen: true,
   // Data & Sources
+  universeMode: "polygon",
+  cacheRefreshInterval: 30 * 60 * 1000,
+  showDataSourceTags: true,
   polygonRefreshRate: 30,
   marketDataSource: "auto",
   screenerUniverseSize: 1000,

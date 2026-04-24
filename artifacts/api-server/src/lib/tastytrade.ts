@@ -3,6 +3,9 @@ import path from "node:path";
 import { EventEmitter } from "node:events";
 import WebSocket from "ws";
 import type { RawData } from "ws";
+import { loadServerEnvIntoProcess } from "./server-env.js";
+
+loadServerEnvIntoProcess();
 
 const API_BASE_URL = "https://api.tastytrade.com";
 const TOKEN_BASE_URL = "https://api.tastyworks.com";

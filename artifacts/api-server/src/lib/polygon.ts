@@ -12,6 +12,9 @@
  */
 
 import type { EtfCategory } from "./market-data.js";
+import { loadServerEnvIntoProcess } from "./server-env.js";
+
+loadServerEnvIntoProcess();
 
 const BASE = "https://api.polygon.io";
 const key  = () => process.env.POLYGON_API_KEY ?? "";

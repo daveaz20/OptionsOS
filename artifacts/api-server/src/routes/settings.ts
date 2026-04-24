@@ -1,6 +1,8 @@
 import { Router, type IRouter } from "express";
 import { db, userSettingsTable } from "@workspace/db";
 import { sql } from "drizzle-orm";
+import { getServerEnv, maskSecret, updateServerEnv, type ServerEnvPatch } from "../lib/server-env.js";
+import { getTastytradeTokenExpiry, isTastytradeAuthorized, isTastytradeEnabled } from "../lib/tastytrade.js";
 
 const router: IRouter = Router();
 
@@ -8,6 +10,42 @@ type SettingsRecord = Record<string, unknown>;
 
 function rowsToSettings(rows: Array<{ key: string; value: unknown }>): SettingsRecord {
   return Object.fromEntries(rows.map((row) => [row.key, row.value]));
+}
+
+function serverEnvPayload() {
+  const env = getServerEnv();
+  return {
+    polygonApiKey: {
+      configured: Boolean(env.POLYGON_API_KEY),
+      masked: maskSecret(env.POLYGON_API_KEY),
+    },
+    tastytrade: {
+      status: isTastytradeEnabled()
+        ? isTastytradeAuthorized()
+          ? "connected"
+          : "disconnected"
+        : "disconnected",
+      username: env.TASTYTRADE_USERNAME,
+      accountNumber: {
+        configured: Boolean(env.TASTYTRADE_ACCOUNT_NUMBER),
+        masked: maskSecret(env.TASTYTRADE_ACCOUNT_NUMBER),
+      },
+      clientId: {
+        configured: Boolean(env.TASTYTRADE_CLIENT_ID),
+        masked: maskSecret(env.TASTYTRADE_CLIENT_ID),
+      },
+      clientSecret: {
+        configured: Boolean(env.TASTYTRADE_CLIENT_SECRET),
+        masked: maskSecret(env.TASTYTRADE_CLIENT_SECRET),
+      },
+      redirectUri: env.TASTYTRADE_REDIRECT_URI,
+      refreshToken: {
+        configured: Boolean(env.TASTYTRADE_REFRESH_TOKEN),
+        masked: maskSecret(env.TASTYTRADE_REFRESH_TOKEN),
+      },
+      tokenExpiresAt: getTastytradeTokenExpiry(),
+    },
+  };
 }
 
 router.get("/settings", async (_req, res): Promise<void> => {
@@ -56,6 +94,39 @@ router.delete("/settings", async (_req, res): Promise<void> => {
   } catch (err) {
     res.status(500).json({ error: `Failed to reset settings: ${(err as Error).message}` });
   }
+});
+
+router.get("/settings/server-env", (_req, res): void => {
+  res.json(serverEnvPayload());
+});
+
+router.patch("/settings/server-env", (req, res): void => {
+  const body = req.body as Record<string, unknown>;
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    res.status(400).json({ error: "Body must be a JSON object" });
+    return;
+  }
+
+  const patch: ServerEnvPatch = {};
+  const map: Record<string, keyof ServerEnvPatch> = {
+    polygonApiKey: "POLYGON_API_KEY",
+    tastytradeUsername: "TASTYTRADE_USERNAME",
+    tastytradeAccountNumber: "TASTYTRADE_ACCOUNT_NUMBER",
+    tastytradeClientId: "TASTYTRADE_CLIENT_ID",
+    tastytradeClientSecret: "TASTYTRADE_CLIENT_SECRET",
+    tastytradeRedirectUri: "TASTYTRADE_REDIRECT_URI",
+    tastytradeRefreshToken: "TASTYTRADE_REFRESH_TOKEN",
+  };
+
+  for (const [inputKey, envKey] of Object.entries(map)) {
+    const value = body[inputKey];
+    if (typeof value === "string") {
+      patch[envKey] = value.trim();
+    }
+  }
+
+  updateServerEnv(patch);
+  res.json(serverEnvPayload());
 });
 
 export default router;

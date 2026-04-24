@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useQueryClient } from "@tanstack/react-query";
@@ -9,6 +9,7 @@ import {
   Target, BarChart2, Palette, Database, Check,
   Loader2, RotateCcw, Download, ChevronDown,
   Clock, TrendingUp, Bookmark, Briefcase, Lock,
+  Eye, EyeOff, PlugZap,
 } from "lucide-react";
 
 // ── Types ─────────────────────────────────────────────────────────────────
@@ -85,14 +86,9 @@ const CATEGORIES: CategoryDef[] = [
     icon: <Database size={14} />,
     description: "Define the stock universe and control how market data is fetched and cached.",
     settings: [
-      { key: "marketDataSource", label: "Market data source", type: "select", default: "auto", options: [{ label: "Auto (prefer Tastytrade)", value: "auto" }, { label: "Polygon only", value: "polygon" }, { label: "Tastytrade only", value: "tastytrade" }] },
-      { key: "polygonRefreshRate", label: "Polygon refresh rate", type: "select", default: 30, options: [{ label: "15 seconds", value: 15 }, { label: "30 seconds", value: 30 }, { label: "1 minute", value: 60 }, { label: "2 minutes", value: 120 }] },
-      { key: "screenerUniverseSize", label: "Screener universe", description: "Number of stocks scanned per cycle", type: "select", default: 1000, options: [{ label: "500 stocks", value: 500 }, { label: "1,000 stocks", value: 1000 }, { label: "2,500 stocks", value: 2500 }, { label: "5,000 stocks", value: 5000 }] },
-      { key: "includeETFs", label: "Include ETFs", description: "Include exchange-traded funds in the screened universe", type: "toggle", default: true },
-      { key: "includeIndices", label: "Include indices", description: "Include index trackers (SPY, QQQ, etc.)", type: "toggle", default: false },
-      { key: "enablePreMarket", label: "Include pre-market data", description: "Show pre-market quotes where available", type: "toggle", default: false },
-      { key: "enableAfterHours", label: "Include after-hours data", description: "Show after-hours quotes where available", type: "toggle", default: false },
-      { key: "cacheStrategy", label: "Cache strategy", description: "How aggressively to cache API responses", type: "select", default: "moderate", options: [{ label: "Aggressive (longer TTL)", value: "aggressive" }, { label: "Moderate", value: "moderate" }, { label: "Minimal (always fresh)", value: "minimal" }] },
+      { key: "universeMode", label: "Universe mode", description: "Choose the screener source universe.", type: "select", default: "polygon", options: [{ label: "Polygon full (~4,800 stocks)", value: "polygon" }, { label: "Yahoo curated (~477 stocks)", value: "yahoo" }] },
+      { key: "cacheRefreshInterval", label: "Cache refresh interval", description: "How long screener data stays fresh before background refresh.", type: "select", default: 30 * 60 * 1000, options: [{ label: "15 minutes", value: 15 * 60 * 1000 }, { label: "30 minutes", value: 30 * 60 * 1000 }, { label: "1 hour", value: 60 * 60 * 1000 }, { label: "2 hours", value: 2 * 60 * 60 * 1000 }] },
+      { key: "showDataSourceTags", label: "Show data source tags", description: "Display Polygon, Yahoo, and EOD badges in screener rows.", type: "toggle", default: true },
     ],
   },
   {
@@ -499,6 +495,208 @@ function SaveIndicator({ status }: { status: SaveStatus }) {
 
 // ── Main Page ──────────────────────────────────────────────────────────────
 
+type ServerEnvPayload = {
+  polygonApiKey: { configured: boolean; masked: string };
+  tastytrade: {
+    status: "connected" | "disconnected" | "error";
+    username: string;
+    accountNumber: { configured: boolean; masked: string };
+    clientId: { configured: boolean; masked: string };
+    clientSecret: { configured: boolean; masked: string };
+    redirectUri: string;
+    refreshToken: { configured: boolean; masked: string };
+    tokenExpiresAt: number | null;
+  };
+};
+
+async function apiJson<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(path, {
+    ...init,
+    headers: {
+      ...(init?.body ? { "content-type": "application/json" } : {}),
+      ...init?.headers,
+    },
+  });
+  const body = await response.json().catch(() => null);
+  if (!response.ok) throw new Error((body as { error?: string } | null)?.error ?? `Request failed: ${response.status}`);
+  return body as T;
+}
+
+function inputStyle() {
+  return {
+    flex: 1,
+    minWidth: 0,
+    background: "rgba(255,255,255,0.06)",
+    border: "1px solid rgba(255,255,255,0.1)",
+    borderRadius: 6,
+    color: "hsl(var(--foreground))",
+    fontSize: 12,
+    padding: "7px 10px",
+    outline: "none",
+  } as const;
+}
+
+function smallButtonStyle() {
+  return {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 30,
+    padding: "6px 12px",
+    borderRadius: 6,
+    border: "none",
+    background: "rgba(255,255,255,0.08)",
+    color: "hsl(var(--foreground))",
+    fontSize: 12,
+    fontWeight: 600,
+    cursor: "pointer",
+  } as const;
+}
+
+function SecretField({ label, masked, value, placeholder, onChange }: {
+  label: string;
+  masked?: string;
+  value: string;
+  placeholder?: string;
+  onChange: (value: string) => void;
+}) {
+  const [revealed, setRevealed] = useState(false);
+  return (
+    <div style={{ display: "grid", gap: 6 }}>
+      <div style={{ fontSize: 12, fontWeight: 600, color: "hsl(var(--muted-foreground))" }}>{label}</div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <input type={revealed ? "text" : "password"} value={value} placeholder={placeholder ?? masked ?? ""} onChange={(event) => onChange(event.target.value)} style={inputStyle()} />
+        <button type="button" onClick={() => setRevealed(current => !current)} title={revealed ? "Hide value" : "Reveal value"} style={{ width: 34, borderRadius: 6, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "hsl(var(--muted-foreground))", display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+          {revealed ? <EyeOff size={14} /> : <Eye size={14} />}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function TextField({ label, value, placeholder, onChange }: {
+  label: string;
+  value: string;
+  placeholder?: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div style={{ display: "grid", gap: 6 }}>
+      <div style={{ fontSize: 12, fontWeight: 600, color: "hsl(var(--muted-foreground))" }}>{label}</div>
+      <input value={value} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} style={inputStyle()} />
+    </div>
+  );
+}
+
+function DataUniversePanel({ settings, onChange }: { settings: AppSettings; onChange: (key: string, value: unknown) => void }) {
+  const [serverEnv, setServerEnv] = useState<ServerEnvPayload | null>(null);
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [saveMessage, setSaveMessage] = useState("");
+  const [flushStatus, setFlushStatus] = useState<"idle" | "saving" | "success" | "error">("idle");
+  const [testStatus, setTestStatus] = useState<"idle" | "saving" | "success" | "error">("idle");
+  const [testMessage, setTestMessage] = useState("");
+
+  const loadServerEnv = useCallback(() => {
+    apiJson<ServerEnvPayload>("/api/settings/server-env").then(setServerEnv).catch(() => setServerEnv(null));
+  }, []);
+
+  useEffect(() => { loadServerEnv(); }, [loadServerEnv]);
+
+  const updateDraft = (key: string, value: string) => setDrafts(current => ({ ...current, [key]: value }));
+
+  const saveServerEnv = async () => {
+    const patch = Object.fromEntries(Object.entries(drafts).filter(([, value]) => value.trim() !== ""));
+    if (Object.keys(patch).length === 0) return;
+    setSaveMessage("Saving...");
+    try {
+      const next = await apiJson<ServerEnvPayload>("/api/settings/server-env", { method: "PATCH", body: JSON.stringify(patch) });
+      setServerEnv(next);
+      setDrafts({});
+      setSaveMessage("Saved ✓");
+      setTimeout(() => setSaveMessage(""), 1800);
+    } catch (err) {
+      setSaveMessage((err as Error).message);
+    }
+  };
+
+  const flushCache = async () => {
+    setFlushStatus("saving");
+    try {
+      await apiJson<{ ok: boolean }>("/api/screener/flush", { method: "POST" });
+      setFlushStatus("success");
+      setTimeout(() => setFlushStatus("idle"), 2200);
+    } catch {
+      setFlushStatus("error");
+    }
+  };
+
+  const testConnection = async () => {
+    setTestStatus("saving");
+    setTestMessage("");
+    try {
+      const result = await apiJson<{ message?: string }>("/api/tastytrade/test", { method: "POST" });
+      setTestStatus("success");
+      setTestMessage(result.message ?? "Tastytrade connection verified");
+      loadServerEnv();
+    } catch (err) {
+      setTestStatus("error");
+      setTestMessage((err as Error).message);
+    }
+  };
+
+  const connected = serverEnv?.tastytrade.status === "connected";
+  const expiry = serverEnv?.tastytrade.tokenExpiresAt;
+  const tokenWarning = expiry != null && expiry - Date.now() < 7 * 24 * 60 * 60 * 1000;
+
+  return (
+    <div style={{ paddingTop: 8, display: "grid", gap: 22 }}>
+      <div>
+        {CATEGORIES.find(c => c.id === "data")!.settings.map(setting => (
+          <SettingRow key={setting.key} setting={setting} value={settings[setting.key as keyof AppSettings]} onChange={onChange} />
+        ))}
+        <div style={{ padding: "14px 0", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+          <SecretField label="Polygon API key" masked={serverEnv?.polygonApiKey.masked} value={drafts.polygonApiKey ?? ""} placeholder={serverEnv?.polygonApiKey.configured ? serverEnv.polygonApiKey.masked : "Enter Polygon API key"} onChange={value => updateDraft("polygonApiKey", value)} />
+        </div>
+        <ActionRow label={flushStatus === "saving" ? "Clearing cache" : flushStatus === "success" ? "Cache cleared ✓" : "Flush Cache"} description="Clears in-memory screener data and the Postgres screener_cache table" icon={flushStatus === "saving" ? <Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} /> : <RotateCcw size={13} />} onClick={flushCache} />
+        {flushStatus === "error" && <div style={{ fontSize: 12, color: "hsl(var(--destructive))", marginTop: 8 }}>Cache flush failed.</div>}
+      </div>
+
+      <div style={{ borderTop: "1px solid rgba(255,255,255,0.07)", paddingTop: 20 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginBottom: 16 }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 700 }}>Tastytrade Integration</div>
+            <div style={{ fontSize: 11.5, color: "hsl(var(--muted-foreground))", marginTop: 3 }}>Credentials are stored server-side in artifacts/api-server/.env.</div>
+          </div>
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 9px", borderRadius: 999, color: connected ? "hsl(var(--success))" : "hsl(var(--destructive))", background: connected ? "hsl(var(--success) / 0.10)" : "hsl(var(--destructive) / 0.10)", border: `1px solid ${connected ? "hsl(var(--success) / 0.25)" : "hsl(var(--destructive) / 0.25)"}`, fontSize: 11, fontWeight: 700 }}>
+            <PlugZap size={12} />
+            {connected ? "Connected" : "Disconnected"}
+          </div>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 14 }}>
+          <TextField label="Username" value={drafts.tastytradeUsername ?? serverEnv?.tastytrade.username ?? ""} onChange={value => updateDraft("tastytradeUsername", value)} placeholder="Optional display username" />
+          <SecretField label="Account number" masked={serverEnv?.tastytrade.accountNumber.masked} value={drafts.tastytradeAccountNumber ?? ""} placeholder={serverEnv?.tastytrade.accountNumber.masked || "Account number"} onChange={value => updateDraft("tastytradeAccountNumber", value)} />
+          <SecretField label="Client ID" masked={serverEnv?.tastytrade.clientId.masked} value={drafts.tastytradeClientId ?? ""} placeholder={serverEnv?.tastytrade.clientId.masked || "Client ID"} onChange={value => updateDraft("tastytradeClientId", value)} />
+          <SecretField label="Client Secret" masked={serverEnv?.tastytrade.clientSecret.masked} value={drafts.tastytradeClientSecret ?? ""} placeholder={serverEnv?.tastytrade.clientSecret.masked || "Client secret"} onChange={value => updateDraft("tastytradeClientSecret", value)} />
+          <TextField label="Redirect URI" value={drafts.tastytradeRedirectUri ?? serverEnv?.tastytrade.redirectUri ?? ""} onChange={value => updateDraft("tastytradeRedirectUri", value)} placeholder="http://localhost:3000/api/auth/tastytrade/callback" />
+          <div>
+            <SecretField label="Refresh Token" masked={serverEnv?.tastytrade.refreshToken.masked} value={drafts.tastytradeRefreshToken ?? ""} placeholder={serverEnv?.tastytrade.refreshToken.masked || "Refresh token"} onChange={value => updateDraft("tastytradeRefreshToken", value)} />
+            {tokenWarning && <div style={{ marginTop: 6, color: "hsl(38 92% 50%)", fontSize: 11 }}>Refresh token or active session may expire soon.</div>}
+          </div>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 16, flexWrap: "wrap" }}>
+          <button onClick={saveServerEnv} style={smallButtonStyle()}>Save credentials</button>
+          <button onClick={testConnection} style={smallButtonStyle()}>{testStatus === "saving" && <Loader2 size={13} style={{ animation: "spin 1s linear infinite", marginRight: 6 }} />}Test Connection</button>
+          <button onClick={() => { window.location.href = "/api/auth/tastytrade"; }} style={smallButtonStyle()}>Reconnect</button>
+          {saveMessage && <span style={{ fontSize: 12, color: saveMessage.includes("Saved") ? "hsl(var(--success))" : "hsl(var(--muted-foreground))" }}>{saveMessage}</span>}
+          {testMessage && <span style={{ fontSize: 12, color: testStatus === "success" ? "hsl(var(--success))" : "hsl(var(--destructive))" }}>{testMessage}</span>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const isMobile = useIsMobile();
   const [activeCategory, setActiveCategory] = useState("general");
@@ -615,6 +813,10 @@ export default function SettingsPage() {
           <div style={{ padding: isMobile ? "0 16px 40px" : "0 32px 60px", maxWidth: 720 }}>
 
             {/* Security & Account — settings + action buttons */}
+            {activeCategory === "data" && (
+              <DataUniversePanel settings={settings} onChange={handleChange} />
+            )}
+
             {activeCategory === "security" && (
               <div style={{ paddingTop: 8 }}>
                 {activeCategoryDef.settings.map(s => (
@@ -648,7 +850,7 @@ export default function SettingsPage() {
             )}
 
             {/* All other categories */}
-            {activeCategory !== "security" && (
+            {activeCategory !== "security" && activeCategory !== "data" && (
               <div style={{ paddingTop: 8 }}>
                 {activeCategoryDef.settings.map(s => (
                   <SettingRow key={s.key} setting={s} value={settings[s.key as keyof AppSettings]} onChange={handleChange} />

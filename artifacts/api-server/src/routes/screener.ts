@@ -39,12 +39,36 @@ import {
   getStreamedQuote,
   subscribeQuotes,
 } from "../lib/tastytrade.js";
-import { db, screenerCacheTable, watchlistTable } from "@workspace/db";
+import { db, screenerCacheTable, userSettingsTable, watchlistTable } from "@workspace/db";
 import { desc } from "drizzle-orm";
 
 const router: IRouter = Router();
 
-const SCREENER_TTL = 30 * 60 * 1000; // 30 min — data is 15-min delayed anyway
+const DEFAULT_SCREENER_TTL = 30 * 60 * 1000; // 30 min - data is delayed anyway
+
+type UniverseMode = "polygon" | "yahoo";
+
+interface ScreenerSettings {
+  universeMode: UniverseMode;
+  cacheRefreshInterval: number;
+}
+
+async function getScreenerSettings(): Promise<ScreenerSettings> {
+  const rows = await db.select().from(userSettingsTable);
+  const values = Object.fromEntries(rows.map((row) => [row.key, row.value])) as Record<string, unknown>;
+  const universeMode = values.universeMode === "yahoo" ? "yahoo" : "polygon";
+  const cacheRefreshInterval =
+    typeof values.cacheRefreshInterval === "number" && Number.isFinite(values.cacheRefreshInterval)
+      ? values.cacheRefreshInterval
+      : DEFAULT_SCREENER_TTL;
+
+  return { universeMode, cacheRefreshInterval };
+}
+
+async function getActiveScreenerSource(): Promise<"polygon" | "yahoo"> {
+  const settings = await getScreenerSettings();
+  return settings.universeMode === "polygon" && isPolygonEnabled() ? "polygon" : "yahoo";
+}
 
 export interface ScreenerRow {
   symbol: string; name: string; price: number; change: number; changePercent: number;
@@ -372,8 +396,8 @@ async function loadFromDb(): Promise<void> {
 
 async function doRefresh(): Promise<void> {
   try {
-    const source = isPolygonEnabled() ? "polygon" : "yahoo";
-    const rows   = isPolygonEnabled()
+    const source = await getActiveScreenerSource();
+    const rows   = source === "polygon"
       ? await buildPolygonData()
       : await buildYahooData();
     cache.data = await enrichWatchlistRows(rows);
@@ -444,16 +468,33 @@ loadFromDb().then(() => triggerRefresh().catch(() => {}));
 router.get("/screener", async (req, res): Promise<void> => {
   if (cache.data.length === 0) await triggerRefresh();
   res.json(cache.data);
-  if (Date.now() - cache.at > SCREENER_TTL) triggerRefresh().catch(() => {});
+  const settings = await getScreenerSettings();
+  if (Date.now() - cache.at > settings.cacheRefreshInterval) triggerRefresh().catch(() => {});
 });
 
 // Expose which data source is active
-router.get("/screener/source", (_req, res) => {
+router.get("/screener/source", async (_req, res) => {
+  const settings = await getScreenerSettings();
+  const source = await getActiveScreenerSource();
   res.json({
-    source: isPolygonEnabled() ? "polygon" : "yahoo",
+    source,
     count: cache.data.length,
     cachedAt: cache.at,
+    universeMode: settings.universeMode,
+    cacheRefreshInterval: settings.cacheRefreshInterval,
   });
+});
+
+router.post("/screener/flush", async (_req, res): Promise<void> => {
+  try {
+    cache.data = [];
+    cache.at = 0;
+    cache.promise = null;
+    await db.delete(screenerCacheTable);
+    res.json({ ok: true, message: "Cache cleared" });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: `Failed to flush screener cache: ${(err as Error).message}` });
+  }
 });
 
 // ─── Accurate stats across the full universe ──────────────────────────────────
@@ -503,7 +544,7 @@ router.get("/screener/stats", async (_req, res): Promise<void> => {
     bestScore,
     setups60,
     marketOpen,
-    source: isPolygonEnabled() ? "polygon" : "yahoo",
+    source: await getActiveScreenerSource(),
     cachedAt: cache.at,
   });
 });

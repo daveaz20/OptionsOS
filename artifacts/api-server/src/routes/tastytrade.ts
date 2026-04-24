@@ -2,6 +2,7 @@ import { Router, type IRouter, type Response } from "express";
 import {
   getMarginRequirement,
   getNetLiqHistory,
+  getAccountBalances,
   getOptionsChain,
   getQuoteSnapshots,
   getStreamerStatus,
@@ -237,6 +238,17 @@ router.get("/tastytrade/streamer-status", (_req, res): void => {
   }
 
   res.json(getStreamerStatus());
+});
+
+router.post("/tastytrade/test", async (_req, res): Promise<void> => {
+  if (!ensureTastytradeReady(res)) return;
+
+  try {
+    await getAccountBalances();
+    res.json({ ok: true, message: "Tastytrade connection verified" });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: `Tastytrade test failed: ${(err as Error).message}` });
+  }
 });
 
 export default router;
