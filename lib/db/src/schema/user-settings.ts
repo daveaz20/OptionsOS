@@ -1,8 +1,8 @@
-import { integer, jsonb, pgTable, timestamp } from "drizzle-orm/pg-core";
+import { jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 
 export const userSettingsTable = pgTable("user_settings", {
-  id: integer("id").primaryKey(),
-  settings: jsonb("settings").$type<Record<string, unknown>>().notNull(),
+  key: text("key").primaryKey(),
+  value: jsonb("value").$type<unknown>().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
