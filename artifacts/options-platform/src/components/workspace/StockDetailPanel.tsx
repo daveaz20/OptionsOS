@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useGetStock, useGetStockPriceHistory, useGetWatchlist, useAddToWatchlist, useRemoveFromWatchlist, getGetWatchlistQueryKey } from "@workspace/api-client-react";
 import { AlertCircle, BarChart2, Bookmark, BookmarkCheck, TrendingDown, TrendingUp } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -14,13 +14,19 @@ interface StockDetailPanelProps {
   symbol: string;
 }
 
-const PERIODS = ["1D", "1W", "1M", "3M", "6M", "1Y"] as const;
+const PERIODS = ["1D", "1W", "1M", "3M", "6M", "1Y", "2Y"] as const;
 type Period = (typeof PERIODS)[number];
 
 export function StockDetailPanel({ symbol }: StockDetailPanelProps) {
-  const [period, setPeriod] = useState<Period>("3M");
+  const { settings } = useSettings();
+  const [period, setPeriod] = useState<Period>((PERIODS.includes(settings.defaultChartPeriod as Period) ? settings.defaultChartPeriod : "1M") as Period);
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  useEffect(() => {
+    const next = PERIODS.includes(settings.defaultChartPeriod as Period) ? settings.defaultChartPeriod as Period : "1M";
+    setPeriod(next);
+  }, [settings.defaultChartPeriod, symbol]);
 
   const { data: stock, isLoading: isLoadingStock } = useGetStock(symbol, { query: { enabled: !!symbol } });
   const { data: history = [], isLoading: isLoadingHistory } = useGetStockPriceHistory(symbol, { period }, { query: { enabled: !!symbol } });
@@ -212,13 +218,13 @@ export function StockDetailPanel({ symbol }: StockDetailPanelProps) {
             </div>
 
             {/* Chart area */}
-            <div style={{ height: 400, position: "relative" }}>
+            <div style={{ height: settings.chartHeight === "compact" ? 300 : settings.chartHeight === "expanded" ? 520 : 400, position: "relative" }}>
               {isLoadingHistory ? (
                 <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
                   <div style={{ width: 24, height: 24, borderRadius: "50%", border: "2px solid transparent", borderBottomColor: "hsl(var(--primary))", animation: "spin 0.8s linear infinite" }} />
                 </div>
               ) : (
-                <TechnicalChart data={history} support={stock.supportPrice} resistance={stock.resistancePrice} isUp={isUp} />
+                <TechnicalChart data={history} stock={stock as any} support={stock.supportPrice} resistance={stock.resistancePrice} isUp={isUp} />
               )}
             </div>
 
@@ -261,16 +267,22 @@ export function StockDetailPanel({ symbol }: StockDetailPanelProps) {
   );
 }
 
-function TechnicalChart({ data, support, resistance, isUp }: { data: PricePoint[]; support: number; resistance: number; isUp: boolean }) {
+function TechnicalChart({ data, stock, support, resistance, isUp }: { data: PricePoint[]; stock: any; support: number; resistance: number; isUp: boolean }) {
   const { settings } = useSettings();
   const { fmtCurrency } = useFormats();
   const rsiOverbought = settings.rsiOverbought;
   const rsiOversold = settings.rsiOversold;
   const W = 900;
   const H = 400;
-  const PT = 24, PH = 218;
-  const VT = 258, VH = 54;
-  const RT = 326, RH = 46;
+  const PT = 24;
+  const showRsi = settings.showRsiPanel;
+  const showMacd = settings.showMacdPanel;
+  const showAtr = settings.showAtrPanel;
+  const indicatorCount = (showRsi ? 1 : 0) + (showMacd ? 1 : 0) + (showAtr ? 1 : 0);
+  const PH = settings.showVolumeOnChart ? (indicatorCount ? 206 : 286) : (indicatorCount ? 250 : 336);
+  const VT = PT + PH + 16, VH = settings.showVolumeOnChart ? 46 : 0;
+  const indicatorTop = VT + VH + (settings.showVolumeOnChart ? 18 : 0);
+  const indicatorHeight = indicatorCount ? Math.max(34, Math.floor((H - indicatorTop - 14) / indicatorCount)) : 0;
   const PL = 14, PR = 58;
   const CW = W - PL - PR;
 
@@ -278,26 +290,57 @@ function TechnicalChart({ data, support, resistance, isUp }: { data: PricePoint[
 
   const lows = data.map((d) => d.low);
   const highs = data.map((d) => d.high);
-  const pMin = Math.min(...lows, support) * 0.984;
-  const pMax = Math.max(...highs, resistance) * 1.016;
+  const rawMin = settings.autoFitChartToPrice ? Math.min(...lows, support) : Math.min(...lows, support, stock.fiftyTwoWeekLow ?? Infinity);
+  const rawMax = settings.autoFitChartToPrice ? Math.max(...highs, resistance) : Math.max(...highs, resistance, stock.fiftyTwoWeekHigh ?? 0);
+  const pMin = rawMin * 0.984;
+  const pMax = rawMax * 1.016;
   const maxVol = Math.max(...data.map((d) => d.volume), 1);
   const cw = Math.max(2, Math.min(11, (CW / data.length) * 0.55));
   const xStep = CW / Math.max(data.length - 1, 1);
-  const maWin = Math.min(12, Math.max(4, Math.floor(data.length / 8)));
-  const ma = movingAverage(data.map((d) => d.close), maWin);
+  const closes = data.map((d) => d.close);
+  const sma20 = movingAverage(closes, Math.min(20, Math.max(2, data.length)));
+  const sma50 = movingAverage(closes, Math.min(50, Math.max(2, data.length)));
+  const sma200 = movingAverage(closes, Math.min(200, Math.max(2, data.length)));
+  const ema9 = emaSeries(closes, Math.min(9, Math.max(2, data.length)));
+  const ema21 = emaSeries(closes, Math.min(21, Math.max(2, data.length)));
+  const vwap = vwapSeries(data);
+  const bollMid = movingAverage(closes, Math.min(20, Math.max(2, data.length)));
+  const bollUpper = bollMid.map((m, i) => m == null ? null : m + stddev(closes.slice(Math.max(0, i - 19), i + 1)) * 2);
+  const bollLower = bollMid.map((m, i) => m == null ? null : m - stddev(closes.slice(Math.max(0, i - 19), i + 1)) * 2);
   const rsi = rsiCalc(data.map((d) => d.close));
+  const macd = macdSeries(closes);
+  const atr = atrSeries(data);
 
   const x = (i: number) => PL + i * xStep;
   const py = (p: number) => PT + ((pMax - p) / (pMax - pMin || 1)) * PH;
   const vy = (v: number) => VT + VH - (v / maxVol) * VH;
-  const ry = (r: number) => RT + ((100 - r) / 100) * RH;
+  const panelY = (panelIndex: number) => indicatorTop + panelIndex * indicatorHeight;
+  const panelScale = (value: number, min: number, max: number, top: number) => top + ((max - value) / (max - min || 1)) * (indicatorHeight - 8) + 4;
 
   const sy = py(support);
   const ry2 = py(resistance);
   const last = data[data.length - 1];
 
-  const maPath = ma.map((v, i) => v == null ? null : `${i === ma.findIndex((m) => m != null) ? "M" : "L"} ${x(i).toFixed(1)} ${py(v).toFixed(1)}`).filter(Boolean).join(" ");
-  const rsiPath = rsi.map((v, i) => `${i === 0 ? "M" : "L"} ${x(i).toFixed(1)} ${ry(v).toFixed(1)}`).join(" ");
+  const pricePath = pathFor(data.map(d => d.close), py, x);
+  const sma20Path = pathForNullable(sma20, py, x);
+  const sma50Path = pathForNullable(sma50, py, x);
+  const sma200Path = pathForNullable(sma200, py, x);
+  const ema9Path = pathForNullable(ema9, py, x);
+  const ema21Path = pathForNullable(ema21, py, x);
+  const vwapPath = pathForNullable(vwap, py, x);
+  const bollUpperPath = pathForNullable(bollUpper, py, x);
+  const bollLowerPath = pathForNullable(bollLower, py, x);
+  const rsiPanelIndex = 0;
+  const macdPanelIndex = (showRsi ? 1 : 0);
+  const atrPanelIndex = (showRsi ? 1 : 0) + (showMacd ? 1 : 0);
+  const rsiTop = panelY(rsiPanelIndex);
+  const macdTop = panelY(macdPanelIndex);
+  const atrTop = panelY(atrPanelIndex);
+  const rsiPath = pathFor(rsi, (v) => panelScale(v, 0, 100, rsiTop), x);
+  const macdMin = Math.min(...macd), macdMax = Math.max(...macd);
+  const atrMin = Math.min(...atr), atrMax = Math.max(...atr);
+  const macdPath = pathFor(macd, (v) => panelScale(v, macdMin, macdMax, macdTop), x);
+  const atrPath = pathFor(atr, (v) => panelScale(v, atrMin, atrMax, atrTop), x);
 
   const gridPrices = Array.from({ length: 5 }, (_, i) => pMin + (pMax - pMin) * (i / 4));
 
@@ -319,21 +362,33 @@ function TechnicalChart({ data, support, resistance, isUp }: { data: PricePoint[
       ))}
 
       {/* Support / Resistance */}
-      <line x1={PL} x2={W - PR} y1={sy} y2={sy} stroke="hsl(var(--success))" strokeOpacity="0.5" strokeDasharray="6 6" />
-      <text x={PL + 4} y={sy - 5} fill="hsl(var(--success))" fillOpacity="0.8" fontSize="9" fontFamily="var(--app-font-mono)">S {fmtCurrency(support)}</text>
-      <line x1={PL} x2={W - PR} y1={ry2} y2={ry2} stroke="hsl(var(--destructive))" strokeOpacity="0.5" strokeDasharray="6 6" />
-      <text x={PL + 4} y={ry2 - 5} fill="hsl(var(--destructive))" fillOpacity="0.8" fontSize="9" fontFamily="var(--app-font-mono)">R {fmtCurrency(resistance)}</text>
-
-      {/* MA gradient fill */}
-      {maPath && (
-        <path
-          d={`${maPath} L ${x(data.length - 1)} ${PT + PH} L ${x(ma.findIndex((m) => m != null))} ${PT + PH} Z`}
-          fill="url(#maGrad)"
-        />
+      {settings.showSupportResistanceLines && (
+        <>
+          <line x1={PL} x2={W - PR} y1={sy} y2={sy} stroke="hsl(var(--success))" strokeOpacity="0.5" strokeDasharray="6 6" />
+          <text x={PL + 4} y={sy - 5} fill="hsl(var(--success))" fillOpacity="0.8" fontSize="9" fontFamily="var(--app-font-mono)">S {fmtCurrency(support)}</text>
+          <line x1={PL} x2={W - PR} y1={ry2} y2={ry2} stroke="hsl(var(--destructive))" strokeOpacity="0.5" strokeDasharray="6 6" />
+          <text x={PL + 4} y={ry2 - 5} fill="hsl(var(--destructive))" fillOpacity="0.8" fontSize="9" fontFamily="var(--app-font-mono)">R {fmtCurrency(resistance)}</text>
+        </>
+      )}
+      {settings.show52WeekHighLowLines && stock.fiftyTwoWeekHigh > 0 && stock.fiftyTwoWeekLow > 0 && (
+        <>
+          <line x1={PL} x2={W - PR} y1={py(stock.fiftyTwoWeekHigh)} y2={py(stock.fiftyTwoWeekHigh)} stroke="rgba(255,255,255,0.18)" strokeDasharray="2 5" />
+          <line x1={PL} x2={W - PR} y1={py(stock.fiftyTwoWeekLow)} y2={py(stock.fiftyTwoWeekLow)} stroke="rgba(255,255,255,0.18)" strokeDasharray="2 5" />
+        </>
+      )}
+      {settings.showBollingerBands && bollUpperPath && bollLowerPath && (
+        <>
+          <path d={bollUpperPath} fill="none" stroke="rgba(255,255,255,0.25)" strokeWidth="1" strokeDasharray="4 5" />
+          <path d={bollLowerPath} fill="none" stroke="rgba(255,255,255,0.25)" strokeWidth="1" strokeDasharray="4 5" />
+        </>
       )}
 
-      {/* Candles */}
-      {data.map((d, i) => {
+      {settings.chartStyle === "area" && <path d={`${pricePath} L ${x(data.length - 1)} ${PT + PH} L ${x(0)} ${PT + PH} Z`} fill="url(#maGrad)" />}
+
+      {/* Price */}
+      {settings.chartStyle === "line" || settings.chartStyle === "area" ? (
+        <path d={pricePath} fill="none" stroke={isUp ? "hsl(var(--success))" : "hsl(var(--destructive))"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      ) : data.map((d, i) => {
         const bull = d.close >= d.open;
         const cx = x(i);
         const oy = py(d.open), cy2 = py(d.close), hy = py(d.high), ly = py(d.low);
@@ -343,28 +398,75 @@ function TechnicalChart({ data, support, resistance, isUp }: { data: PricePoint[
         return (
           <g key={i} opacity={0.9}>
             <line x1={cx} x2={cx} y1={hy} y2={ly} stroke={col} strokeWidth="1" strokeOpacity="0.7" />
-            <rect x={cx - cw / 2} y={by} width={cw} height={bh} rx="1" fill={col} fillOpacity={bull ? 0.75 : 0.8} />
-            <rect x={cx - cw / 2} y={vy(d.volume)} width={cw} height={VT + VH - vy(d.volume)} fill={col} fillOpacity="0.18" />
+            {settings.chartStyle === "ohlc" ? (
+              <>
+                <line x1={cx - cw / 2} x2={cx} y1={oy} y2={oy} stroke={col} strokeWidth="1" />
+                <line x1={cx} x2={cx + cw / 2} y1={cy2} y2={cy2} stroke={col} strokeWidth="1" />
+              </>
+            ) : (
+              <rect x={cx - cw / 2} y={by} width={cw} height={bh} rx="1" fill={col} fillOpacity={bull ? 0.75 : 0.8} />
+            )}
+            {settings.showVolumeOnChart && <rect x={cx - cw / 2} y={vy(d.volume)} width={cw} height={VT + VH - vy(d.volume)} fill={col} fillOpacity="0.18" />}
           </g>
         );
       })}
 
-      {/* MA line */}
-      {maPath && <path d={maPath} fill="none" stroke="hsl(var(--primary))" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" opacity="0.9" />}
+      {/* Indicator lines */}
+      {settings.showSMA20 && sma20Path && <path d={sma20Path} fill="none" stroke={settings.sma20Color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />}
+      {settings.showSMA50 && sma50Path && <path d={sma50Path} fill="none" stroke={settings.sma50Color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />}
+      {settings.showSMA200 && sma200Path && <path d={sma200Path} fill="none" stroke={settings.sma200Color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />}
+      {settings.showEMA9 && ema9Path && <path d={ema9Path} fill="none" stroke={settings.ema9Color} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="3 4" />}
+      {settings.showEMA21 && ema21Path && <path d={ema21Path} fill="none" stroke={settings.ema21Color} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="3 4" />}
+      {settings.showVWAPLine && vwapPath && <path d={vwapPath} fill="none" stroke={settings.vwapColor} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="5 5" />}
 
       {/* Volume label */}
-      <line x1={PL} x2={W - PR} y1={VT} y2={VT} stroke="rgba(255,255,255,0.06)" />
-      <text x={PL} y={VT - 5} fill="rgba(255,255,255,0.3)" fontSize="8.5" fontFamily="var(--app-font-sans)">Vol</text>
+      {settings.showVolumeOnChart && (
+        <>
+          <line x1={PL} x2={W - PR} y1={VT} y2={VT} stroke="rgba(255,255,255,0.06)" />
+          <text x={PL} y={VT - 5} fill="rgba(255,255,255,0.3)" fontSize="8.5" fontFamily="var(--app-font-sans)">Vol</text>
+        </>
+      )}
 
       {/* RSI */}
-      <rect x={PL} y={RT} width={CW} height={RH} fill="rgba(255,255,255,0.018)" rx="3" />
-      <line x1={PL} x2={W - PR} y1={ry(rsiOverbought)} y2={ry(rsiOverbought)} stroke="hsl(var(--destructive))" strokeOpacity="0.22" strokeDasharray="4 5" />
-      <line x1={PL} x2={W - PR} y1={ry(rsiOversold)} y2={ry(rsiOversold)} stroke="hsl(var(--success))" strokeOpacity="0.22" strokeDasharray="4 5" />
-      <path d={rsiPath} fill="none" stroke="hsl(262 80% 65%)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.85" />
-      <text x={PL} y={RT - 5} fill="rgba(255,255,255,0.3)" fontSize="8.5" fontFamily="var(--app-font-sans)">RSI</text>
+      {showRsi && (
+        <>
+          <rect x={PL} y={rsiTop} width={CW} height={indicatorHeight} fill="rgba(255,255,255,0.018)" rx="3" />
+          <line x1={PL} x2={W - PR} y1={panelScale(rsiOverbought, 0, 100, rsiTop)} y2={panelScale(rsiOverbought, 0, 100, rsiTop)} stroke="hsl(var(--destructive))" strokeOpacity="0.22" strokeDasharray="4 5" />
+          <line x1={PL} x2={W - PR} y1={panelScale(rsiOversold, 0, 100, rsiTop)} y2={panelScale(rsiOversold, 0, 100, rsiTop)} stroke="hsl(var(--success))" strokeOpacity="0.22" strokeDasharray="4 5" />
+          <path d={rsiPath} fill="none" stroke="hsl(262 80% 65%)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.85" />
+          <text x={PL} y={rsiTop - 5} fill="rgba(255,255,255,0.3)" fontSize="8.5" fontFamily="var(--app-font-sans)">RSI</text>
+        </>
+      )}
+      {showMacd && (
+        <>
+          <rect x={PL} y={macdTop} width={CW} height={indicatorHeight} fill="rgba(255,255,255,0.018)" rx="3" />
+          <path d={macdPath} fill="none" stroke="hsl(var(--primary))" strokeWidth="1.4" />
+          <text x={PL} y={macdTop - 5} fill="rgba(255,255,255,0.3)" fontSize="8.5" fontFamily="var(--app-font-sans)">MACD</text>
+        </>
+      )}
+      {showAtr && (
+        <>
+          <rect x={PL} y={atrTop} width={CW} height={indicatorHeight} fill="rgba(255,255,255,0.018)" rx="3" />
+          <path d={atrPath} fill="none" stroke="hsl(38 92% 50%)" strokeWidth="1.4" />
+          <text x={PL} y={atrTop - 5} fill="rgba(255,255,255,0.3)" fontSize="8.5" fontFamily="var(--app-font-sans)">ATR</text>
+        </>
+      )}
 
       {/* Current price marker */}
-      <line x1={x(data.length - 1)} x2={x(data.length - 1)} y1={PT} y2={RT + RH} stroke="rgba(255,255,255,0.08)" />
+      {settings.showEarningsMarkersOnChart && stock.earningsDate && stock.earningsDate !== "TBD" && (
+        <line x1={W - PR - 34} x2={W - PR - 34} y1={PT} y2={PT + PH} stroke="hsl(38 92% 50%)" strokeOpacity="0.38" strokeDasharray="4 5" />
+      )}
+      {settings.showStrategyPriceLevels && (
+        <>
+          <line x1={PL} x2={W - PR} y1={py(last.close * 1.08)} y2={py(last.close * 1.08)} stroke="hsl(var(--primary))" strokeOpacity="0.22" strokeDasharray="8 6" />
+          <line x1={PL} x2={W - PR} y1={py(last.close * 0.94)} y2={py(last.close * 0.94)} stroke="hsl(var(--destructive))" strokeOpacity="0.22" strokeDasharray="8 6" />
+        </>
+      )}
+      {settings.showBreakevenLines && <line x1={PL} x2={W - PR} y1={py(last.close)} y2={py(last.close)} stroke="rgba(255,255,255,0.20)" strokeDasharray="3 5" />}
+      {settings.showPositionPnlOverlay && (
+        <text x={PL + 4} y={PT + 12} fill="rgba(255,255,255,0.45)" fontSize="9" fontFamily="var(--app-font-sans)">Position P&L overlay ready</text>
+      )}
+      <line x1={x(data.length - 1)} x2={x(data.length - 1)} y1={PT} y2={indicatorCount ? indicatorTop + indicatorCount * indicatorHeight : PT + PH} stroke="rgba(255,255,255,0.08)" />
       <circle cx={x(data.length - 1)} cy={py(last.close)} r="3.5" fill="hsl(var(--primary))" />
       <rect x={W - PR + 3} y={py(last.close) - 10} width={52} height={20} rx="5" fill="hsl(var(--primary))" fillOpacity="0.15" />
       <text x={W - PR + 11} y={py(last.close) + 4} fill="hsl(var(--primary))" fontSize="9.5" fontFamily="var(--app-font-mono)">{fmtCurrency(last.close)}</text>
@@ -377,6 +479,55 @@ function movingAverage(vals: number[], w: number) {
     if (i < w - 1) return null;
     return vals.slice(i - w + 1, i + 1).reduce((s, v) => s + v, 0) / w;
   });
+}
+
+function emaSeries(vals: number[], w: number) {
+  const k = 2 / (w + 1);
+  let ema = vals[0] ?? 0;
+  return vals.map((v, i) => {
+    ema = i === 0 ? v : v * k + ema * (1 - k);
+    return ema;
+  });
+}
+
+function vwapSeries(data: PricePoint[]) {
+  let pv = 0;
+  let vol = 0;
+  return data.map((d) => {
+    const typical = (d.high + d.low + d.close) / 3;
+    pv += typical * d.volume;
+    vol += d.volume;
+    return vol > 0 ? pv / vol : d.close;
+  });
+}
+
+function stddev(vals: number[]) {
+  if (vals.length === 0) return 0;
+  const mean = vals.reduce((sum, value) => sum + value, 0) / vals.length;
+  return Math.sqrt(vals.reduce((sum, value) => sum + (value - mean) ** 2, 0) / vals.length);
+}
+
+function macdSeries(vals: number[]) {
+  const ema12 = emaSeries(vals, Math.min(12, Math.max(2, vals.length)));
+  const ema26 = emaSeries(vals, Math.min(26, Math.max(2, vals.length)));
+  return vals.map((_, i) => (ema12[i] ?? 0) - (ema26[i] ?? 0));
+}
+
+function atrSeries(data: PricePoint[]) {
+  return data.map((d, i) => {
+    const prevClose = data[i - 1]?.close ?? d.close;
+    return Math.max(d.high - d.low, Math.abs(d.high - prevClose), Math.abs(d.low - prevClose));
+  });
+}
+
+function pathFor(vals: number[], y: (value: number) => number, x: (index: number) => number) {
+  return vals.map((value, i) => `${i === 0 ? "M" : "L"} ${x(i).toFixed(1)} ${y(value).toFixed(1)}`).join(" ");
+}
+
+function pathForNullable(vals: Array<number | null>, y: (value: number) => number, x: (index: number) => number) {
+  const first = vals.findIndex(value => value != null);
+  if (first < 0) return "";
+  return vals.map((value, i) => value == null ? null : `${i === first ? "M" : "L"} ${x(i).toFixed(1)} ${y(value).toFixed(1)}`).filter(Boolean).join(" ");
 }
 
 function rsiCalc(vals: number[]) {

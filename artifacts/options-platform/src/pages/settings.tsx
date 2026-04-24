@@ -251,12 +251,35 @@ const CATEGORIES: CategoryDef[] = [
     icon: <TrendingUp size={14} />,
     description: "Default chart style, indicators, and technical analysis display preferences.",
     settings: [
-      { key: "chartStyle", label: "Chart style", type: "select", default: "line", options: [{ label: "Line", value: "line" }, { label: "Area", value: "area" }, { label: "Candlestick", value: "candlestick" }] },
-      { key: "candleInterval", label: "Default candle interval", type: "select", default: "1D", options: [{ label: "1 minute", value: "1m" }, { label: "5 minutes", value: "5m" }, { label: "15 minutes", value: "15m" }, { label: "1 hour", value: "1H" }, { label: "1 day", value: "1D" }] },
-      { key: "defaultChartIndicators", label: "Default indicators", description: "Indicators pre-loaded when opening a chart", type: "multiselect", default: ["SMA20", "SMA50"], options: [{ label: "SMA 20", value: "SMA20" }, { label: "SMA 50", value: "SMA50" }, { label: "SMA 200", value: "SMA200" }, { label: "EMA 20", value: "EMA20" }, { label: "VWAP", value: "VWAP" }, { label: "Bollinger Bands", value: "BB" }, { label: "RSI", value: "RSI" }, { label: "MACD", value: "MACD" }] },
-      { key: "showVolumeOnChart", label: "Show volume bars", description: "Display volume histogram below the price chart", type: "toggle", default: true },
-      { key: "rsiOverbought", label: "RSI overbought line", description: "Red dashed threshold on the RSI panel", type: "slider", default: 70, min: 60, max: 85 },
-      { key: "rsiOversold", label: "RSI oversold line", description: "Green dashed threshold on the RSI panel", type: "slider", default: 30, min: 15, max: 40 },
+      { key: "defaultChartPeriod", label: "Default chart timeframe", type: "select", default: "1M", options: [{ label: "1D", value: "1D" }, { label: "1W", value: "1W" }, { label: "1M", value: "1M" }, { label: "3M", value: "3M" }, { label: "6M", value: "6M" }, { label: "1Y", value: "1Y" }, { label: "2Y", value: "2Y" }] },
+      { key: "chartStyle", label: "Default chart type", type: "select", default: "candlestick", options: [{ label: "Candlestick", value: "candlestick" }, { label: "Line", value: "line" }, { label: "OHLC", value: "ohlc" }, { label: "Area", value: "area" }] },
+      { key: "chartHeight", label: "Default chart height", type: "select", default: "normal", options: [{ label: "Compact", value: "compact" }, { label: "Normal", value: "normal" }, { label: "Expanded", value: "expanded" }] },
+      { key: "autoFitChartToPrice", label: "Auto-fit chart to price range on load", type: "toggle", default: true },
+      { key: "showSMA20", label: "Show SMA20", type: "toggle", default: true },
+      { key: "sma20Color", label: "SMA20 color", type: "select", default: "#60a5fa", options: [] },
+      { key: "showSMA50", label: "Show SMA50", type: "toggle", default: true },
+      { key: "sma50Color", label: "SMA50 color", type: "select", default: "#f59e0b", options: [] },
+      { key: "showSMA200", label: "Show SMA200", type: "toggle", default: true },
+      { key: "sma200Color", label: "SMA200 color", type: "select", default: "#a78bfa", options: [] },
+      { key: "showEMA9", label: "Show EMA9", type: "toggle", default: false },
+      { key: "ema9Color", label: "EMA9 color", type: "select", default: "#22c55e", options: [] },
+      { key: "showEMA21", label: "Show EMA21", type: "toggle", default: false },
+      { key: "ema21Color", label: "EMA21 color", type: "select", default: "#f97316", options: [] },
+      { key: "showVolumeOnChart", label: "Show volume bars", type: "toggle", default: true },
+      { key: "showVWAPLine", label: "Show VWAP line", type: "toggle", default: true },
+      { key: "vwapColor", label: "VWAP color", type: "select", default: "#14b8a6", options: [] },
+      { key: "showSupportResistanceLines", label: "Show support/resistance lines", type: "toggle", default: true },
+      { key: "showBollingerBands", label: "Show Bollinger Bands", type: "toggle", default: false },
+      { key: "showRsiPanel", label: "RSI panel — show by default", type: "toggle", default: true },
+      { key: "rsiOverbought", label: "RSI overbought threshold", description: "Red dashed threshold on the RSI panel", type: "slider", default: 70, min: 60, max: 90 },
+      { key: "rsiOversold", label: "RSI oversold threshold", description: "Green dashed threshold on the RSI panel", type: "slider", default: 30, min: 10, max: 40 },
+      { key: "showMacdPanel", label: "MACD panel — show by default", type: "toggle", default: false },
+      { key: "showAtrPanel", label: "ATR panel — show by default", type: "toggle", default: false },
+      { key: "show52WeekHighLowLines", label: "Show 52-week high/low lines", type: "toggle", default: true },
+      { key: "showEarningsMarkersOnChart", label: "Show earnings date markers on chart", type: "toggle", default: true },
+      { key: "showStrategyPriceLevels", label: "Show entry/target/stop price levels from strategy", type: "toggle", default: true },
+      { key: "showPositionPnlOverlay", label: "Show current position P&L overlay on chart", type: "toggle", default: true },
+      { key: "showBreakevenLines", label: "Show breakeven lines on chart", type: "toggle", default: true },
     ],
   },
   {
@@ -1179,6 +1202,126 @@ function TimeHorizonPanel({
   );
 }
 
+const CHART_SECTION_SLICES = [
+  { label: "Default Chart Settings", start: 0, end: 4 },
+  { label: "Moving Averages", start: 4, end: 14 },
+  { label: "Indicators", start: 14, end: 24 },
+  { label: "Price Levels", start: 24, end: 27 },
+  { label: "P&L Overlay", start: 27, end: 29 },
+] as const;
+
+const CHART_COLOR_OPTIONS = ["#60a5fa", "#f59e0b", "#a78bfa", "#22c55e", "#f97316", "#14b8a6", "#ef4444", "#eab308"];
+
+function ColorPicker({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  return (
+    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end", maxWidth: 180 }}>
+      {CHART_COLOR_OPTIONS.map(color => (
+        <button
+          key={color}
+          type="button"
+          onClick={() => onChange(color)}
+          title={color}
+          style={{
+            width: 22,
+            height: 22,
+            borderRadius: 5,
+            border: value === color ? "2px solid hsl(var(--foreground))" : "1px solid rgba(255,255,255,0.15)",
+            background: color,
+            cursor: "pointer",
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+function ChartPreview({ settings }: { settings: AppSettings }) {
+  const line = "M 0 46 C 30 28, 52 32, 82 20 S 140 32, 176 14 S 230 24, 278 8";
+  return (
+    <div style={{ border: "1px solid rgba(255,255,255,0.07)", borderRadius: 8, background: "rgba(255,255,255,0.02)", padding: 14 }}>
+      <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 10 }}>Preview</div>
+      <svg viewBox="0 0 280 96" width="100%" style={{ display: "block", borderRadius: 6, background: "rgba(0,0,0,0.32)" }}>
+        {[20, 48, 76].map(y => <line key={y} x1="0" x2="280" y1={y} y2={y} stroke="rgba(255,255,255,0.06)" />)}
+        {settings.showBollingerBands && <path d="M 0 30 C 45 18, 70 26, 100 14 S 160 24, 190 10 S 240 18, 278 6" fill="none" stroke="rgba(255,255,255,0.18)" strokeDasharray="4 5" />}
+        {settings.chartStyle === "area" && <path d={`${line} L 278 80 L 0 80 Z`} fill="hsl(var(--primary) / 0.18)" />}
+        {settings.chartStyle === "line" || settings.chartStyle === "area" ? (
+          <path d={line} fill="none" stroke="hsl(var(--primary))" strokeWidth="2" />
+        ) : (
+          Array.from({ length: 18 }).map((_, i) => {
+            const x = 12 + i * 14;
+            const high = 20 + ((i * 7) % 24);
+            const low = high + 28;
+            const open = high + 8 + (i % 3) * 3;
+            const close = high + 13 + ((i + 1) % 3) * 3;
+            const up = close < open;
+            return (
+              <g key={i}>
+                <line x1={x} x2={x} y1={high} y2={low} stroke={up ? "hsl(var(--success))" : "hsl(var(--destructive))"} />
+                {settings.chartStyle === "ohlc" ? (
+                  <>
+                    <line x1={x - 5} x2={x} y1={open} y2={open} stroke={up ? "hsl(var(--success))" : "hsl(var(--destructive))"} />
+                    <line x1={x} x2={x + 5} y1={close} y2={close} stroke={up ? "hsl(var(--success))" : "hsl(var(--destructive))"} />
+                  </>
+                ) : (
+                  <rect x={x - 4} y={Math.min(open, close)} width="8" height={Math.max(2, Math.abs(open - close))} rx="1" fill={up ? "hsl(var(--success))" : "hsl(var(--destructive))"} />
+                )}
+              </g>
+            );
+          })
+        )}
+        {settings.showSMA20 && <path d="M 0 50 C 60 42, 100 44, 150 28 S 220 30, 280 18" fill="none" stroke={settings.sma20Color} strokeWidth="1.6" />}
+        {settings.showSMA50 && <path d="M 0 58 C 70 50, 120 54, 168 38 S 230 42, 280 30" fill="none" stroke={settings.sma50Color} strokeWidth="1.6" />}
+        {settings.showSMA200 && <path d="M 0 68 C 80 62, 150 60, 280 48" fill="none" stroke={settings.sma200Color} strokeWidth="1.6" />}
+        {settings.showVWAPLine && <path d="M 0 42 L 280 36" fill="none" stroke={settings.vwapColor} strokeWidth="1.4" strokeDasharray="5 5" />}
+        {settings.showSupportResistanceLines && (
+          <>
+            <line x1="0" x2="280" y1="72" y2="72" stroke="hsl(var(--success))" strokeDasharray="5 5" opacity="0.5" />
+            <line x1="0" x2="280" y1="16" y2="16" stroke="hsl(var(--destructive))" strokeDasharray="5 5" opacity="0.5" />
+          </>
+        )}
+      </svg>
+    </div>
+  );
+}
+
+function ChartAnalysisPanel({
+  settings,
+  onChange,
+  onReset,
+}: {
+  settings: AppSettings;
+  onChange: (key: string, value: unknown) => void;
+  onReset: () => void;
+}) {
+  const chartSettings = CATEGORIES.find(category => category.id === "chartAnalysis")!.settings;
+  const colorKeys = new Set(["sma20Color", "sma50Color", "sma200Color", "ema9Color", "ema21Color", "vwapColor"]);
+
+  return (
+    <div style={{ paddingTop: 8, display: "grid", gap: 24 }}>
+      <ChartPreview settings={settings} />
+      {CHART_SECTION_SLICES.map(section => (
+        <div key={section.label}>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: "hsl(var(--muted-foreground))", textTransform: "uppercase" }}>{section.label}</div>
+          {chartSettings.slice(section.start, section.end).map(setting => colorKeys.has(setting.key) ? (
+            <div key={setting.key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 24, padding: "14px 0", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+              <div style={{ fontSize: 13, fontWeight: 500 }}>{setting.label}</div>
+              <ColorPicker value={String(settings[setting.key as keyof AppSettings] ?? SETTING_DEFAULTS[setting.key as keyof AppSettings])} onChange={value => onChange(setting.key, value)} />
+            </div>
+          ) : (
+            <SettingRow key={setting.key} setting={setting} value={settings[setting.key as keyof AppSettings]} onChange={onChange} />
+          ))}
+        </div>
+      ))}
+      <ActionRow
+        label="Reset to Defaults"
+        description="Restore every Chart & Analysis option to its default value"
+        icon={<RotateCcw size={13} />}
+        onClick={onReset}
+      />
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const isMobile = useIsMobile();
   const [activeCategory, setActiveCategory] = useState("general");
@@ -1331,6 +1474,14 @@ export default function SettingsPage() {
               />
             )}
 
+            {activeCategory === "chartAnalysis" && (
+              <ChartAnalysisPanel
+                settings={settings}
+                onChange={handleChange}
+                onReset={() => handleResetCategory(activeCategoryDef)}
+              />
+            )}
+
             {activeCategory === "security" && (
               <div style={{ paddingTop: 8 }}>
                 {activeCategoryDef.settings.map(s => (
@@ -1364,7 +1515,7 @@ export default function SettingsPage() {
             )}
 
             {/* All other categories */}
-            {activeCategory !== "security" && activeCategory !== "data" && activeCategory !== "strategy" && activeCategory !== "risk" && activeCategory !== "timeHorizon" && (
+            {activeCategory !== "security" && activeCategory !== "data" && activeCategory !== "strategy" && activeCategory !== "risk" && activeCategory !== "timeHorizon" && activeCategory !== "chartAnalysis" && (
               <div style={{ paddingTop: 8 }}>
                 {activeCategoryDef.settings.map(s => (
                   <SettingRow key={s.key} setting={s} value={settings[s.key as keyof AppSettings]} onChange={handleChange} />

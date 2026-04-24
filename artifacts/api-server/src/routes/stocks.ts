@@ -14,10 +14,11 @@ import {
   getPriceHistory,
   getQuote,
 } from "../lib/market-data.js";
-import { isPolygonEnabled } from "../lib/polygon.js";
+import { chartPeriodToPolygonDays, getPolygonBars, isPolygonEnabled } from "../lib/polygon.js";
 import { scanOpportunity } from "../lib/scanner.js";
 import { quoteToStock, rankTier, screenerRowToStock } from "../lib/stock-response.js";
 import { computeSignals } from "../lib/technical-analysis.js";
+import { db, userSettingsTable } from "@workspace/db";
 import {
   getMarketMetrics,
   isTastytradeAuthorized,
@@ -31,6 +32,12 @@ import {
 } from "./screener.js";
 
 const router: IRouter = Router();
+
+async function getDefaultChartPeriod(): Promise<string> {
+  const rows = await db.select().from(userSettingsTable);
+  const period = rows.find((row) => row.key === "defaultChartPeriod")?.value;
+  return typeof period === "string" ? period : "1M";
+}
 
 router.get("/stocks", async (req, res): Promise<void> => {
   const query = ListStocksQueryParams.safeParse(req.query);
@@ -231,14 +238,23 @@ router.get("/stocks/:symbol/price-history", async (req, res): Promise<void> => {
     return;
   }
 
-  const query = GetStockPriceHistoryQueryParams.safeParse(req.query);
-  const period = query.success ? (query.data.period ?? "3M") : "3M";
   const symbol = (
     Array.isArray(params.data.symbol) ? params.data.symbol[0] : params.data.symbol
   ).toUpperCase();
 
   try {
-    const history = await getPriceHistory(symbol, period);
+    const query = GetStockPriceHistoryQueryParams.safeParse(req.query);
+    const period = query.success && req.query.period ? query.data.period : await getDefaultChartPeriod();
+    const history = isPolygonEnabled()
+      ? (await getPolygonBars(symbol, chartPeriodToPolygonDays(period))).map((bar) => ({
+          date: bar.date,
+          open: bar.open,
+          high: bar.high,
+          low: bar.low,
+          close: bar.close,
+          volume: bar.volume,
+        }))
+      : await getPriceHistory(symbol, period);
     res.json(GetStockPriceHistoryResponse.parse(history));
   } catch (err: any) {
     res.status(500).json({ error: `Failed to fetch price history: ${err.message}` });

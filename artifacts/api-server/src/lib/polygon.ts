@@ -255,6 +255,19 @@ export async function getPolygonBars(symbol: string, days = 90): Promise<Polygon
   }
 }
 
+export function chartPeriodToPolygonDays(period: string): number {
+  switch (period) {
+    case "1D": return 5;
+    case "1W": return 14;
+    case "1M": return 45;
+    case "3M": return 120;
+    case "6M": return 220;
+    case "1Y": return 420;
+    case "2Y": return 760;
+    default: return 90;
+  }
+}
+
 // ─── Trading calendar ───────────────────────────────────────────────────────────
 
 function getEaster(year: number): Date {

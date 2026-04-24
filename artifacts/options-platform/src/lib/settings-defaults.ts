@@ -185,6 +185,30 @@ export interface AppSettings {
   defaultChartIndicators: string[];
   showVolumeOnChart: boolean;
   candleInterval: string;
+  chartHeight: string;
+  autoFitChartToPrice: boolean;
+  showSMA20: boolean;
+  sma20Color: string;
+  showSMA50: boolean;
+  sma50Color: string;
+  showSMA200: boolean;
+  sma200Color: string;
+  showEMA9: boolean;
+  ema9Color: string;
+  showEMA21: boolean;
+  ema21Color: string;
+  showVWAPLine: boolean;
+  vwapColor: string;
+  showSupportResistanceLines: boolean;
+  showBollingerBands: boolean;
+  showRsiPanel: boolean;
+  showMacdPanel: boolean;
+  showAtrPanel: boolean;
+  show52WeekHighLowLines: boolean;
+  showEarningsMarkersOnChart: boolean;
+  showStrategyPriceLevels: boolean;
+  showPositionPnlOverlay: boolean;
+  showBreakevenLines: boolean;
   // Watchlist
   watchlistDefaultSort: string;
   watchlistShowIVRank: boolean;
@@ -337,7 +361,7 @@ export const SETTING_DEFAULTS: AppSettings = {
   theme: "dark",
   uiDensity: "comfortable",
   fontSize: "medium",
-  chartStyle: "line",
+  chartStyle: "candlestick",
   animateTransitions: true,
   showMiniCharts: false,
   tableRowHeight: "default",
@@ -381,6 +405,30 @@ export const SETTING_DEFAULTS: AppSettings = {
   defaultChartIndicators: ["SMA20", "SMA50"],
   showVolumeOnChart: true,
   candleInterval: "1D",
+  chartHeight: "normal",
+  autoFitChartToPrice: true,
+  showSMA20: true,
+  sma20Color: "#60a5fa",
+  showSMA50: true,
+  sma50Color: "#f59e0b",
+  showSMA200: true,
+  sma200Color: "#a78bfa",
+  showEMA9: false,
+  ema9Color: "#22c55e",
+  showEMA21: false,
+  ema21Color: "#f97316",
+  showVWAPLine: true,
+  vwapColor: "#14b8a6",
+  showSupportResistanceLines: true,
+  showBollingerBands: false,
+  showRsiPanel: true,
+  showMacdPanel: false,
+  showAtrPanel: false,
+  show52WeekHighLowLines: true,
+  showEarningsMarkersOnChart: true,
+  showStrategyPriceLevels: true,
+  showPositionPnlOverlay: true,
+  showBreakevenLines: true,
   // Watchlist
   watchlistDefaultSort: "symbol",
   watchlistShowIVRank: true,

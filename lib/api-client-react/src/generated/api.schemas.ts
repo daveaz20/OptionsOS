@@ -253,6 +253,7 @@ export const GetStockPriceHistoryPeriod = {
   "3M": "3M",
   "6M": "6M",
   "1Y": "1Y",
+  "2Y": "2Y",
 } as const;
 
 export type GetStrategiesParams = {

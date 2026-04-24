@@ -266,6 +266,7 @@ function periodToYahoo(period: string): { interval: "1d" | "1wk" | "1mo"; period
     case "3M":   return { interval: "1d",  period1: ago(180) };
     case "6M":   return { interval: "1d",  period1: ago(365) };
     case "1Y":   return { interval: "1wk", period1: ago(730) };
+    case "2Y":   return { interval: "1wk", period1: ago(1095) };
     // TECH: ~410 daily bars — enough for SMA200 + proper MACD/RSI warm-up
     case "TECH": return { interval: "1d",  period1: ago(580) };
     default:     return { interval: "1d",  period1: ago(180) };
