@@ -39,6 +39,12 @@ async function getDefaultChartPeriod(): Promise<string> {
   return typeof period === "string" ? period : "1M";
 }
 
+async function getIvRankCalculationPeriod(): Promise<string> {
+  const rows = await db.select().from(userSettingsTable);
+  const period = rows.find((row) => row.key === "ivRankCalculationPeriod")?.value;
+  return period === "30D" || period === "60D" || period === "1Y" ? period : "1Y";
+}
+
 router.get("/stocks", async (req, res): Promise<void> => {
   const query = ListStocksQueryParams.safeParse(req.query);
   if (!query.success) {
@@ -47,6 +53,7 @@ router.get("/stocks", async (req, res): Promise<void> => {
   }
 
   const { search, limit } = query.data;
+  const ivRankCalculationPeriod = await getIvRankCalculationPeriod();
 
   if (isPolygonEnabled()) {
     await ensureScreenerReady();
@@ -85,7 +92,7 @@ router.get("/stocks", async (req, res): Promise<void> => {
         try {
           const [history, hv] = await Promise.all([
             getPriceHistory(quote.symbol, "TECH"),
-            getHistoricalVolatility(quote.symbol),
+            getHistoricalVolatility(quote.symbol, ivRankCalculationPeriod),
           ]);
           const signals = computeSignals(history, quote.price);
           const dte = daysUntilEarnings(quote.earningsDate);
@@ -198,10 +205,11 @@ router.get("/stocks/:symbol", async (req, res): Promise<void> => {
       }
     }
 
+    const ivRankCalculationPeriod = await getIvRankCalculationPeriod();
     const [quote, history, hv] = await Promise.all([
       getQuote(symbol),
       getPriceHistory(symbol, "TECH"),
-      getHistoricalVolatility(symbol),
+      getHistoricalVolatility(symbol, ivRankCalculationPeriod),
     ]);
 
     const signals = computeSignals(history, quote.price);

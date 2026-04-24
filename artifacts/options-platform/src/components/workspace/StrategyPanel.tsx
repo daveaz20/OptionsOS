@@ -296,7 +296,7 @@ function StrategyDetail({
       <div style={{ padding: "10px 10px 8px" }}>
         <PayoffDiagram legs={strategy.legs} currentPrice={currentPrice} />
       </div>
-      {settings.showThetaDecayChart && (
+      {settings.showThetaDecayCurve && (
         <ThetaDecayChart dte={dte} closeDte={settings.thetaCloseDTE} profitTarget={settings.thetaCloseProfitPct} />
       )}
 
@@ -310,6 +310,7 @@ function StrategyDetail({
           },
           { label: "Max reward",  value: formatCurrency(strategy.maxProfit * contracts), color: strategy.maxProfit >= 0 ? "hsl(var(--success))" : "hsl(var(--destructive))" },
           { label: "Max risk",    value: formatCurrency(Math.abs(strategy.maxLoss) * contracts), color: "hsl(var(--destructive))" },
+          ...(settings.showDailyThetaDecay ? [{ label: "Theta / day", value: settings.showThetaAsDollarsPerDay ? formatCurrency((strategy.tradeCost / Math.max(1, dte)) * contracts) : ((strategy.tradeCost / Math.max(1, dte))).toFixed(settings.greeksPrecision), color: dte <= settings.thetaDecayWarningThresholdDte ? "hsl(38 92% 50%)" : "hsl(var(--foreground))" }] : []),
           ...(settings.showProbabilityOfProfit ? [{ label: "POP", value: `${pop}%`, color: pop >= 60 ? "hsl(var(--success))" : "hsl(var(--foreground))" }] : []),
           { label: "Breakeven",   value: formatCurrency(strategy.breakeven), color: "hsl(var(--foreground))" },
           { label: "Days to exp", value: `${dte}`, color: "hsl(var(--foreground))" },
@@ -594,6 +595,7 @@ function ExistingPositionBanner({
   position: AccountPosition;
   onUseEntryPrice: (price: number) => void;
 }) {
+  const { settings } = useSettings();
   const isUp = position.totalPnl >= 0;
   const pnlColor = isUp ? "hsl(var(--success))" : "hsl(var(--destructive))";
   // Average entry price across all legs (weighted by quantity)
@@ -638,19 +640,22 @@ function ExistingPositionBanner({
           </div>
         </div>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 6, paddingTop: 7, borderTop: "1px solid rgba(255,255,255,0.06)", marginBottom: 8 }}>
-        {[
-          { label: "Δ", value: (position.greeks.delta >= 0 ? "+" : "") + position.greeks.delta.toFixed(3) },
-          { label: "Θ", value: formatCurrency(position.greeks.theta) + "/d" },
-          { label: "Γ", value: position.greeks.gamma.toFixed(4) },
-          { label: "V", value: formatCurrency(position.greeks.vega) },
-        ].map((g, i) => (
-          <div key={i}>
-            <div style={{ fontSize: 9, color: "hsl(var(--muted-foreground))" }}>{g.label}</div>
-            <div style={{ fontSize: 10.5, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{g.value}</div>
-          </div>
-        ))}
-      </div>
+      {settings.showPortfolioGreeksSummary && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(52px,1fr))", gap: 6, paddingTop: 7, borderTop: "1px solid rgba(255,255,255,0.06)", marginBottom: 8 }}>
+          {[
+            settings.showDelta ? { label: "Delta", value: (position.greeks.delta >= 0 ? "+" : "") + position.greeks.delta.toFixed(settings.greeksPrecision) } : null,
+            settings.showTheta ? { label: "Theta", value: settings.showThetaAsDollarsPerDay ? `${formatCurrency(position.greeks.theta)}/d` : position.greeks.theta.toFixed(settings.greeksPrecision) } : null,
+            settings.showGamma ? { label: "Gamma", value: position.greeks.gamma.toFixed(settings.greeksPrecision) } : null,
+            settings.showVega ? { label: "Vega", value: settings.greeksDisplayFormat === "perShare" ? position.greeks.vega.toFixed(settings.greeksPrecision) : formatCurrency(position.greeks.vega) } : null,
+            settings.showRho ? { label: "Rho", value: settings.greeksDisplayFormat === "perShare" ? (Number((position.greeks as any).rho ?? 0)).toFixed(settings.greeksPrecision) : formatCurrency(Number((position.greeks as any).rho ?? 0)) } : null,
+          ].filter(Boolean).map((g, i) => (
+            <div key={i}>
+              <div style={{ fontSize: 9, color: "hsl(var(--muted-foreground))" }}>{g!.label}</div>
+              <div style={{ fontSize: 10.5, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{g!.value}</div>
+            </div>
+          ))}
+        </div>
+      )}
       <button
         onClick={() => onUseEntryPrice(avgEntry)}
         style={{
@@ -852,6 +857,103 @@ function StrategyMatchList({ symbol, topStrategies }: { symbol: string; topStrat
 }
 
 // ── Main StrategyPanel ───────────────────────────────────────────────────
+function OptionsChainPreview({
+  chain,
+  currentPrice,
+}: {
+  chain: any;
+  currentPrice: number;
+}) {
+  const { settings } = useSettings();
+  if (!chain?.expirations?.length || currentPrice <= 0) return null;
+
+  const precision = settings.greeksPrecision;
+  const formatIv = (iv: number) => settings.ivDisplayFormat === "decimal" ? (iv / 100).toFixed(2) : `${Math.round(iv)}%`;
+  const formatDelta = (delta: number) => {
+    const value = Math.abs(delta);
+    if (settings.showDeltaAsProbabilityItm) return `${Math.round(value * 100)}% ITM`;
+    return delta.toFixed(precision);
+  };
+  const getTargetRange = (contract: any): [number, number] => {
+    if (contract.optionType === "put" && contract.delta < 0) return [settings.shortPutDeltaMin, settings.shortPutDeltaMax];
+    if (contract.optionType === "call" && contract.delta > 0) return [settings.shortCallDeltaMin, settings.shortCallDeltaMax];
+    return [settings.longOptionDeltaMin, settings.longOptionDeltaMax];
+  };
+
+  const expirations = chain.expirations.slice(0, Math.max(1, settings.defaultExpirationCount));
+  const rows = expirations.flatMap((expiry: any) => {
+    const contracts = [...(expiry.contracts ?? [])];
+    const strikes = [...new Set(contracts.map((contract: any) => Number(contract.strikePrice)))]
+      .filter(Number.isFinite)
+      .sort((a, b) => a - b);
+    const atmIndex = strikes.reduce((bestIndex, strike, index) =>
+      Math.abs(strike - currentPrice) < Math.abs(strikes[bestIndex]! - currentPrice) ? index : bestIndex,
+    0);
+    const allowedStrikes = new Set(strikes.slice(
+      Math.max(0, atmIndex - settings.chainStrikeRange),
+      Math.min(strikes.length, atmIndex + settings.chainStrikeRange + 1),
+    ));
+    return contracts
+      .filter((contract: any) => allowedStrikes.has(Number(contract.strikePrice)))
+      .sort((a: any, b: any) => a.strikePrice === b.strikePrice ? String(a.optionType).localeCompare(String(b.optionType)) : a.strikePrice - b.strikePrice)
+      .map((contract: any) => ({ ...contract, expiration: expiry.expiration, daysToExpiration: expiry.daysToExpiration }));
+  }).slice(0, Math.max(8, settings.defaultExpirationCount * (settings.chainStrikeRange * 2 + 1) * 2));
+
+  if (rows.length === 0) return null;
+
+  return (
+    <div style={{ marginTop: 12, border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8, overflow: "hidden", background: "rgba(255,255,255,0.02)" }}>
+      <div style={{ padding: "8px 10px", borderBottom: "1px solid rgba(255,255,255,0.06)", display: "flex", justifyContent: "space-between", gap: 8 }}>
+        <div style={{ fontSize: 11, fontWeight: 700 }}>Options Chain</div>
+        {settings.showIvRankAlongsideIv && <div style={{ fontSize: 10, color: "hsl(var(--muted-foreground))" }}>IV rank period {settings.ivRankCalculationPeriod}</div>}
+      </div>
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 10.5 }}>
+          <thead>
+            <tr style={{ color: "hsl(var(--muted-foreground))", textAlign: "right" }}>
+              {["Exp", "Type", "Strike", "Mid", settings.showDelta ? "Delta" : null, settings.showTheta ? "Theta" : null, settings.showGamma ? "Gamma" : null, settings.showVega ? "Vega" : null, settings.showRho ? "Rho" : null, "IV", settings.showOpenInterestColumn ? "OI" : null, settings.showVolumeColumn ? "Vol" : null, settings.showBidAskSpreadColumn ? "Spr" : null, settings.showTheoreticalValueColumn ? "Theo" : null].filter(Boolean).map((label) => (
+                <th key={String(label)} style={{ padding: "7px 6px", fontWeight: 600 }}>{label}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((contract: any) => {
+              const isItm = contract.optionType === "call" ? contract.strikePrice < currentPrice : contract.strikePrice > currentPrice;
+              const absDelta = Math.abs(Number(contract.delta ?? 0));
+              const [deltaMin, deltaMax] = getTargetRange(contract);
+              const inDeltaZone = absDelta >= deltaMin && absDelta <= deltaMax;
+              const outsideDelta = settings.highlightOutsideTargetDelta && !inDeltaZone;
+              const spread = Math.max(0, Number(contract.ask ?? 0) - Number(contract.bid ?? 0));
+              return (
+                <tr key={`${contract.symbol}-${contract.expiration}`} style={{
+                  background: settings.highlightITM && isItm ? "hsl(var(--primary) / 0.07)" : outsideDelta ? "hsl(38 92% 50% / 0.06)" : "transparent",
+                  boxShadow: inDeltaZone ? "inset 3px 0 0 hsl(var(--success) / 0.75)" : undefined,
+                  borderTop: "1px solid rgba(255,255,255,0.04)",
+                }}>
+                  <td style={{ padding: "6px", color: "hsl(var(--muted-foreground))", textAlign: "left" }}>{contract.daysToExpiration}d</td>
+                  <td style={{ padding: "6px", textTransform: "uppercase", color: contract.optionType === "call" ? "hsl(var(--success))" : "hsl(var(--destructive))", textAlign: "left", fontWeight: 700 }}>{contract.optionType}</td>
+                  <td style={{ padding: "6px", fontVariantNumeric: "tabular-nums", fontWeight: isItm ? 700 : 500 }}>{formatCurrency(contract.strikePrice)}</td>
+                  <td style={{ padding: "6px", fontVariantNumeric: "tabular-nums" }}>{formatCurrency(contract.mid)}</td>
+                  {settings.showDelta && <td style={{ padding: "6px", fontVariantNumeric: "tabular-nums", color: inDeltaZone ? "hsl(var(--success))" : undefined }}>{formatDelta(Number(contract.delta ?? 0))}</td>}
+                  {settings.showTheta && <td style={{ padding: "6px", fontVariantNumeric: "tabular-nums", color: contract.daysToExpiration <= settings.thetaDecayWarningThresholdDte ? "hsl(38 92% 50%)" : undefined }}>{Number(contract.theta ?? 0).toFixed(precision)}</td>}
+                  {settings.showGamma && <td style={{ padding: "6px", fontVariantNumeric: "tabular-nums" }}>{Number(contract.gamma ?? 0).toFixed(precision)}</td>}
+                  {settings.showVega && <td style={{ padding: "6px", fontVariantNumeric: "tabular-nums" }}>{Number(contract.vega ?? 0).toFixed(precision)}</td>}
+                  {settings.showRho && <td style={{ padding: "6px", fontVariantNumeric: "tabular-nums" }}>{Number(contract.rho ?? 0).toFixed(precision)}</td>}
+                  <td style={{ padding: "6px", fontVariantNumeric: "tabular-nums" }}>{formatIv(Number(contract.impliedVolatility ?? 0))}</td>
+                  {settings.showOpenInterestColumn && <td style={{ padding: "6px", fontVariantNumeric: "tabular-nums" }}>{Number(contract.openInterest ?? 0)}</td>}
+                  {settings.showVolumeColumn && <td style={{ padding: "6px", fontVariantNumeric: "tabular-nums" }}>{Number(contract.volume ?? 0)}</td>}
+                  {settings.showBidAskSpreadColumn && <td style={{ padding: "6px", fontVariantNumeric: "tabular-nums" }}>{formatCurrency(spread)}</td>}
+                  {settings.showTheoreticalValueColumn && <td style={{ padding: "6px", fontVariantNumeric: "tabular-nums" }}>{formatCurrency(contract.mid)}</td>}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 export function StrategyPanel({ symbol, currentPrice = 0, recommendedOutlook, topStrategies }: StrategyPanelProps) {
   const initialOutlook: GetStrategiesOutlook =
     recommendedOutlook === "bearish" ? "bearish" :
@@ -1022,6 +1124,10 @@ export function StrategyPanel({ symbol, currentPrice = 0, recommendedOutlook, to
                 />
               )}
             </div>
+          )}
+
+          {!isLoading && chainData && (
+            <OptionsChainPreview chain={chainData} currentPrice={currentPrice} />
           )}
 
           {/* Strategy Match List from screener scoring */}

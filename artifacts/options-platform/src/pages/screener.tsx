@@ -815,7 +815,18 @@ function StockTable({ rows, tab, sortKey, sortDir, onSort, navigate, watchlistSy
     ],
     options: [
       baseCol, priceCol, changeCol,
-      { key:"ivRank",         label:"IV Rank",      right:true, render:r=><span style={{ color:r.ivRank>70?"#ff9f0a":r.ivRank>50?"#ffd60a":"rgba(255,255,255,0.55)", fontWeight:r.ivRank>50?700:400, fontVariantNumeric:"tabular-nums" }}>{r.ivRank.toFixed(0)}</span> },
+      { key:"ivRank",         label:"IV Rank",      right:true, render:r=>{
+        const high = settings.highlightHighIvStocks && r.ivRank >= settings.highIvHighlightThreshold;
+        return <span style={{
+          color:high?"#ff9f0a":r.ivRank>50?"#ffd60a":"rgba(255,255,255,0.55)",
+          fontWeight:high||r.ivRank>50?700:400,
+          fontVariantNumeric:"tabular-nums",
+          padding:high?"2px 6px":0,
+          borderRadius:high?4:0,
+          background:high?"rgba(255,159,10,0.12)":undefined,
+          border:high?"1px solid rgba(255,159,10,0.24)":undefined,
+        }}>{r.ivRank.toFixed(0)}</span>;
+      } },
       { key:"opportunityScore",label:"Opp Score",   right:true, render:r=>{
         const c=r.opportunityScore>=70?"#30d158":r.opportunityScore>=50?"#ffd60a":"rgba(255,255,255,0.45)";
         return <span title={scoreTitle(r)} style={{ color:c, fontVariantNumeric:"tabular-nums", fontWeight:600 }}>{r.opportunityScore.toFixed(0)}</span>;

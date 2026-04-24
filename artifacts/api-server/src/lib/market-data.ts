@@ -275,17 +275,30 @@ function periodToYahoo(period: string): { interval: "1d" | "1wk" | "1mo"; period
 
 // ─── Historical Volatility (for IV Rank proxy) ────────────────────────────
 
-export async function getHistoricalVolatility(symbol: string): Promise<{ hv30: number; hv252: number; ivRank: number }> {
-  const key = `hv:${symbol}`;
+export type IvRankCalculationPeriod = "30D" | "60D" | "1Y";
+
+function ivRankPeriodDays(period: IvRankCalculationPeriod | string | undefined): number {
+  switch (period) {
+    case "30D": return 45;
+    case "60D": return 90;
+    case "1Y":
+    default: return 365;
+  }
+}
+
+export async function getHistoricalVolatility(symbol: string, ivRankPeriod: IvRankCalculationPeriod | string = "1Y"): Promise<{ hv30: number; hv252: number; ivRank: number }> {
+  const normalizedPeriod = ivRankPeriod === "30D" || ivRankPeriod === "60D" ? ivRankPeriod : "1Y";
+  const key = `hv:${symbol}:${normalizedPeriod}`;
   const cached = getCache<{ hv30: number; hv252: number; ivRank: number }>(key);
   if (cached) return cached;
 
-  const oneYearAgo = new Date(); oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+  const periodStart = new Date();
+  periodStart.setDate(periodStart.getDate() - ivRankPeriodDays(normalizedPeriod));
   let result: YahooChartResult;
   try {
     result = await yahooFinance.chart(
       symbol,
-      { interval: "1d", period1: oneYearAgo },
+      { interval: "1d", period1: periodStart },
       { validateResult: false },
     ) as YahooChartResult;
   } catch (err) {

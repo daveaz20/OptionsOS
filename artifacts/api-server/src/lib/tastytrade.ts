@@ -178,6 +178,12 @@ export interface OptionsChain {
   expirations: OptionsChainExpiry[];
 }
 
+export interface OptionsChainFilters {
+  minOpenInterest?: number;
+  minVolume?: number;
+  filterIlliquid?: boolean;
+}
+
 export type ContractLookup = (
   type: "call" | "put",
   strike: number,
@@ -1027,9 +1033,12 @@ export async function getQuoteSnapshots(symbols: string[]): Promise<Map<string, 
   return result;
 }
 
-export async function getOptionsChain(symbol: string): Promise<OptionsChain> {
+export async function getOptionsChain(symbol: string, filters: OptionsChainFilters = {}): Promise<OptionsChain> {
   const normalized = normalizeSymbol(symbol);
-  const key = `chain:${normalized}`;
+  const minOpenInterest = Math.max(0, Math.floor(filters.minOpenInterest ?? 0));
+  const minVolume = Math.max(0, Math.floor(filters.minVolume ?? 0));
+  const shouldFilterIlliquid = filters.filterIlliquid === true;
+  const key = `chain:${normalized}:${shouldFilterIlliquid ? minOpenInterest : 0}:${shouldFilterIlliquid ? minVolume : 0}`;
   const hit = chainCache.get(key);
   if (hit && Date.now() < hit.exp) return hit.data;
 
@@ -1064,6 +1073,12 @@ export async function getOptionsChain(symbol: string): Promise<OptionsChain> {
         }
 
         const liveGreeks = streamerSymbol ? getStreamedGreeks(streamerSymbol) : null;
+        const openInterest = num(contractData["open-interest"]);
+        const volume = num(contractData.volume);
+        if (shouldFilterIlliquid && (openInterest < minOpenInterest || volume < minVolume)) {
+          continue;
+        }
+
         contracts.push({
           symbol: symbolValue,
           streamerSymbol,
@@ -1080,8 +1095,8 @@ export async function getOptionsChain(symbol: string): Promise<OptionsChain> {
           theta: liveGreeks?.theta ?? num(contractData.theta),
           vega: liveGreeks?.vega ?? num(contractData.vega),
           rho: liveGreeks?.rho ?? 0,
-          openInterest: num(contractData["open-interest"]),
-          volume: num(contractData.volume),
+          openInterest,
+          volume,
           greeksSource: liveGreeks
             ? "live"
             : num(contractData.delta) || num(contractData.gamma) || num(contractData.theta) || num(contractData.vega)

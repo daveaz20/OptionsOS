@@ -321,21 +321,44 @@ const CATEGORIES: CategoryDef[] = [
     id: "greeks",
     label: "Greeks & Options Display",
     icon: <SlidersHorizontal size={14} />,
-    description: "Options chain display, greek filters, and default order-entry parameters.",
+    description: "Control Greeks visibility, delta targeting, IV context, chain liquidity, and theta displays.",
     settings: [
-      { key: "showGreeks", label: "Show Greeks columns", description: "Display Δ Γ Θ Vega in the options chain", type: "toggle", default: true },
-      { key: "defaultMinDelta", label: "Min delta filter", description: "Lower delta bound for contract filter", type: "number", default: 0.1, min: 0, max: 1, step: 0.01 },
-      { key: "defaultMaxDelta", label: "Max delta filter", description: "Upper delta bound for contract filter", type: "number", default: 0.5, min: 0, max: 1, step: 0.01 },
-      { key: "maxBidAskSpread", label: "Max bid-ask spread", description: "Filter out wide markets", type: "number", default: 0.5, min: 0, step: 0.05, unit: "$" },
-      { key: "minOpenInterest", label: "Min open interest", description: "Filter out illiquid strikes", type: "number", default: 100, min: 0 },
-      { key: "showWeeklyExp", label: "Show weekly expirations", type: "toggle", default: true },
-      { key: "chainStrikeRange", label: "Strikes around ATM", description: "How many strikes above/below ATM to show", type: "number", default: 10, min: 3, max: 30 },
+      { key: "showDelta", label: "Show Delta", type: "toggle", default: true },
+      { key: "showGamma", label: "Show Gamma", type: "toggle", default: false },
+      { key: "showTheta", label: "Show Theta", type: "toggle", default: true },
+      { key: "showVega", label: "Show Vega", type: "toggle", default: true },
+      { key: "showRho", label: "Show Rho", type: "toggle", default: false },
+      { key: "greeksPrecision", label: "Greeks precision", description: "Decimal places used for displayed Greeks", type: "select", default: 2, options: [{ label: "2 decimal places", value: 2 }, { label: "4 decimal places", value: 4 }] },
+      { key: "showPortfolioGreeksSummary", label: "Show portfolio-level Greeks summary", type: "toggle", default: true },
+      { key: "greeksDisplayFormat", label: "Greeks display format", type: "select", default: "perContract", options: [{ label: "Per contract", value: "perContract" }, { label: "Per share", value: "perShare" }] },
+      { key: "shortPutDeltaMin", label: "Short put delta minimum", type: "number", default: 0.2, min: 0, max: 1, step: 0.01 },
+      { key: "shortPutDeltaMax", label: "Short put delta maximum", type: "number", default: 0.3, min: 0, max: 1, step: 0.01 },
+      { key: "shortCallDeltaMin", label: "Short call delta minimum", type: "number", default: 0.2, min: 0, max: 1, step: 0.01 },
+      { key: "shortCallDeltaMax", label: "Short call delta maximum", type: "number", default: 0.3, min: 0, max: 1, step: 0.01 },
+      { key: "longOptionDeltaMin", label: "Long option delta minimum", type: "number", default: 0.4, min: 0, max: 1, step: 0.01 },
+      { key: "longOptionDeltaMax", label: "Long option delta maximum", type: "number", default: 0.6, min: 0, max: 1, step: 0.01 },
+      { key: "highlightOutsideTargetDelta", label: "Highlight strikes outside target delta range", type: "toggle", default: true },
+      { key: "showDeltaAsProbabilityItm", label: "Show delta as probability of ITM", type: "toggle", default: false },
+      { key: "ivDisplayFormat", label: "IV display format", type: "select", default: "percent", options: [{ label: "% percentage", value: "percent" }, { label: "Decimal", value: "decimal" }] },
+      { key: "showIvRankAlongsideIv", label: "Show IV rank alongside IV", type: "toggle", default: true },
+      { key: "showIvPercentileAlongsideIvRank", label: "Show IV percentile alongside IV rank", type: "toggle", default: false },
+      { key: "ivRankCalculationPeriod", label: "IV rank calculation period", type: "select", default: "1Y", options: [{ label: "30-day", value: "30D" }, { label: "60-day", value: "60D" }, { label: "1-year", value: "1Y" }] },
+      { key: "highlightHighIvStocks", label: "Highlight high IV stocks in screener", type: "toggle", default: true },
+      { key: "highIvHighlightThreshold", label: "High IV threshold", description: "Highlight when IV rank is at or above this level", type: "slider", default: 60, min: 0, max: 100 },
+      { key: "chainStrikeRange", label: "Strikes to show each side", type: "slider", default: 5, min: 3, max: 20 },
+      { key: "defaultExpirationCount", label: "Expiration count to show", type: "slider", default: 4, min: 1, max: 12 },
       { key: "highlightITM", label: "Highlight in-the-money strikes", type: "toggle", default: true },
-      { key: "defaultContracts", label: "Default contracts", description: "Number of contracts pre-filled on order entry", type: "number", default: 1, min: 1, max: 100 },
-      { key: "defaultOrderType", label: "Default order type", type: "select", default: "limit", options: [{ label: "Limit", value: "limit" }, { label: "Market", value: "market" }, { label: "Midpoint", value: "midpoint" }] },
-      { key: "slippageTolerance", label: "Slippage tolerance", description: "Max cents from midpoint before alerting", type: "number", default: 5, min: 0, max: 50, unit: "¢" },
-      { key: "confirmOrders", label: "Confirm before submitting", description: "Show a review screen before placing orders", type: "toggle", default: true },
-      { key: "preferEvenLots", label: "Prefer even lot sizes", description: "Suggest quantities in multiples of 10", type: "toggle", default: false },
+      { key: "showOpenInterestColumn", label: "Show open interest column", type: "toggle", default: true },
+      { key: "showVolumeColumn", label: "Show volume column", type: "toggle", default: true },
+      { key: "showBidAskSpreadColumn", label: "Show bid/ask spread column", type: "toggle", default: true },
+      { key: "showTheoreticalValueColumn", label: "Show theoretical value column", type: "toggle", default: false },
+      { key: "filterIlliquidOptionsAutomatically", label: "Filter out illiquid strikes automatically", type: "toggle", default: true },
+      { key: "minOpenInterest", label: "Min open interest to show strike", type: "number", default: 100, min: 0, step: 1 },
+      { key: "minContractVolume", label: "Min volume to show strike", type: "number", default: 10, min: 0, step: 1 },
+      { key: "showDailyThetaDecay", label: "Show daily theta decay in strategy panel", type: "toggle", default: true },
+      { key: "showThetaAsDollarsPerDay", label: "Show theta as $ per day", type: "toggle", default: true },
+      { key: "showThetaDecayCurve", label: "Show theta decay curve", type: "toggle", default: false },
+      { key: "thetaDecayWarningThresholdDte", label: "Theta decay warning threshold", description: "Highlight when theta accelerates at or below this DTE", type: "number", default: 21, min: 0, max: 365, unit: "DTE" },
     ],
   },
   {
@@ -1401,6 +1424,64 @@ function PnlSimulationPanel({
   );
 }
 
+const GREEKS_SECTION_SLICES = [
+  { label: "Greeks Display", start: 0, end: 8 },
+  { label: "Delta Preferences", start: 8, end: 16 },
+  { label: "IV Display", start: 16, end: 22 },
+  { label: "Options Chain Display", start: 22, end: 34 },
+  { label: "Theta Display", start: 34, end: 38 },
+] as const;
+
+function GreeksOptionsPanel({
+  settings,
+  onChange,
+  onReset,
+}: {
+  settings: AppSettings;
+  onChange: (key: string, value: unknown) => void;
+  onReset: () => void;
+}) {
+  const greekSettings = CATEGORIES.find(category => category.id === "greeks")!.settings;
+  const visibleGreeks = [
+    settings.showDelta ? "Delta" : null,
+    settings.showGamma ? "Gamma" : null,
+    settings.showTheta ? "Theta" : null,
+    settings.showVega ? "Vega" : null,
+    settings.showRho ? "Rho" : null,
+  ].filter(Boolean).join(", ") || "None";
+
+  return (
+    <div style={{ paddingTop: 8, display: "grid", gap: 24 }}>
+      <div style={{ border: "1px solid rgba(255,255,255,0.07)", borderRadius: 8, background: "rgba(255,255,255,0.02)", padding: 14 }}>
+        <div style={{ fontSize: 14, fontWeight: 700 }}>Options Display Preview</div>
+        <div style={{ fontSize: 11.5, color: "hsl(var(--muted-foreground))", marginTop: 3 }}>Current chain and strategy display rules at a glance.</div>
+        <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
+          <RiskSummaryItem label="Visible Greeks" value={visibleGreeks} />
+          <RiskSummaryItem label="Delta Zone" value={`${settings.shortPutDeltaMin.toFixed(2)}-${settings.shortPutDeltaMax.toFixed(2)}`} />
+          <RiskSummaryItem label="IV Rank Period" value={settings.ivRankCalculationPeriod} />
+          <RiskSummaryItem label="Liquidity Floor" value={`${settings.minOpenInterest} OI / ${settings.minContractVolume} vol`} tone="warning" />
+        </div>
+      </div>
+
+      {GREEKS_SECTION_SLICES.map(section => (
+        <div key={section.label}>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: "hsl(var(--muted-foreground))", textTransform: "uppercase" }}>{section.label}</div>
+          {greekSettings.slice(section.start, section.end).map(setting => (
+            <SettingRow key={setting.key} setting={setting} value={settings[setting.key as keyof AppSettings]} onChange={onChange} />
+          ))}
+        </div>
+      ))}
+
+      <ActionRow
+        label="Reset to Defaults"
+        description="Restore every Greeks & Options Display option to its default value"
+        icon={<RotateCcw size={13} />}
+        onClick={onReset}
+      />
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const isMobile = useIsMobile();
   const [activeCategory, setActiveCategory] = useState("general");
@@ -1569,6 +1650,14 @@ export default function SettingsPage() {
               />
             )}
 
+            {activeCategory === "greeks" && (
+              <GreeksOptionsPanel
+                settings={settings}
+                onChange={handleChange}
+                onReset={() => handleResetCategory(activeCategoryDef)}
+              />
+            )}
+
             {activeCategory === "security" && (
               <div style={{ paddingTop: 8 }}>
                 {activeCategoryDef.settings.map(s => (
@@ -1602,7 +1691,7 @@ export default function SettingsPage() {
             )}
 
             {/* All other categories */}
-            {activeCategory !== "security" && activeCategory !== "data" && activeCategory !== "strategy" && activeCategory !== "risk" && activeCategory !== "timeHorizon" && activeCategory !== "chartAnalysis" && activeCategory !== "pnl" && (
+            {activeCategory !== "security" && activeCategory !== "data" && activeCategory !== "strategy" && activeCategory !== "risk" && activeCategory !== "timeHorizon" && activeCategory !== "chartAnalysis" && activeCategory !== "pnl" && activeCategory !== "greeks" && (
               <div style={{ paddingTop: 8 }}>
                 {activeCategoryDef.settings.map(s => (
                   <SettingRow key={s.key} setting={s} value={settings[s.key as keyof AppSettings]} onChange={handleChange} />

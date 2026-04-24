@@ -60,6 +60,23 @@ async function getPnlPreferences(): Promise<{ riskFreeRate: number; settings: Pn
   };
 }
 
+async function getGreeksPreferences(): Promise<{
+  ivRankCalculationPeriod: string;
+  minOpenInterest: number;
+  minVolume: number;
+  filterIlliquid: boolean;
+}> {
+  const rows = await db.select().from(userSettingsTable);
+  const values = Object.fromEntries(rows.map((row) => [row.key, row.value])) as Record<string, unknown>;
+  const period = values.ivRankCalculationPeriod;
+  return {
+    ivRankCalculationPeriod: period === "30D" || period === "60D" || period === "1Y" ? period : "1Y",
+    minOpenInterest: Math.max(0, Math.floor(numberSetting(values, "minOpenInterest", 100))),
+    minVolume: Math.max(0, Math.floor(numberSetting(values, "minContractVolume", 10))),
+    filterIlliquid: booleanSetting(values, "filterIlliquidOptionsAutomatically", true),
+  };
+}
+
 // GET /strategies — returns all 40 strategy definitions
 router.get("/strategies", (_req, res) => {
   res.json(STRATEGY_REGISTRY);
@@ -93,10 +110,11 @@ router.get("/stocks/:symbol/strategies", async (req, res): Promise<void> => {
   const symbol = (Array.isArray(params.data.symbol) ? params.data.symbol[0] : params.data.symbol).toUpperCase();
 
   try {
+    const greeksPreferences = await getGreeksPreferences();
     const [quote, history, hv, riskPreferences] = await Promise.all([
       getQuote(symbol),
       getPriceHistory(symbol, "3M"),
-      getHistoricalVolatility(symbol),
+      getHistoricalVolatility(symbol, greeksPreferences.ivRankCalculationPeriod),
       getRiskPreferences(),
     ]);
 
@@ -108,7 +126,7 @@ router.get("/stocks/:symbol/strategies", async (req, res): Promise<void> => {
     if (isTastytradeEnabled() && isTastytradeAuthorized()) {
       try {
         const [chain, metricsMap] = await Promise.all([
-          getOptionsChain(symbol),
+          getOptionsChain(symbol, greeksPreferences),
           getMarketMetrics([symbol]),
         ]);
         lookupContract = makeContractLookup(chain);
@@ -149,10 +167,11 @@ router.post("/stocks/:symbol/pnl", async (req, res): Promise<void> => {
   const { strategyId, targetPrice, targetDate, impliedVolatility, outlook } = parsed.data;
 
   try {
+    const greeksPreferences = await getGreeksPreferences();
     const [quote, history, hv, riskPreferences, pnlPreferences] = await Promise.all([
       getQuote(symbol),
       getPriceHistory(symbol, "3M"),
-      getHistoricalVolatility(symbol),
+      getHistoricalVolatility(symbol, greeksPreferences.ivRankCalculationPeriod),
       getRiskPreferences(),
       getPnlPreferences(),
     ]);
@@ -230,7 +249,8 @@ router.get("/stocks/:symbol/options-chain", async (req, res): Promise<void> => {
     return;
   }
   try {
-    const chain = await getOptionsChain(symbol);
+    const greeksPreferences = await getGreeksPreferences();
+    const chain = await getOptionsChain(symbol, greeksPreferences);
     res.json(chain);
   } catch (err: any) {
     res.status(500).json({ error: `Failed to fetch options chain: ${err.message}` });

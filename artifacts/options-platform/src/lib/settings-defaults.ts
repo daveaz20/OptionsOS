@@ -98,6 +98,38 @@ export interface AppSettings {
   chainStrikeRange: number;
   highlightITM: boolean;
   showGreeks: boolean;
+  showDelta: boolean;
+  showGamma: boolean;
+  showTheta: boolean;
+  showVega: boolean;
+  showRho: boolean;
+  greeksPrecision: number;
+  showPortfolioGreeksSummary: boolean;
+  greeksDisplayFormat: string;
+  shortPutDeltaMin: number;
+  shortPutDeltaMax: number;
+  shortCallDeltaMin: number;
+  shortCallDeltaMax: number;
+  longOptionDeltaMin: number;
+  longOptionDeltaMax: number;
+  highlightOutsideTargetDelta: boolean;
+  showDeltaAsProbabilityItm: boolean;
+  ivDisplayFormat: string;
+  showIvRankAlongsideIv: boolean;
+  showIvPercentileAlongsideIvRank: boolean;
+  ivRankCalculationPeriod: string;
+  highlightHighIvStocks: boolean;
+  highIvHighlightThreshold: number;
+  defaultExpirationCount: number;
+  showOpenInterestColumn: boolean;
+  showVolumeColumn: boolean;
+  showBidAskSpreadColumn: boolean;
+  showTheoreticalValueColumn: boolean;
+  filterIlliquidOptionsAutomatically: boolean;
+  showDailyThetaDecay: boolean;
+  showThetaAsDollarsPerDay: boolean;
+  showThetaDecayCurve: boolean;
+  thetaDecayWarningThresholdDte: number;
   rsiOverbought: number;
   rsiOversold: number;
   // Strategy
@@ -340,9 +372,41 @@ export const SETTING_DEFAULTS: AppSettings = {
   maxBidAskSpread: 0.5,
   minOpenInterest: 100,
   showWeeklyExp: true,
-  chainStrikeRange: 10,
+  chainStrikeRange: 5,
   highlightITM: true,
   showGreeks: true,
+  showDelta: true,
+  showGamma: false,
+  showTheta: true,
+  showVega: true,
+  showRho: false,
+  greeksPrecision: 2,
+  showPortfolioGreeksSummary: true,
+  greeksDisplayFormat: "perContract",
+  shortPutDeltaMin: 0.2,
+  shortPutDeltaMax: 0.3,
+  shortCallDeltaMin: 0.2,
+  shortCallDeltaMax: 0.3,
+  longOptionDeltaMin: 0.4,
+  longOptionDeltaMax: 0.6,
+  highlightOutsideTargetDelta: true,
+  showDeltaAsProbabilityItm: false,
+  ivDisplayFormat: "percent",
+  showIvRankAlongsideIv: true,
+  showIvPercentileAlongsideIvRank: false,
+  ivRankCalculationPeriod: "1Y",
+  highlightHighIvStocks: true,
+  highIvHighlightThreshold: 60,
+  defaultExpirationCount: 4,
+  showOpenInterestColumn: true,
+  showVolumeColumn: true,
+  showBidAskSpreadColumn: true,
+  showTheoreticalValueColumn: false,
+  filterIlliquidOptionsAutomatically: true,
+  showDailyThetaDecay: true,
+  showThetaAsDollarsPerDay: true,
+  showThetaDecayCurve: false,
+  thetaDecayWarningThresholdDte: 21,
   rsiOverbought: 70,
   rsiOversold: 30,
   // Strategy

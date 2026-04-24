@@ -61,6 +61,7 @@ interface ScreenerSettings {
   universeMode: UniverseMode;
   cacheRefreshInterval: number;
   minOpportunityScoreToShow: number;
+  ivRankCalculationPeriod: string;
   highConvictionThresholds: HighConvictionThresholds;
   strategyPreferences: StrategyPreferences;
   riskPreferences: RiskPreferences;
@@ -78,6 +79,10 @@ async function getScreenerSettings(): Promise<ScreenerSettings> {
     typeof values.minOpportunityScoreToShow === "number" && Number.isFinite(values.minOpportunityScoreToShow)
       ? values.minOpportunityScoreToShow
       : 0;
+  const ivRankCalculationPeriod =
+    values.ivRankCalculationPeriod === "30D" || values.ivRankCalculationPeriod === "60D" || values.ivRankCalculationPeriod === "1Y"
+      ? values.ivRankCalculationPeriod
+      : "1Y";
   const highConvictionThresholds: HighConvictionThresholds = {
     opportunityScore: typeof values.highConvictionOpportunityScore === "number" ? values.highConvictionOpportunityScore : DEFAULT_HIGH_CONVICTION_THRESHOLDS.opportunityScore,
     technicalScore: typeof values.highConvictionTechnicalScore === "number" ? values.highConvictionTechnicalScore : DEFAULT_HIGH_CONVICTION_THRESHOLDS.technicalScore,
@@ -113,7 +118,7 @@ async function getScreenerSettings(): Promise<ScreenerSettings> {
     maxBidAskSpreadPct: typeof values.maxBidAskSpreadPct === "number" ? values.maxBidAskSpreadPct : DEFAULT_RISK_PREFERENCES.maxBidAskSpreadPct,
   };
 
-  return { universeMode, cacheRefreshInterval, minOpportunityScoreToShow, highConvictionThresholds, strategyPreferences, riskPreferences };
+  return { universeMode, cacheRefreshInterval, minOpportunityScoreToShow, ivRankCalculationPeriod, highConvictionThresholds, strategyPreferences, riskPreferences };
 }
 
 async function getActiveScreenerSource(): Promise<"polygon" | "yahoo"> {
@@ -166,7 +171,7 @@ function daysUntilEarnings(earningsDate: string): number | undefined {
 
 // ─── Yahoo Finance screener (original, ~477 symbols) ─────────────────────────
 
-async function buildYahooData(strategyPreferences: StrategyPreferences, riskPreferences: RiskPreferences): Promise<ScreenerRow[]> {
+async function buildYahooData(strategyPreferences: StrategyPreferences, riskPreferences: RiskPreferences, ivRankCalculationPeriod: string): Promise<ScreenerRow[]> {
   const etfSymbols = ETF_UNIVERSE.map(e => e.symbol);
   const universe   = [...new Set([...DEFAULT_UNIVERSE, ...etfSymbols])];
   const quotes     = await getQuotes(universe);
@@ -207,7 +212,7 @@ async function buildYahooData(strategyPreferences: StrategyPreferences, riskPref
       try {
         const [history, hv] = await Promise.all([
           getPriceHistory(q.symbol, "TECH"),
-          getHistoricalVolatility(q.symbol),
+          getHistoricalVolatility(q.symbol, ivRankCalculationPeriod),
         ]);
         const sig    = computeSignals(history, q.price);
         const dte    = daysUntilEarnings(q.earningsDate);
@@ -450,7 +455,7 @@ async function doRefresh(): Promise<void> {
     const source = settings.universeMode === "polygon" && isPolygonEnabled() ? "polygon" : "yahoo";
     const rows   = source === "polygon"
       ? await buildPolygonData(settings.strategyPreferences, settings.riskPreferences)
-      : await buildYahooData(settings.strategyPreferences, settings.riskPreferences);
+      : await buildYahooData(settings.strategyPreferences, settings.riskPreferences, settings.ivRankCalculationPeriod);
     cache.data = await enrichWatchlistRows(rows);
     cache.at   = Date.now();
     console.log(`[screener] cache updated: ${cache.data.length} rows (${source})`);

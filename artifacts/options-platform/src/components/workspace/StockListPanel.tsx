@@ -467,6 +467,17 @@ export function StockListPanel({ selectedSymbol, onSelect, initialTab = "ideas" 
                             EOD
                           </span>
                         )}
+                        {settings.highlightHighIvStocks && ivRank >= settings.highIvHighlightThreshold && (
+                          <span style={{
+                            fontSize: 9, fontWeight: 700, letterSpacing: "0.04em",
+                            padding: "1.5px 5px", borderRadius: 3, flexShrink: 0,
+                            color: "hsl(38 92% 50%)",
+                            background: "hsl(38 92% 50% / 0.12)",
+                            border: "1px solid hsl(38 92% 50% / 0.28)",
+                          }}>
+                            IV {Math.round(ivRank)}
+                          </span>
+                        )}
                         {showEarningsWarning && earningsDays !== null && (
                           <span
                             title={`Earnings date: ${(item as any).earningsDate}`}
