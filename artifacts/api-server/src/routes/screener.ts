@@ -23,7 +23,12 @@ import {
   getSectorForSymbol,
 } from "../lib/market-data.js";
 import { computeSignals } from "../lib/technical-analysis.js";
-import { scanOpportunity } from "../lib/scanner.js";
+import {
+  DEFAULT_HIGH_CONVICTION_THRESHOLDS,
+  isHighConviction,
+  scanOpportunity,
+  type HighConvictionThresholds,
+} from "../lib/scanner.js";
 import {
   isPolygonEnabled,
   getPolygonSnapshots,
@@ -51,6 +56,8 @@ type UniverseMode = "polygon" | "yahoo";
 interface ScreenerSettings {
   universeMode: UniverseMode;
   cacheRefreshInterval: number;
+  minOpportunityScoreToShow: number;
+  highConvictionThresholds: HighConvictionThresholds;
 }
 
 async function getScreenerSettings(): Promise<ScreenerSettings> {
@@ -61,8 +68,19 @@ async function getScreenerSettings(): Promise<ScreenerSettings> {
     typeof values.cacheRefreshInterval === "number" && Number.isFinite(values.cacheRefreshInterval)
       ? values.cacheRefreshInterval
       : DEFAULT_SCREENER_TTL;
+  const minOpportunityScoreToShow =
+    typeof values.minOpportunityScoreToShow === "number" && Number.isFinite(values.minOpportunityScoreToShow)
+      ? values.minOpportunityScoreToShow
+      : 0;
+  const highConvictionThresholds: HighConvictionThresholds = {
+    opportunityScore: typeof values.highConvictionOpportunityScore === "number" ? values.highConvictionOpportunityScore : DEFAULT_HIGH_CONVICTION_THRESHOLDS.opportunityScore,
+    technicalScore: typeof values.highConvictionTechnicalScore === "number" ? values.highConvictionTechnicalScore : DEFAULT_HIGH_CONVICTION_THRESHOLDS.technicalScore,
+    ivScore: typeof values.highConvictionIvScore === "number" ? values.highConvictionIvScore : DEFAULT_HIGH_CONVICTION_THRESHOLDS.ivScore,
+    entryScore: typeof values.highConvictionEntryScore === "number" ? values.highConvictionEntryScore : DEFAULT_HIGH_CONVICTION_THRESHOLDS.entryScore,
+    momentumScore: typeof values.highConvictionMomentumScore === "number" ? values.highConvictionMomentumScore : DEFAULT_HIGH_CONVICTION_THRESHOLDS.momentumScore,
+  };
 
-  return { universeMode, cacheRefreshInterval };
+  return { universeMode, cacheRefreshInterval, minOpportunityScoreToShow, highConvictionThresholds };
 }
 
 async function getActiveScreenerSource(): Promise<"polygon" | "yahoo"> {
@@ -467,8 +485,8 @@ loadFromDb().then(() => triggerRefresh().catch(() => {}));
 
 router.get("/screener", async (req, res): Promise<void> => {
   if (cache.data.length === 0) await triggerRefresh();
-  res.json(cache.data);
   const settings = await getScreenerSettings();
+  res.json(cache.data.filter((row) => row.opportunityScore >= settings.minOpportunityScoreToShow));
   if (Date.now() - cache.at > settings.cacheRefreshInterval) triggerRefresh().catch(() => {});
 });
 
@@ -499,17 +517,10 @@ router.post("/screener/flush", async (_req, res): Promise<void> => {
 
 // ─── Accurate stats across the full universe ──────────────────────────────────
 
-function isHighConviction(r: ScreenerRow): boolean {
-  return r.opportunityScore >= 70
-    && r.technicalScore >= 20
-    && r.ivScore >= 12
-    && r.entryScore >= 14
-    && r.momentumScore >= 6;
-}
-
 router.get("/screener/stats", async (_req, res): Promise<void> => {
   if (cache.data.length === 0) await triggerRefresh();
-  const rows = cache.data;
+  const settings = await getScreenerSettings();
+  const rows = cache.data.filter((row) => row.opportunityScore >= settings.minOpportunityScoreToShow);
 
   const bull    = rows.filter(r => r.changePercent > 0).length;
   const bear    = rows.filter(r => r.changePercent < 0).length;
@@ -518,7 +529,7 @@ router.get("/screener/stats", async (_req, res): Promise<void> => {
 
   // Rows with real technical analysis (not polygon-only defaults)
   const withTechnicals = rows.filter(r => r.opportunityScore !== 40);
-  const highConviction = withTechnicals.filter(r => isHighConviction(r)).length;
+  const highConviction = withTechnicals.filter(r => isHighConviction(r, settings.highConvictionThresholds)).length;
 
   const ivVals = rows.map(r => r.ivRank).filter(v => v > 0);
   const avgIv  = ivVals.length > 0

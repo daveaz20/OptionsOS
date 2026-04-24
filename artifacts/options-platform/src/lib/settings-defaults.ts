@@ -38,6 +38,20 @@ export interface AppSettings {
   enforceRiskLimits: boolean;
   // Screener
   screenerColumnVisibility: ScreenerColumnVisibility;
+  minOpportunityScoreToShow: number;
+  highConvictionOpportunityScore: number;
+  highConvictionTechnicalScore: number;
+  highConvictionIvScore: number;
+  highConvictionEntryScore: number;
+  highConvictionMomentumScore: number;
+  screenerDefaultSortColumn: string;
+  screenerDefaultSortDirection: "asc" | "desc";
+  screenerDefaultPreset: string;
+  screenerDefaultLiquidity: string;
+  screenerDefaultOutlook: string;
+  showScoreBreakdownTooltip: boolean;
+  showSetupTypeBadge: boolean;
+  showRecommendationBadge: boolean;
   defaultMinIvRank: number;
   defaultMinVolume: number;
   defaultMinMarketCap: string;
@@ -173,6 +187,20 @@ export const SETTING_DEFAULTS: AppSettings = {
     recommendedOutlook: true,
     opportunityScore: true,
   },
+  minOpportunityScoreToShow: 0,
+  highConvictionOpportunityScore: 75,
+  highConvictionTechnicalScore: 20,
+  highConvictionIvScore: 15,
+  highConvictionEntryScore: 15,
+  highConvictionMomentumScore: 8,
+  screenerDefaultSortColumn: "marketCap",
+  screenerDefaultSortDirection: "desc",
+  screenerDefaultPreset: "All",
+  screenerDefaultLiquidity: "all",
+  screenerDefaultOutlook: "all",
+  showScoreBreakdownTooltip: true,
+  showSetupTypeBadge: true,
+  showRecommendationBadge: true,
   defaultMinIvRank: 30,
   defaultMinVolume: 500000,
   defaultMinMarketCap: "1B",

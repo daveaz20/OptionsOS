@@ -63,6 +63,41 @@ export interface ScanResult {
   topStrategies: TopStrategy[];
 }
 
+export interface HighConvictionThresholds {
+  opportunityScore: number;
+  technicalScore: number;
+  ivScore: number;
+  entryScore: number;
+  momentumScore: number;
+}
+
+export interface HighConvictionCandidate {
+  opportunityScore: number;
+  technicalScore: number;
+  ivScore: number;
+  entryScore: number;
+  momentumScore: number;
+}
+
+export const DEFAULT_HIGH_CONVICTION_THRESHOLDS: HighConvictionThresholds = {
+  opportunityScore: 75,
+  technicalScore: 20,
+  ivScore: 15,
+  entryScore: 15,
+  momentumScore: 8,
+};
+
+export function isHighConviction(
+  row: HighConvictionCandidate,
+  thresholds: HighConvictionThresholds = DEFAULT_HIGH_CONVICTION_THRESHOLDS,
+): boolean {
+  return row.opportunityScore >= thresholds.opportunityScore
+    && row.technicalScore >= thresholds.technicalScore
+    && row.ivScore >= thresholds.ivScore
+    && row.entryScore >= thresholds.entryScore
+    && row.momentumScore >= thresholds.momentumScore;
+}
+
 export interface ScanOpts {
   isETF?: boolean;
   etfCategory?: "leveraged-bull" | "leveraged-bear" | "leveraged-single" | "sector";

@@ -2,6 +2,7 @@ import React, { useState, useMemo, useRef, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { useSettings } from "@/contexts/SettingsContext";
+import type { AppSettings } from "@/lib/settings-defaults";
 import { useGetWatchlist, useAddToWatchlist, useRemoveFromWatchlist, getGetWatchlistQueryKey } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
 import { StrategyFilterDropdown } from "@/components/strategy/StrategyFilterDropdown";
@@ -20,7 +21,8 @@ interface ScreenerRow {
   fiftyTwoWeekHigh: number; fiftyTwoWeekLow: number;
   pctFrom52High: number; pctFrom52Low: number; earningsDate: string;
   technicalStrength: number; rsi14: number; macdHistogram: number; ivRank: number;
-  opportunityScore: number; momentumScore?: number; technicalScore?: number;
+  opportunityScore: number; technicalScore: number; ivScore: number; entryScore: number;
+  momentumScore: number; vwapScore: number;
   setupType: string; recommendedOutlook: string;
   supportPrice: number; resistancePrice: number; liquidity: string;
   source?: "polygon" | "yahoo" | "polygon-eod";
@@ -67,6 +69,8 @@ const FILTER_DEFS: FilterDef[] = [
   { key:"relVol",        label:"Rel. Volume",     category:"General",      type:"minonly", unit:"×",  field:r=>r.relVol,          min:0,   max:20,   step:0.1 },
   { key:"volume",        label:"Volume",          category:"General",      type:"minonly",            field:r=>r.volume,          min:0 },
   { key:"beta",          label:"Beta",            category:"General",      type:"range",   field:r=>r.beta,            min:0,  max:5,  step:0.1 },
+  { key:"liquidity",     label:"Liquidity",       category:"General",      type:"select",  field:r=>r.liquidity,
+    options:[{value:"",label:"All"},{value:"Liquid",label:"Liquid only"}] },
   { key:"rsi14",         label:"RSI (14)",        category:"Technicals",   type:"range",              field:r=>r.rsi14,           min:0,  max:100 },
   { key:"technicalStr",  label:"Tech Strength",   category:"Technicals",   type:"range",              field:r=>r.technicalStrength,min:1, max:10, step:0.1 },
   { key:"pctFrom52High", label:"% From 52W High", category:"Technicals",   type:"range",   unit:"%",  field:r=>r.pctFrom52High,  min:-100,max:50 },
@@ -78,8 +82,10 @@ const FILTER_DEFS: FilterDef[] = [
   { key:"shortRatio",    label:"Short Ratio",     category:"Fundamentals", type:"minonly", unit:"d",  field:r=>r.shortRatio,     min:0,  max:30 },
   { key:"ivRank",        label:"IV Rank",         category:"Options",      type:"range",   unit:"%",  field:r=>r.ivRank,         min:0,  max:100 },
   { key:"opportunityScore",label:"Opp. Score",    category:"Options",      type:"minonly",            field:r=>r.opportunityScore,min:0,max:100 },
-  { key:"momentumScore", label:"Momentum Score",  category:"Options",      type:"minonly",            field:r=>(r.momentumScore ?? 0), min:0, max:30 },
-  { key:"technicalScore",label:"Technical Score", category:"Options",      type:"minonly",            field:r=>(r.technicalScore ?? 0), min:0, max:30 },
+  { key:"momentumScore", label:"Momentum Score",  category:"Options",      type:"minonly",            field:r=>r.momentumScore, min:0, max:15 },
+  { key:"technicalScore",label:"Technical Score", category:"Options",      type:"minonly",            field:r=>r.technicalScore, min:0, max:35 },
+  { key:"ivScore",       label:"IV Score",        category:"Options",      type:"minonly",            field:r=>r.ivScore, min:0, max:25 },
+  { key:"entryScore",    label:"Entry Score",     category:"Options",      type:"minonly",            field:r=>r.entryScore, min:0, max:25 },
   { key:"marketCapNum",  label:"Mkt Cap ($)",     category:"General",      type:"range",              field:r=>r.marketCap,       min:0 },
   { key:"daysToEarnings",label:"Days to Earnings",category:"General",      type:"range",              field:r=>r.daysToEarnings,  min:0, max:365 },
   { key:"alpha",         label:"Alpha Score",     category:"Factors",      type:"minonly",            field:r=>r.alpha,           min:0,  max:100 },
@@ -130,6 +136,21 @@ const PRESETS = [
   { label:"Large Cap",     filters:[{key:"marketCap",value:"large+"}] as ActiveFilter[] },
   { label:"Small Cap",     filters:[{key:"marketCap",value:"small"}] as ActiveFilter[] },
 ];
+
+function filtersFromScreenerDefaults(settings: AppSettings): ActiveFilter[] {
+  const preset = PRESETS.find(p => p.label === settings.screenerDefaultPreset) ?? PRESETS[0];
+  const filters = preset.filters.map(filter => ({ ...filter }));
+
+  if (settings.screenerDefaultLiquidity === "liquid") {
+    filters.push({ key: "liquidity", value: "Liquid" });
+  }
+
+  if (settings.screenerDefaultOutlook && settings.screenerDefaultOutlook !== "all") {
+    filters.push({ key: "outlook", value: settings.screenerDefaultOutlook });
+  }
+
+  return filters;
+}
 
 // ─── Factor engine ────────────────────────────────────────────────────────────
 
@@ -405,10 +426,10 @@ export default function Screener() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  const [activeFilters,   setActiveFilters]   = useState<ActiveFilter[]>([]);
-  const [activePreset,    setActivePreset]    = useState("All");
-  const [sortKey,         setSortKey]         = useState("marketCap");
-  const [sortDir,         setSortDir]         = useState<"asc"|"desc">("desc");
+  const [activeFilters,   setActiveFilters]   = useState<ActiveFilter[]>(() => filtersFromScreenerDefaults(settings));
+  const [activePreset,    setActivePreset]    = useState(settings.screenerDefaultPreset || "All");
+  const [sortKey,         setSortKey]         = useState(settings.screenerDefaultSortColumn || "marketCap");
+  const [sortDir,         setSortDir]         = useState<"asc"|"desc">(settings.screenerDefaultSortDirection || "desc");
   const [tab,             setTab]             = useState<TabKey>(() => (settings.screenerDefaultTab as TabKey) || "overview");
   const [showPicker,      setShowPicker]      = useState(false);
   const [strategyFilter,  setStrategyFilter]  = useState<string>("");
@@ -425,20 +446,41 @@ export default function Screener() {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
+  useEffect(() => {
+    setSortKey(settings.screenerDefaultSortColumn || "marketCap");
+    setSortDir(settings.screenerDefaultSortDirection || "desc");
+    setActivePreset(settings.screenerDefaultPreset || "All");
+    setActiveFilters(filtersFromScreenerDefaults(settings));
+    setStrategyFilter("");
+  }, [
+    settings.screenerDefaultSortColumn,
+    settings.screenerDefaultSortDirection,
+    settings.screenerDefaultPreset,
+    settings.screenerDefaultLiquidity,
+    settings.screenerDefaultOutlook,
+  ]);
+
   const factored = useMemo(() => computeFactors(raw), [raw]);
   const filtered = useMemo(() => {
-    const base = applyFilters(factored, activeFilters);
+    const minScore = settings.minOpportunityScoreToShow ?? 0;
+    const base = applyFilters(factored, activeFilters).filter(row => row.opportunityScore >= minScore);
     if (!strategyFilter) return base;
     return base.filter((row) => Boolean(getMatchedStrategy(row, strategyFilter)));
-  }, [factored, activeFilters, strategyFilter]);
+  }, [factored, activeFilters, strategyFilter, settings.minOpportunityScoreToShow]);
   const sorted   = useMemo(() => {
     return [...filtered].sort((a,b) => {
       if (strategyFilter && sortKey === "marketCap") {
         const strategyDelta = (getMatchedStrategy(b, strategyFilter)?.fitScore ?? 0) - (getMatchedStrategy(a, strategyFilter)?.fitScore ?? 0);
         if (strategyDelta !== 0) return strategyDelta;
       }
-      const va = (a as any)[sortKey] ?? 0, vb = (b as any)[sortKey] ?? 0;
-      return sortDir === "desc" ? vb - va : va - vb;
+      const va = (a as unknown as Record<string, unknown>)[sortKey] ?? 0;
+      const vb = (b as unknown as Record<string, unknown>)[sortKey] ?? 0;
+      if (typeof va === "string" || typeof vb === "string") {
+        const delta = String(va).localeCompare(String(vb));
+        return sortDir === "desc" ? -delta : delta;
+      }
+      const delta = Number(va) - Number(vb);
+      return sortDir === "desc" ? -delta : delta;
     });
   }, [filtered, sortKey, sortDir, strategyFilter]);
 
@@ -647,6 +689,9 @@ function StockTable({ rows, tab, sortKey, sortDir, onSort, navigate, watchlistSy
   const headerPadding = settings.uiDensity === "compact" ? "6px 10px" : "8px 10px";
   const columnVisibility = settings.screenerColumnVisibility;
   const isVisible = (key: string) => columnVisibility[key as keyof typeof columnVisibility] ?? true;
+  const scoreTitle = (r: FactoredRow) => settings.showScoreBreakdownTooltip
+    ? `Opportunity ${r.opportunityScore}/100\nTechnical ${r.technicalScore}/35\nIV ${r.ivScore}/25\nEntry ${r.entryScore}/25\nMomentum ${r.momentumScore}/15\nVWAP ${r.vwapScore}/10`
+    : undefined;
 
   const baseCol: Col = {
     key:"symbol", label:"Symbol", width:160,
@@ -706,8 +751,8 @@ function StockTable({ rows, tab, sortKey, sortDir, onSort, navigate, watchlistSy
       { key:"opportunityScore", label:"Score", right:true, render:r=>{
         const color = r.opportunityScore>=70?"#30d158":r.opportunityScore>=50?"#ffd60a":"rgba(255,255,255,0.45)";
         return settings.showConvictionBadges
-          ? <span style={{ display:"inline-flex", alignItems:"center", justifyContent:"center", minWidth:32, height:20, borderRadius:5, color, background:`${color}20`, border:`1px solid ${color}44`, fontVariantNumeric:"tabular-nums", fontWeight:700 }}>{r.opportunityScore.toFixed(0)}</span>
-          : <span style={{ color, fontVariantNumeric:"tabular-nums", fontWeight:600 }}>{r.opportunityScore.toFixed(0)}</span>;
+          ? <span title={scoreTitle(r)} style={{ display:"inline-flex", alignItems:"center", justifyContent:"center", minWidth:32, height:20, borderRadius:5, color, background:`${color}20`, border:`1px solid ${color}44`, fontVariantNumeric:"tabular-nums", fontWeight:700 }}>{r.opportunityScore.toFixed(0)}</span>
+          : <span title={scoreTitle(r)} style={{ color, fontVariantNumeric:"tabular-nums", fontWeight:600 }}>{r.opportunityScore.toFixed(0)}</span>;
       }},
     ],
     performance: [
@@ -761,7 +806,7 @@ function StockTable({ rows, tab, sortKey, sortDir, onSort, navigate, watchlistSy
       { key:"ivRank",         label:"IV Rank",      right:true, render:r=><span style={{ color:r.ivRank>70?"#ff9f0a":r.ivRank>50?"#ffd60a":"rgba(255,255,255,0.55)", fontWeight:r.ivRank>50?700:400, fontVariantNumeric:"tabular-nums" }}>{r.ivRank.toFixed(0)}</span> },
       { key:"opportunityScore",label:"Opp Score",   right:true, render:r=>{
         const c=r.opportunityScore>=70?"#30d158":r.opportunityScore>=50?"#ffd60a":"rgba(255,255,255,0.45)";
-        return <span style={{ color:c, fontVariantNumeric:"tabular-nums", fontWeight:600 }}>{r.opportunityScore.toFixed(0)}</span>;
+        return <span title={scoreTitle(r)} style={{ color:c, fontVariantNumeric:"tabular-nums", fontWeight:600 }}>{r.opportunityScore.toFixed(0)}</span>;
       }},
       { key:"setupType",      label:"Setup",                   render:r=><span style={{ fontSize:10, color:"rgba(255,255,255,0.45)" }}>{r.setupType}</span> },
       { key:"recommendedOutlook", label:"Outlook",             render:r=>(
@@ -784,7 +829,10 @@ function StockTable({ rows, tab, sortKey, sortDir, onSort, navigate, watchlistSy
     ],
   };
 
-  const cols = (TAB_COLS[tab] ?? TAB_COLS.overview).filter((col) => isVisible(col.key));
+  const cols = (TAB_COLS[tab] ?? TAB_COLS.overview)
+    .filter((col) => isVisible(col.key))
+    .filter((col) => settings.showSetupTypeBadge || col.key !== "setupType")
+    .filter((col) => settings.showRecommendationBadge || col.key !== "recommendation");
   const visibleRows = rows.slice(0, settings.screenerRowsPerPage);
 
   const TH = ({ col }: { col: Col }) => (

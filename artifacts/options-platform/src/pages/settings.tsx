@@ -3,7 +3,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSettings } from "@/contexts/SettingsContext";
-import type { AppSettings } from "@/lib/settings-defaults";
+import { SETTING_DEFAULTS, type AppSettings } from "@/lib/settings-defaults";
 import {
   Settings, SlidersHorizontal, ShieldAlert, Search,
   Target, BarChart2, Palette, Database, Check,
@@ -20,7 +20,7 @@ type SettingDef =
   | { key: string; label: string; description?: string; type: "toggle"; default: boolean }
   | { key: string; label: string; description?: string; type: "select"; default: string | number; options: SelectOption[] }
   | { key: string; label: string; description?: string; type: "number"; default: number; min?: number; max?: number; step?: number; unit?: string }
-  | { key: string; label: string; description?: string; type: "slider"; default: number; min: number; max: number; step?: number; unit?: string }
+  | { key: string; label: string; description?: string; type: "slider"; default: number; min: number; max: number; step?: number; unit?: string; showMaxInLabel?: boolean }
   | { key: string; label: string; description?: string; type: "multiselect"; default: string[]; options: SelectOption[] }
   | { key: string; label: string; description?: string; type: "toggleGroup"; default: Record<string, boolean>; options: SelectOption[] }
   | { key: string; label: string; description?: string; type: "info" };
@@ -34,6 +34,54 @@ type CategoryDef = {
 };
 
 // ── Category + Settings Registry ──────────────────────────────────────────
+
+const SCREENER_SORT_FIELDS: SelectOption[] = [
+  { label: "Symbol", value: "symbol" },
+  { label: "Name", value: "name" },
+  { label: "Price", value: "price" },
+  { label: "Change", value: "change" },
+  { label: "Change %", value: "changePercent" },
+  { label: "Volume", value: "volume" },
+  { label: "Average Volume", value: "avgVolume" },
+  { label: "Relative Volume", value: "relVol" },
+  { label: "Market Cap", value: "marketCap" },
+  { label: "Sector", value: "sector" },
+  { label: "Beta", value: "beta" },
+  { label: "P/E", value: "pe" },
+  { label: "Forward P/E", value: "forwardPE" },
+  { label: "EPS", value: "eps" },
+  { label: "Dividend Yield", value: "dividendYield" },
+  { label: "Short Ratio", value: "shortRatio" },
+  { label: "Price Target", value: "priceTarget" },
+  { label: "Recommendation", value: "recommendation" },
+  { label: "52W High", value: "fiftyTwoWeekHigh" },
+  { label: "52W Low", value: "fiftyTwoWeekLow" },
+  { label: "% From 52W High", value: "pctFrom52High" },
+  { label: "% From 52W Low", value: "pctFrom52Low" },
+  { label: "Earnings Date", value: "earningsDate" },
+  { label: "Technical Strength", value: "technicalStrength" },
+  { label: "RSI 14", value: "rsi14" },
+  { label: "MACD Histogram", value: "macdHistogram" },
+  { label: "IV Rank", value: "ivRank" },
+  { label: "Opportunity Score", value: "opportunityScore" },
+  { label: "Technical Score", value: "technicalScore" },
+  { label: "IV Score", value: "ivScore" },
+  { label: "Entry Score", value: "entryScore" },
+  { label: "Momentum Score", value: "momentumScore" },
+  { label: "VWAP Score", value: "vwapScore" },
+  { label: "Setup Type", value: "setupType" },
+  { label: "Outlook", value: "recommendedOutlook" },
+  { label: "Support Price", value: "supportPrice" },
+  { label: "Resistance Price", value: "resistancePrice" },
+  { label: "Liquidity", value: "liquidity" },
+  { label: "Source", value: "source" },
+];
+
+const SCREENER_PRESET_OPTIONS = [
+  "All", "Options Seller", "Momentum", "High Volume", "Value", "Bullish Setup",
+  "Short Squeeze", "Dividend", "High IV", "Low IV", "Oversold", "Overbought",
+  "Earnings Soon", "Large Cap", "Small Cap",
+].map(label => ({ label, value: label }));
 
 const CATEGORIES: CategoryDef[] = [
   {
@@ -97,17 +145,20 @@ const CATEGORIES: CategoryDef[] = [
     icon: <Search size={14} />,
     description: "Default filter values and scoring thresholds when the Screener loads.",
     settings: [
-      { key: "defaultMinIvRank", label: "Min IV rank", description: "Default lower bound for IV rank filter", type: "slider", default: 30, min: 0, max: 100, unit: "%" },
-      { key: "defaultMinVolume", label: "Min daily volume", description: "Minimum share volume to include", type: "number", default: 500000, min: 0, unit: "shares" },
-      { key: "defaultMinMarketCap", label: "Min market cap", type: "select", default: "1B", options: [{ label: "Any", value: "any" }, { label: "$300M+", value: "300M" }, { label: "$1B+", value: "1B" }, { label: "$10B+", value: "10B" }, { label: "$100B+", value: "100B" }] },
-      { key: "defaultMinOpportunityScore", label: "Min opportunity score", description: "Only show stocks above this composite score", type: "slider", default: 50, min: 0, max: 100 },
-      { key: "minPrice", label: "Min stock price", type: "number", default: 5, min: 0, unit: "$" },
-      { key: "maxPrice", label: "Max stock price", description: "0 = no limit", type: "number", default: 0, min: 0, unit: "$" },
-      { key: "minLiquidity", label: "Min liquidity", type: "select", default: "medium", options: [{ label: "Any", value: "any" }, { label: "Low", value: "low" }, { label: "Medium", value: "medium" }, { label: "High", value: "high" }] },
-      { key: "screenerRowsPerPage", label: "Rows per page", description: "Maximum rows displayed in the screener table", type: "select", default: 100, options: [{ label: "25", value: 25 }, { label: "50", value: 50 }, { label: "100", value: 100 }] },
-      { key: "screenerDefaultTab", label: "Default column view", description: "Which tab opens when you navigate to the screener", type: "select", default: "overview", options: [{ label: "Overview", value: "overview" }, { label: "Performance", value: "performance" }, { label: "Technicals", value: "technicals" }, { label: "Fundamentals", value: "fundamentals" }, { label: "Options", value: "options" }, { label: "Factor Alpha", value: "factors" }] },
-      { key: "showSectorBadge", label: "Show sector column", description: "Display sector label in Overview tab", type: "toggle", default: true },
-      { key: "showOutlookBadge", label: "Show outlook badge", description: "Display bullish/bearish badge in Overview and Options tabs", type: "toggle", default: true },
+      { key: "minOpportunityScoreToShow", label: "Minimum opportunity score", description: "Hide screener rows below this composite score.", type: "slider", default: 0, min: 0, max: 100 },
+      { key: "highConvictionOpportunityScore", label: "opportunityScore min", description: "Opportunity score required before a row can qualify as high conviction.", type: "slider", default: 75, min: 0, max: 100, showMaxInLabel: true },
+      { key: "highConvictionTechnicalScore", label: "technicalScore min", type: "slider", default: 20, min: 0, max: 35, showMaxInLabel: true },
+      { key: "highConvictionIvScore", label: "ivScore min", type: "slider", default: 15, min: 0, max: 25, showMaxInLabel: true },
+      { key: "highConvictionEntryScore", label: "entryScore min", type: "slider", default: 15, min: 0, max: 25, showMaxInLabel: true },
+      { key: "highConvictionMomentumScore", label: "momentumScore min", type: "slider", default: 8, min: 0, max: 15, showMaxInLabel: true },
+      { key: "screenerDefaultSortColumn", label: "Default sort column", description: "Column used when the screener opens or defaults are reset.", type: "select", default: "marketCap", options: SCREENER_SORT_FIELDS },
+      { key: "screenerDefaultSortDirection", label: "Default sort direction", type: "select", default: "desc", options: [{ label: "Ascending", value: "asc" }, { label: "Descending", value: "desc" }] },
+      { key: "screenerDefaultPreset", label: "Default filter preset on load", type: "select", default: "All", options: SCREENER_PRESET_OPTIONS },
+      { key: "screenerDefaultLiquidity", label: "Liquidity filter default", type: "select", default: "all", options: [{ label: "All", value: "all" }, { label: "Liquid only", value: "liquid" }] },
+      { key: "screenerDefaultOutlook", label: "Default outlook filter", type: "select", default: "all", options: [{ label: "All", value: "all" }, { label: "Bullish", value: "bullish" }, { label: "Bearish", value: "bearish" }, { label: "Neutral", value: "neutral" }] },
+      { key: "showScoreBreakdownTooltip", label: "Show score breakdown tooltip", description: "Expose component scores when hovering opportunity score cells.", type: "toggle", default: true },
+      { key: "showSetupTypeBadge", label: "Show setup type badge", type: "toggle", default: true },
+      { key: "showRecommendationBadge", label: "Show recommendation badge", type: "toggle", default: true },
     ],
   },
   {
@@ -457,6 +508,9 @@ function SettingRow({
   })();
 
   const isMultiSelect = setting.type === "multiselect" || setting.type === "toggleGroup";
+  const label = setting.type === "slider" && setting.showMaxInLabel
+    ? `${setting.label}: ${Number(value ?? setting.default)} / ${setting.max}`
+    : setting.label;
 
   return (
     <div style={{
@@ -465,7 +519,7 @@ function SettingRow({
       padding: "14px 0", borderBottom: "1px solid rgba(255,255,255,0.04)",
     }}>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13, fontWeight: 500 }}>{setting.label}</div>
+        <div style={{ fontSize: 13, fontWeight: 500 }}>{label}</div>
         {setting.description && (
           <div style={{ fontSize: 11.5, color: "hsl(var(--muted-foreground))", marginTop: 3, lineHeight: 1.45 }}>
             {setting.description}
@@ -729,6 +783,14 @@ export default function SettingsPage() {
 
   const activeCategoryDef = CATEGORIES.find(c => c.id === activeCategory)!;
 
+  const handleResetCategory = useCallback((category: CategoryDef) => {
+    for (const setting of category.settings) {
+      if (setting.type === "info") continue;
+      const key = setting.key as keyof AppSettings;
+      updateSetting(key, SETTING_DEFAULTS[key]);
+    }
+  }, [updateSetting]);
+
   return (
     <div style={{ display: "flex", height: "100%", background: "hsl(0 0% 4%)", overflow: "hidden" }}>
 
@@ -858,6 +920,16 @@ export default function SettingsPage() {
                 {activeCategoryDef.settings.length === 0 && (
                   <div style={{ padding: "32px 0", color: "hsl(var(--muted-foreground))", fontSize: 13 }}>
                     No settings in this category yet.
+                  </div>
+                )}
+                {activeCategory === "screener" && (
+                  <div style={{ marginTop: 18 }}>
+                    <ActionRow
+                      label="Reset to Defaults"
+                      description="Restore every Screener & Scoring option to its default value"
+                      icon={<RotateCcw size={13} />}
+                      onClick={() => handleResetCategory(activeCategoryDef)}
+                    />
                   </div>
                 )}
               </div>
