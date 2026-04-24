@@ -122,6 +122,38 @@
 
 .dark {}
 
+.light {
+  --background: 0 0% 97%;
+  --foreground: 225 15% 12%;
+
+  --border: 220 13% 88%;
+  --input: 220 13% 88%;
+  --ring: 217 91% 55%;
+
+  --card: 0 0% 100%;
+  --card-foreground: 225 15% 12%;
+  --card-border: 220 13% 20% / 0.10;
+
+  --popover: 0 0% 100%;
+  --popover-foreground: 225 15% 12%;
+  --popover-border: 220 13% 20% / 0.12;
+
+  --secondary: 220 14% 93%;
+  --secondary-foreground: 225 15% 12%;
+
+  --muted: 220 14% 92%;
+  --muted-foreground: 225 9% 42%;
+
+  --accent: 217 91% 94%;
+  --accent-foreground: 217 91% 28%;
+
+  --sidebar: 0 0% 100%;
+  --sidebar-foreground: 225 15% 12%;
+  --sidebar-border: 220 13% 88%;
+  --sidebar-accent: 220 14% 93%;
+  --sidebar-accent-foreground: 225 15% 12%;
+}
+
 @layer base {
   * {
     @apply border-border;

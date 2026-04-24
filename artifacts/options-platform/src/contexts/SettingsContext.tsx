@@ -16,6 +16,17 @@ interface SettingsContextValue {
 const SettingsContext = createContext<SettingsContextValue | null>(null);
 const SETTINGS_QUERY_KEY = ["settings"] as const;
 
+function normalizeSettings(settings: Partial<AppSettings> | undefined): AppSettings {
+  return {
+    ...SETTING_DEFAULTS,
+    ...(settings ?? {}),
+    screenerColumnVisibility: {
+      ...SETTING_DEFAULTS.screenerColumnVisibility,
+      ...(settings?.screenerColumnVisibility ?? {}),
+    },
+  };
+}
+
 async function requestSettings<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     ...init,
@@ -68,7 +79,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (serverSettings) {
-      setSettings({ ...SETTING_DEFAULTS, ...(serverSettings as Partial<AppSettings>) });
+      setSettings(normalizeSettings(serverSettings));
     }
   }, [serverSettings]);
 

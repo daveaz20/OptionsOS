@@ -21,6 +21,7 @@ type SettingDef =
   | { key: string; label: string; description?: string; type: "number"; default: number; min?: number; max?: number; step?: number; unit?: string }
   | { key: string; label: string; description?: string; type: "slider"; default: number; min: number; max: number; step?: number; unit?: string }
   | { key: string; label: string; description?: string; type: "multiselect"; default: string[]; options: SelectOption[] }
+  | { key: string; label: string; description?: string; type: "toggleGroup"; default: Record<string, boolean>; options: SelectOption[] }
   | { key: string; label: string; description?: string; type: "info" };
 
 type CategoryDef = {
@@ -53,19 +54,29 @@ const CATEGORIES: CategoryDef[] = [
     id: "display",
     label: "Display & UI",
     icon: <Palette size={14} />,
-    description: "Visual density, layout, animation, and dashboard widget preferences.",
+    description: "Theme, screener table layout, and display preferences.",
     settings: [
       { key: "theme", label: "Theme", type: "select", default: "dark", options: [{ label: "Dark", value: "dark" }, { label: "Light", value: "light" }, { label: "System", value: "system" }] },
-      { key: "uiDensity", label: "UI density", type: "select", default: "comfortable", options: [{ label: "Compact", value: "compact" }, { label: "Comfortable", value: "comfortable" }, { label: "Spacious", value: "spacious" }] },
-      { key: "fontSize", label: "Font size", type: "select", default: "medium", options: [{ label: "Small", value: "small" }, { label: "Medium", value: "medium" }, { label: "Large", value: "large" }] },
-      { key: "tableRowHeight", label: "Table row height", type: "select", default: "default", options: [{ label: "Compact", value: "compact" }, { label: "Default", value: "default" }, { label: "Relaxed", value: "relaxed" }] },
-      { key: "animateTransitions", label: "Animate transitions", description: "Fade and slide effects between states", type: "toggle", default: true },
-      { key: "sidebarDefaultOpen", label: "Sidebar expanded by default", type: "toggle", default: true },
-      { key: "showMiniCharts", label: "Show mini charts in screener", description: "Sparkline for each stock row", type: "toggle", default: false },
-      { key: "showMarketHoursIndicator", label: "Show market hours indicator", description: "Display market open/closed status in the header", type: "toggle", default: true },
-      { key: "showBreadthBar", label: "Show breadth indicator", description: "Highlight advancing vs declining stocks on the dashboard", type: "toggle", default: true },
-      { key: "dashboardCompactCards", label: "Compact dashboard cards", description: "Reduce padding in account summary cards", type: "toggle", default: false },
-      { key: "moverCount", label: "Movers list size", description: "Number of top gainers/losers shown on the dashboard", type: "select", default: 5, options: [{ label: "5", value: 5 }, { label: "10", value: 10 }, { label: "20", value: 20 }] },
+      { key: "screenerColumnVisibility", label: "Screener column visibility", description: "Choose which columns are visible in screener tables and symbol lists.", type: "toggleGroup", default: {
+        symbol: true, price: true, changePercent: true, volume: true, relVol: true,
+        marketCap: true, sector: true, beta: true, recommendedOutlook: true, opportunityScore: true,
+      }, options: [
+        { label: "Symbol", value: "symbol" },
+        { label: "Price", value: "price" },
+        { label: "Change %", value: "changePercent" },
+        { label: "Volume", value: "volume" },
+        { label: "Rel Vol", value: "relVol" },
+        { label: "Market Cap", value: "marketCap" },
+        { label: "Sector", value: "sector" },
+        { label: "Beta", value: "beta" },
+        { label: "Outlook", value: "recommendedOutlook" },
+        { label: "Score", value: "opportunityScore" },
+      ] },
+      { key: "screenerRowsPerPage", label: "Rows per page", description: "Maximum screener rows shown at once", type: "select", default: 100, options: [{ label: "25", value: 25 }, { label: "50", value: 50 }, { label: "100", value: 100 }] },
+      { key: "uiDensity", label: "Row density", description: "Adjusts padding in screener rows", type: "select", default: "comfortable", options: [{ label: "Compact", value: "compact" }, { label: "Comfortable", value: "comfortable" }] },
+      { key: "showSectorBadge", label: "Show sector badges", description: "Display sector badges in screener lists where available", type: "toggle", default: true },
+      { key: "showOutlookBadge", label: "Show outlook badges", description: "Display bullish, bearish, and neutral outlook badges", type: "toggle", default: true },
+      { key: "showConvictionBadges", label: "Show conviction badges", description: "Display strategy and high-conviction badges", type: "toggle", default: true },
     ],
   },
   {
@@ -97,7 +108,7 @@ const CATEGORIES: CategoryDef[] = [
       { key: "minPrice", label: "Min stock price", type: "number", default: 5, min: 0, unit: "$" },
       { key: "maxPrice", label: "Max stock price", description: "0 = no limit", type: "number", default: 0, min: 0, unit: "$" },
       { key: "minLiquidity", label: "Min liquidity", type: "select", default: "medium", options: [{ label: "Any", value: "any" }, { label: "Low", value: "low" }, { label: "Medium", value: "medium" }, { label: "High", value: "high" }] },
-      { key: "screenerRowsPerPage", label: "Rows per page", description: "Maximum rows displayed in the screener table", type: "select", default: 100, options: [{ label: "50", value: 50 }, { label: "100", value: 100 }, { label: "200", value: 200 }, { label: "500", value: 500 }] },
+      { key: "screenerRowsPerPage", label: "Rows per page", description: "Maximum rows displayed in the screener table", type: "select", default: 100, options: [{ label: "25", value: 25 }, { label: "50", value: 50 }, { label: "100", value: 100 }] },
       { key: "screenerDefaultTab", label: "Default column view", description: "Which tab opens when you navigate to the screener", type: "select", default: "overview", options: [{ label: "Overview", value: "overview" }, { label: "Performance", value: "performance" }, { label: "Technicals", value: "technicals" }, { label: "Fundamentals", value: "fundamentals" }, { label: "Options", value: "options" }, { label: "Factor Alpha", value: "factors" }] },
       { key: "showSectorBadge", label: "Show sector column", description: "Display sector label in Overview tab", type: "toggle", default: true },
       { key: "showOutlookBadge", label: "Show outlook badge", description: "Display bullish/bearish badge in Overview and Options tabs", type: "toggle", default: true },
@@ -369,6 +380,49 @@ function MultiSelectInput({ value, options, onChange }: { value: string[]; optio
   );
 }
 
+function ToggleGroupInput({
+  value,
+  defaults,
+  options,
+  onChange,
+}: {
+  value: Record<string, boolean> | undefined;
+  defaults: Record<string, boolean>;
+  options: SelectOption[];
+  onChange: (v: Record<string, boolean>) => void;
+}) {
+  const current = { ...defaults, ...(value ?? {}) };
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(120px, 1fr))", gap: 7, width: 300, maxWidth: "100%" }}>
+      {options.map(o => {
+        const key = String(o.value);
+        const active = current[key] ?? true;
+        return (
+          <button
+            key={key}
+            onClick={() => onChange({ ...current, [key]: !active })}
+            style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
+              padding: "7px 9px", borderRadius: 6,
+              border: active ? "1px solid hsl(var(--primary)/0.35)" : "1px solid rgba(255,255,255,0.08)",
+              background: active ? "hsl(var(--primary)/0.10)" : "rgba(255,255,255,0.03)",
+              color: active ? "hsl(var(--foreground))" : "hsl(var(--muted-foreground))",
+              cursor: "pointer", fontSize: 11.5, fontWeight: 500,
+            }}
+          >
+            <span>{o.label}</span>
+            <span style={{
+              width: 8, height: 8, borderRadius: "50%",
+              background: active ? "hsl(var(--primary))" : "rgba(255,255,255,0.16)",
+              flexShrink: 0,
+            }} />
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── Setting row ────────────────────────────────────────────────────────────
 
 function SettingRow({
@@ -401,10 +455,12 @@ function SettingRow({
         return <SliderInput value={Number(value ?? setting.default)} min={setting.min} max={setting.max} step={setting.step} unit={setting.unit} onChange={v => onChange(setting.key, v)} />;
       case "multiselect":
         return <MultiSelectInput value={(value as string[] | undefined) ?? setting.default} options={setting.options} onChange={v => onChange(setting.key, v)} />;
+      case "toggleGroup":
+        return <ToggleGroupInput value={value as Record<string, boolean> | undefined} defaults={setting.default} options={setting.options} onChange={v => onChange(setting.key, v)} />;
     }
   })();
 
-  const isMultiSelect = setting.type === "multiselect";
+  const isMultiSelect = setting.type === "multiselect" || setting.type === "toggleGroup";
 
   return (
     <div style={{
@@ -432,7 +488,7 @@ type SaveStatus = "idle" | "saving" | "saved" | "error";
 function SaveIndicator({ status }: { status: SaveStatus }) {
   if (status === "idle") return null;
   const color = status === "error" ? "hsl(var(--destructive))" : status === "saved" ? "hsl(var(--success))" : "hsl(var(--muted-foreground))";
-  const label = status === "saving" ? "Saving…" : status === "saved" ? "Saved" : "Error saving";
+  const label = status === "saving" ? "Saving..." : status === "saved" ? "Saved ✓" : "Error saving";
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 5, color, fontSize: 12, fontWeight: 500 }}>
       {status === "saving" ? <Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} /> : <Check size={12} />}

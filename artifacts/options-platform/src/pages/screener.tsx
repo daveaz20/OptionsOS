@@ -641,7 +641,12 @@ function StockTable({ rows, tab, sortKey, sortDir, onSort, navigate, watchlistSy
   watchlistSymbolMap: Map<string, number>;
   onWatchlistToggle: (symbol: string, e: React.MouseEvent) => void;
 }) {
+  const { settings } = useSettings();
   interface Col { key:string; label:string; width?:number; right?:boolean; render:(r:FactoredRow)=>React.ReactNode }
+  const rowPadding = settings.uiDensity === "compact" ? "4px 10px" : "8px 10px";
+  const headerPadding = settings.uiDensity === "compact" ? "6px 10px" : "8px 10px";
+  const columnVisibility = settings.screenerColumnVisibility;
+  const isVisible = (key: string) => columnVisibility[key as keyof typeof columnVisibility] ?? true;
 
   const baseCol: Col = {
     key:"symbol", label:"Symbol", width:160,
@@ -679,19 +684,21 @@ function StockTable({ rows, tab, sortKey, sortDir, onSort, navigate, watchlistSy
       { key:"volume",    label:"Volume",    right:true, render:r=><span style={{ color:"rgba(255,255,255,0.55)", fontVariantNumeric:"tabular-nums" }}>{fmtVol(r.volume)}</span> },
       { key:"relVol",    label:"Rel Vol",   right:true, render:r=><span style={{ color:r.relVol>3?"#ff9f0a":r.relVol>2?"#ffd60a":"rgba(255,255,255,0.55)", fontVariantNumeric:"tabular-nums" }}>{r.relVol.toFixed(2)}×</span> },
       { key:"marketCap", label:"Mkt Cap",   right:true, render:r=><span style={{ color:"rgba(255,255,255,0.55)", fontVariantNumeric:"tabular-nums" }}>{r.marketCap > 0 ? fmtBig(r.marketCap) : "—"}</span> },
-      { key:"sector",    label:"Sector",               render:r=><span style={{ fontSize:10, color:"rgba(255,255,255,0.45)" }}>{r.sector}</span> },
+      { key:"sector",    label:"Sector",               render:r=>settings.showSectorBadge ? (
+        <span style={{ padding:"2px 7px", borderRadius:4, fontSize:10, fontWeight:600, color:"hsl(var(--primary))", background:"hsl(var(--primary) / 0.10)" }}>{r.sector}</span>
+      ) : <span style={{ fontSize:10, color:"rgba(255,255,255,0.45)" }}>{r.sector}</span> },
       { key:"beta",      label:"Beta",      right:true, render:r=><span style={{ color:"rgba(255,255,255,0.55)", fontVariantNumeric:"tabular-nums" }}>{r.beta.toFixed(2)}</span> },
       { key:"recommendedOutlook", label:"Outlook", render:r=>(
-        <span style={{ padding:"2px 7px", borderRadius:4, fontSize:10, fontWeight:600,
+        settings.showOutlookBadge ? <span style={{ padding:"2px 7px", borderRadius:4, fontSize:10, fontWeight:600,
           background: r.recommendedOutlook==="bullish"?"rgba(48,209,88,0.12)":r.recommendedOutlook==="bearish"?"rgba(255,69,58,0.12)":"rgba(255,255,255,0.06)",
           color: r.recommendedOutlook==="bullish"?"#30d158":r.recommendedOutlook==="bearish"?"#ff453a":"rgba(255,255,255,0.4)",
-        }}>{r.recommendedOutlook||"—"}</span>
+        }}>{r.recommendedOutlook||"—"}</span> : <span style={{ fontSize:10, color:"rgba(255,255,255,0.45)" }}>{r.recommendedOutlook||"—"}</span>
       )},
-      { key:"recommendation", label:"Analyst", right:true, render:r=>{
-        const v=r.recommendation;
-        const label = v<=1.5?"Strong Buy":v<=2?"Buy":v<=2.5?"Outperform":v<=3?"Hold":v<=3.5?"Underperform":"Sell";
-        const color = v<=2?"#30d158":v<=2.8?"#ffd60a":v<=3.5?"#ff9f0a":"#ff453a";
-        return <span style={{ fontSize:10, color, fontWeight:600 }}>{label}</span>;
+      { key:"opportunityScore", label:"Score", right:true, render:r=>{
+        const color = r.opportunityScore>=70?"#30d158":r.opportunityScore>=50?"#ffd60a":"rgba(255,255,255,0.45)";
+        return settings.showConvictionBadges
+          ? <span style={{ display:"inline-flex", alignItems:"center", justifyContent:"center", minWidth:32, height:20, borderRadius:5, color, background:`${color}20`, border:`1px solid ${color}44`, fontVariantNumeric:"tabular-nums", fontWeight:700 }}>{r.opportunityScore.toFixed(0)}</span>
+          : <span style={{ color, fontVariantNumeric:"tabular-nums", fontWeight:600 }}>{r.opportunityScore.toFixed(0)}</span>;
       }},
     ],
     performance: [
@@ -749,10 +756,10 @@ function StockTable({ rows, tab, sortKey, sortDir, onSort, navigate, watchlistSy
       }},
       { key:"setupType",      label:"Setup",                   render:r=><span style={{ fontSize:10, color:"rgba(255,255,255,0.45)" }}>{r.setupType}</span> },
       { key:"recommendedOutlook", label:"Outlook",             render:r=>(
-        <span style={{ padding:"2px 7px", borderRadius:4, fontSize:10, fontWeight:600,
+        settings.showOutlookBadge ? <span style={{ padding:"2px 7px", borderRadius:4, fontSize:10, fontWeight:600,
           background: r.recommendedOutlook==="bullish"?"rgba(48,209,88,0.12)":r.recommendedOutlook==="bearish"?"rgba(255,69,58,0.12)":"rgba(255,255,255,0.06)",
           color: r.recommendedOutlook==="bullish"?"#30d158":r.recommendedOutlook==="bearish"?"#ff453a":"rgba(255,255,255,0.4)",
-        }}>{r.recommendedOutlook||"—"}</span>
+        }}>{r.recommendedOutlook||"—"}</span> : <span style={{ fontSize:10, color:"rgba(255,255,255,0.45)" }}>{r.recommendedOutlook||"—"}</span>
       )},
       { key:"relVol",         label:"Rel Vol",      right:true, render:r=><span style={{ color:r.relVol>3?"#ff9f0a":r.relVol>2?"#ffd60a":"rgba(255,255,255,0.55)", fontVariantNumeric:"tabular-nums" }}>{r.relVol.toFixed(2)}×</span> },
       { key:"beta",           label:"Beta",         right:true, render:r=><span style={{ color:"rgba(255,255,255,0.55)", fontVariantNumeric:"tabular-nums" }}>{r.beta.toFixed(2)}</span> },
@@ -768,11 +775,12 @@ function StockTable({ rows, tab, sortKey, sortDir, onSort, navigate, watchlistSy
     ],
   };
 
-  const cols = TAB_COLS[tab] ?? TAB_COLS.overview;
+  const cols = (TAB_COLS[tab] ?? TAB_COLS.overview).filter((col) => isVisible(col.key));
+  const visibleRows = rows.slice(0, settings.screenerRowsPerPage);
 
   const TH = ({ col }: { col: Col }) => (
     <th onClick={()=>onSort(col.key)} style={{
-      padding:"7px 10px", fontSize:10, fontWeight:700, letterSpacing:"0.06em", textTransform:"uppercase",
+      padding:headerPadding, fontSize:10, fontWeight:700, letterSpacing:"0.06em", textTransform:"uppercase",
       color: sortKey===col.key ? "#0a84ff" : "rgba(255,255,255,0.3)",
       textAlign: col.right ? "right" : "left", cursor:"pointer", userSelect:"none", whiteSpace:"nowrap",
       position:"sticky", top:0, background:"#111", zIndex:2,
@@ -792,7 +800,7 @@ function StockTable({ rows, tab, sortKey, sortDir, onSort, navigate, watchlistSy
         </tr>
       </thead>
       <tbody>
-        {rows.slice(0,500).map((r,i)=>(
+        {visibleRows.map((r,i)=>(
           <tr key={r.symbol}
             onClick={()=>navigate(`/scanner?symbol=${r.symbol}`)}
             style={{ borderBottom:"1px solid rgba(255,255,255,0.035)", background:i%2?"rgba(255,255,255,0.01)":"transparent", cursor:"pointer" }}
@@ -800,7 +808,7 @@ function StockTable({ rows, tab, sortKey, sortDir, onSort, navigate, watchlistSy
             onMouseLeave={e=>(e.currentTarget.style.background=i%2?"rgba(255,255,255,0.01)":"transparent")}
           >
             {cols.map(c=>(
-              <td key={c.key} style={{ padding:"6px 10px", textAlign:c.right?"right":"left" }}>
+              <td key={c.key} style={{ padding:rowPadding, textAlign:c.right?"right":"left" }}>
                 {c.render(r)}
               </td>
             ))}

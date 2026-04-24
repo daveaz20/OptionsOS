@@ -1,3 +1,16 @@
+export interface ScreenerColumnVisibility {
+  symbol: boolean;
+  price: boolean;
+  changePercent: boolean;
+  volume: boolean;
+  relVol: boolean;
+  marketCap: boolean;
+  sector: boolean;
+  beta: boolean;
+  recommendedOutlook: boolean;
+  opportunityScore: boolean;
+}
+
 export interface AppSettings {
   // General
   defaultPage: string;
@@ -24,6 +37,7 @@ export interface AppSettings {
   maxOpenPositions: number;
   enforceRiskLimits: boolean;
   // Screener
+  screenerColumnVisibility: ScreenerColumnVisibility;
   defaultMinIvRank: number;
   defaultMinVolume: number;
   defaultMinMarketCap: string;
@@ -37,6 +51,7 @@ export interface AppSettings {
   screenerDefaultTab: string;
   showSectorBadge: boolean;
   showOutlookBadge: boolean;
+  showConvictionBadges: boolean;
   // Dashboard
   dashboardRefreshInterval: number;
   showMarketHoursIndicator: boolean;
@@ -143,6 +158,18 @@ export const SETTING_DEFAULTS: AppSettings = {
   maxOpenPositions: 10,
   enforceRiskLimits: true,
   // Screener
+  screenerColumnVisibility: {
+    symbol: true,
+    price: true,
+    changePercent: true,
+    volume: true,
+    relVol: true,
+    marketCap: true,
+    sector: true,
+    beta: true,
+    recommendedOutlook: true,
+    opportunityScore: true,
+  },
   defaultMinIvRank: 30,
   defaultMinVolume: 500000,
   defaultMinMarketCap: "1B",
@@ -156,6 +183,7 @@ export const SETTING_DEFAULTS: AppSettings = {
   screenerDefaultTab: "overview",
   showSectorBadge: true,
   showOutlookBadge: true,
+  showConvictionBadges: true,
   // Dashboard
   dashboardRefreshInterval: 60,
   showMarketHoursIndicator: true,

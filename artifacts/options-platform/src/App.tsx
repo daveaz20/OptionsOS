@@ -11,7 +11,14 @@ import { SettingsProvider, useSettings } from "@/contexts/SettingsContext";
 function ThemeSync() {
   const { setTheme } = useTheme();
   const { settings } = useSettings();
-  useEffect(() => { setTheme(settings.theme || "dark"); }, [settings.theme, setTheme]);
+  useEffect(() => {
+    const theme = settings.theme || "dark";
+    setTheme(theme);
+
+    const root = document.documentElement;
+    root.classList.toggle("light", theme === "light");
+    root.classList.toggle("dark", theme === "dark");
+  }, [settings.theme, setTheme]);
   return null;
 }
 

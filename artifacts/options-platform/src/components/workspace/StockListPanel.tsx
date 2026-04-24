@@ -6,6 +6,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { formatCurrency, formatPercent } from "@/lib/format";
 import type { Stock, WatchlistItem } from "@workspace/api-client-react";
 import { StrategyFilterDropdown } from "@/components/strategy/StrategyFilterDropdown";
+import { useSettings } from "@/contexts/SettingsContext";
 import {
   getMatchedStrategy,
   useStrategyRegistry,
@@ -49,6 +50,14 @@ const sortLabels: Record<SortKey, string> = {
   ivRank:      "IV Rank",
   move:        "Move %",
   symbol:      "A–Z",
+};
+
+const fmtCompact = (n: number): string => {
+  if (n >= 1e12) return `${(n / 1e12).toFixed(1)}T`;
+  if (n >= 1e9) return `${(n / 1e9).toFixed(1)}B`;
+  if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
+  if (n >= 1e3) return `${(n / 1e3).toFixed(0)}K`;
+  return String(Math.round(n));
 };
 
 // Score color: green ≥ 65, yellow ≥ 45, red < 45
@@ -159,6 +168,7 @@ function strategyTierFromId(setupType?: string): string | null {
 }
 
 export function StockListPanel({ selectedSymbol, onSelect, initialTab = "ideas" }: StockListPanelProps) {
+  const { settings } = useSettings();
   const [search, setSearch]           = useState("");
   const [tab, setTab]                 = useState<MainTab>(initialTab);
   const [filter, setFilter]           = useState<IdeaFilter>("all");
@@ -234,6 +244,11 @@ export function StockListPanel({ selectedSymbol, onSelect, initialTab = "ideas" 
 
   // Real high-conviction count from full universe (not capped by list limit)
   const highConviction = screenerStats?.highConviction ?? stocks.filter((s) => (s.opportunityScore ?? 0) >= 75).length;
+  const columnVisibility = settings.screenerColumnVisibility;
+  const isVisible = (key: keyof typeof columnVisibility) => columnVisibility[key] ?? true;
+  const isCompact = settings.uiDensity === "compact";
+  const rowPadding = isCompact ? "7px 9px" : "10px 10px";
+  const rowGap = isCompact ? 5 : 7;
 
   return (
     <div className="flex h-full flex-col" style={{ background: "hsl(0 0% 5%)", borderRight: "1px solid rgba(255,255,255,0.05)" }}>
@@ -319,7 +334,7 @@ export function StockListPanel({ selectedSymbol, onSelect, initialTab = "ideas" 
                 : items.length}
             </span>
           </span>
-          {tab === "ideas" && highConviction > 0 && (
+          {tab === "ideas" && highConviction > 0 && settings.showConvictionBadges && (
             <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, fontWeight: 600, color: "hsl(var(--success))", letterSpacing: "0.01em" }}>
               <Zap style={{ width: 10, height: 10 }} />
               {highConviction} high conviction
@@ -347,6 +362,7 @@ export function StockListPanel({ selectedSymbol, onSelect, initialTab = "ideas" 
               const tone       = setupTone(item.recommendedOutlook);
               const score      = item.opportunityScore ?? 40;
               const ivRank     = item.ivRank ?? 0;
+              const relVol     = Number((item as any).relVol ?? 0);
               const label      = shortLabel(item.setupType);
               const sColor     = scoreColor(score);
               const etfCat     = item.etfCategory;
@@ -360,8 +376,8 @@ export function StockListPanel({ selectedSymbol, onSelect, initialTab = "ideas" 
                   key={item.symbol}
                   onClick={() => onSelect(item.symbol, item as Stock)}
                   style={{
-                    width: "100%", display: "flex", flexDirection: "column", gap: 7,
-                    padding: "10px 10px", borderRadius: 8,
+                    width: "100%", display: "flex", flexDirection: "column", gap: rowGap,
+                    padding: rowPadding, borderRadius: 8,
                     border: isSelected ? "1px solid hsl(var(--primary) / 0.3)" : "1px solid transparent",
                     background: isSelected ? "hsl(var(--primary) / 0.07)" : "transparent",
                     cursor: "pointer", textAlign: "left", transition: "all 0.12s", marginBottom: 1,
@@ -373,29 +389,33 @@ export function StockListPanel({ selectedSymbol, onSelect, initialTab = "ideas" 
                   <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
                     <div style={{ minWidth: 0 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                        <span style={{
-                          fontSize: 13, fontWeight: 600, letterSpacing: "-0.02em",
-                          color: isSelected ? "hsl(var(--primary))" : "hsl(var(--foreground))",
-                        }}>
-                          {item.symbol}
-                        </span>
+                        {isVisible("symbol") && (
+                          <span style={{
+                            fontSize: 13, fontWeight: 600, letterSpacing: "-0.02em",
+                            color: isSelected ? "hsl(var(--primary))" : "hsl(var(--foreground))",
+                          }}>
+                            {item.symbol}
+                          </span>
+                        )}
                         {isWatched && <Star style={{ width: 10, height: 10, fill: "hsl(var(--primary))", color: "hsl(var(--primary))", flexShrink: 0 }} />}
-                        <span
-                          title={stratDesc || label}
-                          style={{
-                            fontSize: 9, fontWeight: 600, letterSpacing: "0.04em",
-                            textTransform: "uppercase", padding: "1.5px 5px", borderRadius: 3,
-                            color: tierColor ?? (tone === "bull" ? "hsl(var(--success))" : tone === "bear" ? "hsl(var(--destructive))" : "hsl(var(--muted-foreground))"),
-                            background: tierColor
-                              ? `color-mix(in srgb, ${tierColor} 12%, transparent)`
-                              : tone === "bull" ? "hsl(var(--success) / 0.10)" : tone === "bear" ? "hsl(var(--destructive) / 0.10)" : "rgba(255,255,255,0.05)",
-                            border: tierColor ? `1px solid color-mix(in srgb, ${tierColor} 25%, transparent)` : "none",
-                            flexShrink: 0,
-                          }}
-                        >
-                          {label}
-                        </span>
-                        {etfCat && (
+                        {settings.showConvictionBadges && (
+                          <span
+                            title={stratDesc || label}
+                            style={{
+                              fontSize: 9, fontWeight: 600, letterSpacing: "0.04em",
+                              textTransform: "uppercase", padding: "1.5px 5px", borderRadius: 3,
+                              color: tierColor ?? (tone === "bull" ? "hsl(var(--success))" : tone === "bear" ? "hsl(var(--destructive))" : "hsl(var(--muted-foreground))"),
+                              background: tierColor
+                                ? `color-mix(in srgb, ${tierColor} 12%, transparent)`
+                                : tone === "bull" ? "hsl(var(--success) / 0.10)" : tone === "bear" ? "hsl(var(--destructive) / 0.10)" : "rgba(255,255,255,0.05)",
+                              border: tierColor ? `1px solid color-mix(in srgb, ${tierColor} 25%, transparent)` : "none",
+                              flexShrink: 0,
+                            }}
+                          >
+                            {label}
+                          </span>
+                        )}
+                        {etfCat && settings.showSectorBadge && isVisible("sector") && (
                           <span style={{
                             fontSize: 9, fontWeight: 600, letterSpacing: "0.04em",
                             padding: "1.5px 5px", borderRadius: 3, flexShrink: 0,
@@ -404,6 +424,17 @@ export function StockListPanel({ selectedSymbol, onSelect, initialTab = "ideas" 
                             border: `1px solid color-mix(in srgb, ${ETF_BADGE_COLOR[etfCat]} 25%, transparent)`,
                           }}>
                             {ETF_BADGE_LABEL[etfCat]}
+                          </span>
+                        )}
+                        {settings.showSectorBadge && isVisible("sector") && !etfCat && item.sector && item.sector !== "Watchlist" && (
+                          <span style={{
+                            fontSize: 9, fontWeight: 600, letterSpacing: "0.04em",
+                            padding: "1.5px 5px", borderRadius: 3, flexShrink: 0,
+                            color: "hsl(var(--primary))",
+                            background: "hsl(var(--primary) / 0.10)",
+                            border: "1px solid hsl(var(--primary) / 0.22)",
+                          }}>
+                            {item.sector}
                           </span>
                         )}
                         {isEod && (
@@ -424,50 +455,66 @@ export function StockListPanel({ selectedSymbol, onSelect, initialTab = "ideas" 
                     </div>
 
                     {/* Price + change */}
-                    <div style={{ textAlign: "right", flexShrink: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 500, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums" }}>
-                        {formatCurrency(item.price)}
+                    {(isVisible("price") || isVisible("changePercent")) && (
+                      <div style={{ textAlign: "right", flexShrink: 0 }}>
+                        {isVisible("price") && (
+                          <div style={{ fontSize: 13, fontWeight: 500, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums" }}>
+                            {formatCurrency(item.price)}
+                          </div>
+                        )}
+                        {isVisible("changePercent") && (
+                          <div style={{
+                            display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 2,
+                            fontSize: 11, fontWeight: 500, marginTop: 2,
+                            color: isUp ? "hsl(var(--success))" : "hsl(var(--destructive))",
+                            fontVariantNumeric: "tabular-nums",
+                          }}>
+                            {isUp ? <ArrowUpRight style={{ width: 10, height: 10 }} /> : <ArrowDownRight style={{ width: 10, height: 10 }} />}
+                            {formatPercent(Math.abs(item.changePercent))}
+                          </div>
+                        )}
                       </div>
-                      <div style={{
-                        display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 2,
-                        fontSize: 11, fontWeight: 500, marginTop: 2,
-                        color: isUp ? "hsl(var(--success))" : "hsl(var(--destructive))",
-                        fontVariantNumeric: "tabular-nums",
-                      }}>
-                        {isUp ? <ArrowUpRight style={{ width: 10, height: 10 }} /> : <ArrowDownRight style={{ width: 10, height: 10 }} />}
-                        {formatPercent(Math.abs(item.changePercent))}
-                      </div>
-                    </div>
+                    )}
                   </div>
 
                   {/* Row 2: opportunity score bar + IV rank + score number */}
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  {(isVisible("opportunityScore") || isVisible("volume") || isVisible("relVol") || isVisible("marketCap") || isVisible("beta") || isVisible("recommendedOutlook")) && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                     {/* Score bar */}
-                    <div style={{ flex: 1, height: 3, borderRadius: 99, background: "rgba(255,255,255,0.06)", overflow: "hidden" }}>
+                    {isVisible("opportunityScore") && <div style={{ flex: 1, minWidth: 52, height: 3, borderRadius: 99, background: "rgba(255,255,255,0.06)", overflow: "hidden" }}>
                       <div style={{
                         height: "100%", borderRadius: 99, width: `${score}%`,
                         background: sColor, opacity: 0.85, transition: "width 0.5s",
                       }} />
-                    </div>
+                    </div>}
 
                     {/* IV Rank pill */}
-                    <span style={{
+                    {isVisible("relVol") && <span style={{
                       fontSize: 9, fontWeight: 500, letterSpacing: "0.03em",
-                      color: ivRank >= 60 ? "hsl(var(--warning, 38 92% 50%))" : ivRank >= 40 ? "hsl(var(--primary))" : "hsl(var(--muted-foreground))",
-                      background: ivRank >= 60 ? "hsl(38 92% 50% / 0.12)" : ivRank >= 40 ? "hsl(var(--primary) / 0.10)" : "rgba(255,255,255,0.05)",
+                      color: relVol >= 3 ? "hsl(var(--warning, 38 92% 50%))" : relVol >= 2 ? "hsl(var(--primary))" : "hsl(var(--muted-foreground))",
+                      background: relVol >= 3 ? "hsl(38 92% 50% / 0.12)" : relVol >= 2 ? "hsl(var(--primary) / 0.10)" : "rgba(255,255,255,0.05)",
                       padding: "1px 5px", borderRadius: 3, flexShrink: 0,
                     }}>
-                      IV {ivRank}%
-                    </span>
+                      RV {relVol.toFixed(2)}
+                    </span>}
+                    {isVisible("volume") && <span style={{ fontSize: 9, color: "hsl(var(--muted-foreground))" }}>Vol {fmtCompact((item as any).volume ?? 0)}</span>}
+                    {isVisible("marketCap") && <span style={{ fontSize: 9, color: "hsl(var(--muted-foreground))" }}>Cap {fmtCompact((item as any).marketCap ?? 0)}</span>}
+                    {isVisible("beta") && <span style={{ fontSize: 9, color: "hsl(var(--muted-foreground))" }}>Beta {Number((item as any).beta ?? 0).toFixed(2)}</span>}
+                    {isVisible("recommendedOutlook") && settings.showOutlookBadge && <span style={{
+                      fontSize: 9, fontWeight: 600, textTransform: "uppercase", padding: "1px 5px", borderRadius: 3,
+                      color: tone === "bull" ? "hsl(var(--success))" : tone === "bear" ? "hsl(var(--destructive))" : "hsl(var(--muted-foreground))",
+                      background: tone === "bull" ? "hsl(var(--success) / 0.10)" : tone === "bear" ? "hsl(var(--destructive) / 0.10)" : "rgba(255,255,255,0.05)",
+                    }}>{item.recommendedOutlook ?? "neutral"}</span>}
 
                     {/* Opportunity score */}
-                    <span style={{
+                    {isVisible("opportunityScore") && <span style={{
                       fontSize: 14, fontWeight: 700, letterSpacing: "-0.03em",
                       fontVariantNumeric: "tabular-nums", color: sColor, flexShrink: 0,
                     }}>
                       {score}
-                    </span>
+                    </span>}
                   </div>
+                  )}
                 </button>
               );
             })
