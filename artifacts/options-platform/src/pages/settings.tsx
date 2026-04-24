@@ -1,13 +1,9 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-  useGetUserSettings,
-  usePatchUserSettings,
-  useDeleteUserSettings,
-  getUserSettingsQueryKey,
-} from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useSettings } from "@/contexts/SettingsContext";
+import type { AppSettings } from "@/lib/settings-defaults";
 import {
   Settings, SlidersHorizontal, ShieldAlert, Search,
   LayoutDashboard, Link2, Target, BarChart2, Bell,
@@ -237,17 +233,6 @@ const SHORTCUTS = [
   { keys: ["?"], action: "Show this shortcuts reference" },
 ];
 
-// ── Defaults helper ───────────────────────────────────────────────────────
-
-function getDefault(key: string): unknown {
-  for (const cat of CATEGORIES) {
-    for (const s of cat.settings) {
-      if (s.key === key && s.type !== "info") return s.default;
-    }
-  }
-  return undefined;
-}
-
 // ── Control components ─────────────────────────────────────────────────────
 
 function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
@@ -454,72 +439,31 @@ function SaveIndicator({ status }: { status: SaveStatus }) {
 export default function SettingsPage() {
   const isMobile = useIsMobile();
   const [activeCategory, setActiveCategory] = useState("general");
-  const [localSettings, setLocalSettings] = useState<Record<string, unknown>>({});
-  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingRef = useRef<Record<string, unknown>>({});
   const queryClient = useQueryClient();
 
-  const { data: serverSettings, isLoading } = useGetUserSettings();
-  const patchMutation = usePatchUserSettings();
-  const deleteMutation = useDeleteUserSettings();
-
-  useEffect(() => {
-    if (serverSettings) setLocalSettings(serverSettings);
-  }, [serverSettings]);
-
-  const get = useCallback((key: string): unknown => {
-    if (key in localSettings) return localSettings[key];
-    return getDefault(key);
-  }, [localSettings]);
+  const { settings, isLoading, saveStatus, updateSetting, resetSettings } = useSettings();
 
   const handleChange = useCallback((key: string, value: unknown) => {
-    setLocalSettings(prev => ({ ...prev, [key]: value }));
-    pendingRef.current[key] = value;
-    setSaveStatus("saving");
-
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      const toSave = { ...pendingRef.current };
-      pendingRef.current = {};
-      patchMutation.mutate(toSave, {
-        onSuccess: () => {
-          setSaveStatus("saved");
-          setTimeout(() => setSaveStatus("idle"), 2000);
-        },
-        onError: () => {
-          setSaveStatus("error");
-          setTimeout(() => setSaveStatus("idle"), 3000);
-        },
-      });
-    }, 500);
-  }, [patchMutation]);
+    updateSetting(key as keyof AppSettings, value as AppSettings[keyof AppSettings]);
+  }, [updateSetting]);
 
   const handleResetToDefaults = useCallback(() => {
     if (!confirm("Reset all settings to their defaults? This cannot be undone.")) return;
-    deleteMutation.mutate(undefined, {
-      onSuccess: () => {
-        setLocalSettings({});
-        setSaveStatus("saved");
-        setTimeout(() => setSaveStatus("idle"), 2000);
-      },
-    });
-  }, [deleteMutation]);
+    resetSettings();
+  }, [resetSettings]);
 
   const handleExportSettings = useCallback(() => {
-    const blob = new Blob([JSON.stringify(localSettings, null, 2)], { type: "application/json" });
+    const blob = new Blob([JSON.stringify(settings, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
     a.download = "optionsos-settings.json";
     a.click();
     URL.revokeObjectURL(url);
-  }, [localSettings]);
+  }, [settings]);
 
   const handleClearQueryCache = useCallback(() => {
     queryClient.clear();
-    setSaveStatus("saved");
-    setTimeout(() => setSaveStatus("idle"), 2000);
   }, [queryClient]);
 
   const activeCategoryDef = CATEGORIES.find(c => c.id === activeCategory)!;
@@ -641,7 +585,7 @@ export default function SettingsPage() {
             {activeCategory === "advanced" && (
               <div style={{ paddingTop: 8 }}>
                 {activeCategoryDef.settings.map(s => (
-                  <SettingRow key={s.key} setting={s} value={get(s.key)} onChange={handleChange} />
+                  <SettingRow key={s.key} setting={s} value={settings[s.key as keyof AppSettings]} onChange={handleChange} />
                 ))}
 
                 <div style={{ marginTop: 28, display: "flex", flexDirection: "column", gap: 10 }}>
@@ -674,7 +618,7 @@ export default function SettingsPage() {
             {activeCategory !== "shortcuts" && activeCategory !== "advanced" && (
               <div style={{ paddingTop: 8 }}>
                 {activeCategoryDef.settings.map(s => (
-                  <SettingRow key={s.key} setting={s} value={get(s.key)} onChange={handleChange} />
+                  <SettingRow key={s.key} setting={s} value={settings[s.key as keyof AppSettings]} onChange={handleChange} />
                 ))}
                 {activeCategoryDef.settings.length === 0 && (
                   <div style={{ padding: "32px 0", color: "hsl(var(--muted-foreground))", fontSize: 13 }}>

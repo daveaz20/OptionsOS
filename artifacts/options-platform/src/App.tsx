@@ -6,6 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "next-themes";
 import NotFound from "@/pages/not-found";
 import { Shell } from "@/components/layout/Shell";
+import { SettingsProvider } from "@/contexts/SettingsContext";
 
 const ScannerPage = lazy(() => import("@/pages/workspace"));
 const DashboardPage = lazy(() => import("@/pages/dashboard"));
@@ -47,7 +48,9 @@ function App() {
       <ThemeProvider defaultTheme="dark" attribute="class" forcedTheme="dark">
         <TooltipProvider>
           <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-            <Router />
+            <SettingsProvider>
+              <Router />
+            </SettingsProvider>
           </WouterRouter>
           <Toaster />
         </TooltipProvider>
