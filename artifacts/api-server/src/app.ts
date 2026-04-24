@@ -30,7 +30,7 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-app.use("/auth", authRouter);
+app.use("/api/auth", authRouter);
 app.use("/api", router);
 
 export default app;
