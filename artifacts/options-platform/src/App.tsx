@@ -1,12 +1,32 @@
-import { Suspense, lazy } from "react";
-import { Switch, Route, Router as WouterRouter } from "wouter";
+import { Suspense, lazy, useEffect } from "react";
+import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { ThemeProvider } from "next-themes";
+import { ThemeProvider, useTheme } from "next-themes";
 import NotFound from "@/pages/not-found";
 import { Shell } from "@/components/layout/Shell";
-import { SettingsProvider } from "@/contexts/SettingsContext";
+import { SettingsProvider, useSettings } from "@/contexts/SettingsContext";
+
+function ThemeSync() {
+  const { setTheme } = useTheme();
+  const { settings } = useSettings();
+  useEffect(() => { setTheme(settings.theme || "dark"); }, [settings.theme, setTheme]);
+  return null;
+}
+
+function DefaultRoute() {
+  const { settings } = useSettings();
+  const [, navigate] = useLocation();
+  useEffect(() => {
+    if (settings.defaultPage && settings.defaultPage !== "/") {
+      navigate(settings.defaultPage, { replace: true });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  if (settings.defaultPage && settings.defaultPage !== "/") return null;
+  return <DashboardPage />;
+}
 
 const ScannerPage = lazy(() => import("@/pages/workspace"));
 const DashboardPage = lazy(() => import("@/pages/dashboard"));
@@ -29,7 +49,7 @@ function Router() {
     <Shell>
       <Suspense fallback={<div className="h-full w-full bg-background" />}>
         <Switch>
-          <Route path="/" component={DashboardPage} />
+          <Route path="/" component={DefaultRoute} />
           <Route path="/scanner" component={ScannerPage} />
           <Route path="/screener" component={ScreenerPage} />
           <Route path="/watchlist" component={WatchlistPage} />
@@ -45,10 +65,11 @@ function Router() {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <ThemeProvider defaultTheme="dark" attribute="class" forcedTheme="dark">
+      <ThemeProvider defaultTheme="dark" attribute="class">
         <TooltipProvider>
           <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
             <SettingsProvider>
+              <ThemeSync />
               <Router />
             </SettingsProvider>
           </WouterRouter>

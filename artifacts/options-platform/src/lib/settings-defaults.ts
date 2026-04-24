@@ -33,6 +33,10 @@ export interface AppSettings {
   minPrice: number;
   maxPrice: number;
   minLiquidity: string;
+  screenerRowsPerPage: number;
+  screenerDefaultTab: string;
+  showSectorBadge: boolean;
+  showOutlookBadge: boolean;
   // Dashboard
   dashboardRefreshInterval: number;
   showMarketHoursIndicator: boolean;
@@ -49,6 +53,8 @@ export interface AppSettings {
   chainStrikeRange: number;
   highlightITM: boolean;
   showGreeks: boolean;
+  rsiOverbought: number;
+  rsiOversold: number;
   // Strategy
   preferredStrategies: string[];
   minCredit: number;
@@ -74,6 +80,7 @@ export interface AppSettings {
   expiryWarningDays: number;
   earningsAlertDays: number;
   // Appearance
+  theme: string;
   uiDensity: string;
   fontSize: string;
   chartStyle: string;
@@ -88,11 +95,26 @@ export interface AppSettings {
   enablePreMarket: boolean;
   enableAfterHours: boolean;
   cacheStrategy: string;
-  // Advanced
+  // Advanced / Security
   debugMode: boolean;
   apiTimeout: number;
   logLevel: string;
   disableStreamer: boolean;
+  // Time Horizon
+  earningsBlackoutDays: number;
+  // Chart & Analysis
+  defaultChartIndicators: string[];
+  showVolumeOnChart: boolean;
+  candleInterval: string;
+  // Watchlist
+  watchlistDefaultSort: string;
+  watchlistShowIVRank: boolean;
+  watchlistShowEarnings: boolean;
+  watchlistShowDailyChange: boolean;
+  // Positions
+  positionsGroupBy: string;
+  positionsDefaultSort: string;
+  autoCloseAtExpiry: boolean;
 }
 
 export const SETTING_DEFAULTS: AppSettings = {
@@ -130,6 +152,10 @@ export const SETTING_DEFAULTS: AppSettings = {
   minPrice: 5,
   maxPrice: 0,
   minLiquidity: "medium",
+  screenerRowsPerPage: 100,
+  screenerDefaultTab: "overview",
+  showSectorBadge: true,
+  showOutlookBadge: true,
   // Dashboard
   dashboardRefreshInterval: 60,
   showMarketHoursIndicator: true,
@@ -146,6 +172,8 @@ export const SETTING_DEFAULTS: AppSettings = {
   chainStrikeRange: 10,
   highlightITM: true,
   showGreeks: true,
+  rsiOverbought: 70,
+  rsiOversold: 30,
   // Strategy
   preferredStrategies: ["Short Put", "Iron Condor"],
   minCredit: 0.5,
@@ -171,6 +199,7 @@ export const SETTING_DEFAULTS: AppSettings = {
   expiryWarningDays: 7,
   earningsAlertDays: 5,
   // Appearance
+  theme: "dark",
   uiDensity: "comfortable",
   fontSize: "medium",
   chartStyle: "line",
@@ -185,9 +214,24 @@ export const SETTING_DEFAULTS: AppSettings = {
   enablePreMarket: false,
   enableAfterHours: false,
   cacheStrategy: "moderate",
-  // Advanced
+  // Advanced / Security
   debugMode: false,
   apiTimeout: 15000,
   logLevel: "warn",
   disableStreamer: false,
+  // Time Horizon
+  earningsBlackoutDays: 3,
+  // Chart & Analysis
+  defaultChartIndicators: ["SMA20", "SMA50"],
+  showVolumeOnChart: true,
+  candleInterval: "1D",
+  // Watchlist
+  watchlistDefaultSort: "symbol",
+  watchlistShowIVRank: true,
+  watchlistShowEarnings: true,
+  watchlistShowDailyChange: true,
+  // Positions
+  positionsGroupBy: "none",
+  positionsDefaultSort: "openDate",
+  autoCloseAtExpiry: false,
 };

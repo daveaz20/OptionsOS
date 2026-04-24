@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
+import { useSettings } from "@/contexts/SettingsContext";
 import { useGetWatchlist, useAddToWatchlist, useRemoveFromWatchlist, getGetWatchlistQueryKey } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
 import { StrategyFilterDropdown } from "@/components/strategy/StrategyFilterDropdown";
@@ -220,6 +221,7 @@ const fmtVol = (n: number) => {
 // ─── Data hook ────────────────────────────────────────────────────────────────
 
 function useScreenerData() {
+  const { settings } = useSettings();
   return useQuery<ScreenerRow[]>({
     queryKey: ["screener-v3"],
     queryFn: async () => {
@@ -228,6 +230,7 @@ function useScreenerData() {
       return res.json();
     },
     staleTime: 3*60*1000, gcTime: 10*60*1000, retry: 2,
+    refetchInterval: settings.autoRefresh ? settings.autoRefreshInterval * 1000 : false,
   });
 }
 
@@ -393,6 +396,7 @@ function FilterPicker({ onAdd, existing }: { onAdd:(f:ActiveFilter)=>void; exist
 
 export default function Screener() {
   const [, setLocation] = useLocation();
+  const { settings } = useSettings();
   const { data: raw = [], isLoading, isFetching } = useScreenerData();
   const { data: sourceInfo } = useSourceInfo();
   const { data: watchlist = [] } = useGetWatchlist();
@@ -405,7 +409,7 @@ export default function Screener() {
   const [activePreset,    setActivePreset]    = useState("All");
   const [sortKey,         setSortKey]         = useState("marketCap");
   const [sortDir,         setSortDir]         = useState<"asc"|"desc">("desc");
-  const [tab,             setTab]             = useState<TabKey>("overview");
+  const [tab,             setTab]             = useState<TabKey>(() => (settings.screenerDefaultTab as TabKey) || "overview");
   const [showPicker,      setShowPicker]      = useState(false);
   const [strategyFilter,  setStrategyFilter]  = useState<string>("");
   const pickerRef = useRef<HTMLDivElement>(null);
@@ -618,9 +622,9 @@ export default function Screener() {
       ) : (
         <div style={{ flex:1, overflow:"auto" }}>
           <StockTable rows={sorted} tab={tab} sortKey={sortKey} sortDir={sortDir} onSort={onSort} navigate={setLocation} watchlistSymbolMap={watchlistSymbolMap} onWatchlistToggle={handleWatchlistToggle} />
-          {sorted.length > 500 && (
+          {sorted.length > settings.screenerRowsPerPage && (
             <div style={{ padding:"10px", color:"rgba(255,255,255,0.25)", fontSize:11, textAlign:"center" }}>
-              Showing 500 of {sorted.length.toLocaleString()} — add filters to narrow results
+              Showing {settings.screenerRowsPerPage} of {sorted.length.toLocaleString()} — add filters to narrow results
             </div>
           )}
         </div>

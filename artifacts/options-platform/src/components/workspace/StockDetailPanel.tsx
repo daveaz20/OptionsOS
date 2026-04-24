@@ -2,7 +2,8 @@ import { useState, type ReactNode } from "react";
 import { useGetStock, useGetStockPriceHistory, useGetWatchlist, useAddToWatchlist, useRemoveFromWatchlist, getGetWatchlistQueryKey } from "@workspace/api-client-react";
 import { AlertCircle, BarChart2, Bookmark, BookmarkCheck, TrendingDown, TrendingUp } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { formatCurrency, formatNumber, formatPercent } from "@/lib/format";
+import { formatCurrency, formatNumber, formatPercent, useFormats } from "@/lib/format";
+import { useSettings } from "@/contexts/SettingsContext";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
@@ -261,6 +262,10 @@ export function StockDetailPanel({ symbol }: StockDetailPanelProps) {
 }
 
 function TechnicalChart({ data, support, resistance, isUp }: { data: PricePoint[]; support: number; resistance: number; isUp: boolean }) {
+  const { settings } = useSettings();
+  const { fmtCurrency } = useFormats();
+  const rsiOverbought = settings.rsiOverbought;
+  const rsiOversold = settings.rsiOversold;
   const W = 900;
   const H = 400;
   const PT = 24, PH = 218;
@@ -309,15 +314,15 @@ function TechnicalChart({ data, support, resistance, isUp }: { data: PricePoint[
       {gridPrices.map((p) => (
         <g key={p}>
           <line x1={PL} x2={W - PR} y1={py(p)} y2={py(p)} stroke="rgba(255,255,255,0.05)" strokeDasharray="3 6" />
-          <text x={W - PR + 8} y={py(p) + 4} fill="rgba(255,255,255,0.35)" fontSize="9.5" fontFamily="var(--app-font-mono)">{formatCurrency(p)}</text>
+          <text x={W - PR + 8} y={py(p) + 4} fill="rgba(255,255,255,0.35)" fontSize="9.5" fontFamily="var(--app-font-mono)">{fmtCurrency(p)}</text>
         </g>
       ))}
 
       {/* Support / Resistance */}
       <line x1={PL} x2={W - PR} y1={sy} y2={sy} stroke="hsl(var(--success))" strokeOpacity="0.5" strokeDasharray="6 6" />
-      <text x={PL + 4} y={sy - 5} fill="hsl(var(--success))" fillOpacity="0.8" fontSize="9" fontFamily="var(--app-font-mono)">S {formatCurrency(support)}</text>
+      <text x={PL + 4} y={sy - 5} fill="hsl(var(--success))" fillOpacity="0.8" fontSize="9" fontFamily="var(--app-font-mono)">S {fmtCurrency(support)}</text>
       <line x1={PL} x2={W - PR} y1={ry2} y2={ry2} stroke="hsl(var(--destructive))" strokeOpacity="0.5" strokeDasharray="6 6" />
-      <text x={PL + 4} y={ry2 - 5} fill="hsl(var(--destructive))" fillOpacity="0.8" fontSize="9" fontFamily="var(--app-font-mono)">R {formatCurrency(resistance)}</text>
+      <text x={PL + 4} y={ry2 - 5} fill="hsl(var(--destructive))" fillOpacity="0.8" fontSize="9" fontFamily="var(--app-font-mono)">R {fmtCurrency(resistance)}</text>
 
       {/* MA gradient fill */}
       {maPath && (
@@ -353,8 +358,8 @@ function TechnicalChart({ data, support, resistance, isUp }: { data: PricePoint[
 
       {/* RSI */}
       <rect x={PL} y={RT} width={CW} height={RH} fill="rgba(255,255,255,0.018)" rx="3" />
-      <line x1={PL} x2={W - PR} y1={ry(70)} y2={ry(70)} stroke="hsl(var(--destructive))" strokeOpacity="0.22" strokeDasharray="4 5" />
-      <line x1={PL} x2={W - PR} y1={ry(30)} y2={ry(30)} stroke="hsl(var(--success))" strokeOpacity="0.22" strokeDasharray="4 5" />
+      <line x1={PL} x2={W - PR} y1={ry(rsiOverbought)} y2={ry(rsiOverbought)} stroke="hsl(var(--destructive))" strokeOpacity="0.22" strokeDasharray="4 5" />
+      <line x1={PL} x2={W - PR} y1={ry(rsiOversold)} y2={ry(rsiOversold)} stroke="hsl(var(--success))" strokeOpacity="0.22" strokeDasharray="4 5" />
       <path d={rsiPath} fill="none" stroke="hsl(262 80% 65%)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.85" />
       <text x={PL} y={RT - 5} fill="rgba(255,255,255,0.3)" fontSize="8.5" fontFamily="var(--app-font-sans)">RSI</text>
 
@@ -362,7 +367,7 @@ function TechnicalChart({ data, support, resistance, isUp }: { data: PricePoint[
       <line x1={x(data.length - 1)} x2={x(data.length - 1)} y1={PT} y2={RT + RH} stroke="rgba(255,255,255,0.08)" />
       <circle cx={x(data.length - 1)} cy={py(last.close)} r="3.5" fill="hsl(var(--primary))" />
       <rect x={W - PR + 3} y={py(last.close) - 10} width={52} height={20} rx="5" fill="hsl(var(--primary))" fillOpacity="0.15" />
-      <text x={W - PR + 11} y={py(last.close) + 4} fill="hsl(var(--primary))" fontSize="9.5" fontFamily="var(--app-font-mono)">{formatCurrency(last.close)}</text>
+      <text x={W - PR + 11} y={py(last.close) + 4} fill="hsl(var(--primary))" fontSize="9.5" fontFamily="var(--app-font-mono)">{fmtCurrency(last.close)}</text>
     </svg>
   );
 }

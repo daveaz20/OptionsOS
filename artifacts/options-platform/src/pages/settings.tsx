@@ -6,9 +6,9 @@ import { useSettings } from "@/contexts/SettingsContext";
 import type { AppSettings } from "@/lib/settings-defaults";
 import {
   Settings, SlidersHorizontal, ShieldAlert, Search,
-  LayoutDashboard, Link2, Target, BarChart2, Bell,
-  Palette, Database, Keyboard, Wrench, Check,
+  Target, BarChart2, Palette, Database, Check,
   Loader2, RotateCcw, Download, ChevronDown,
+  Clock, TrendingUp, Bookmark, Briefcase, Lock,
 } from "lucide-react";
 
 // ── Types ─────────────────────────────────────────────────────────────────
@@ -38,37 +38,90 @@ const CATEGORIES: CategoryDef[] = [
     id: "general",
     label: "General",
     icon: <Settings size={14} />,
-    description: "Basic app behavior and display preferences.",
+    description: "Basic app behavior, locale, and refresh settings.",
     settings: [
-      { key: "defaultPage", label: "Default page", description: "Page shown on launch", type: "select", default: "/", options: [{ label: "Dashboard", value: "/" }, { label: "Screener", value: "/screener" }, { label: "Scanner", value: "/scanner" }, { label: "Watchlist", value: "/watchlist" }, { label: "Positions", value: "/positions" }] },
+      { key: "defaultPage", label: "Default page", description: "Page shown on launch", type: "select", default: "/", options: [{ label: "Dashboard", value: "/" }, { label: "Screener", value: "/screener" }, { label: "Analysis", value: "/scanner" }, { label: "Watchlist", value: "/watchlist" }, { label: "Positions", value: "/positions" }] },
       { key: "timezone", label: "Timezone", description: "Used for market hours and timestamps", type: "select", default: "ET", options: [{ label: "Eastern (ET)", value: "ET" }, { label: "Central (CT)", value: "CT" }, { label: "Mountain (MT)", value: "MT" }, { label: "Pacific (PT)", value: "PT" }, { label: "UTC", value: "UTC" }] },
       { key: "dateFormat", label: "Date format", type: "select", default: "MM/DD/YYYY", options: [{ label: "MM/DD/YYYY", value: "MM/DD/YYYY" }, { label: "YYYY-MM-DD", value: "YYYY-MM-DD" }, { label: "DD/MM/YYYY", value: "DD/MM/YYYY" }] },
       { key: "numberFormat", label: "Number format", type: "select", default: "US", options: [{ label: "US  1,234.56", value: "US" }, { label: "EU  1.234,56", value: "EU" }] },
       { key: "autoRefresh", label: "Auto-refresh data", description: "Automatically reload market data in the background", type: "toggle", default: true },
       { key: "autoRefreshInterval", label: "Refresh interval", description: "How often to reload market data", type: "select", default: 60, options: [{ label: "30 seconds", value: 30 }, { label: "1 minute", value: 60 }, { label: "2 minutes", value: 120 }, { label: "5 minutes", value: 300 }] },
+      { key: "dashboardRefreshInterval", label: "Dashboard refresh", description: "How often the dashboard reloads independently of the global interval", type: "select", default: 60, options: [{ label: "30 seconds", value: 30 }, { label: "1 minute", value: 60 }, { label: "2 minutes", value: 120 }, { label: "5 minutes", value: 300 }] },
     ],
   },
   {
-    id: "trading",
-    label: "Trading Defaults",
-    icon: <SlidersHorizontal size={14} />,
-    description: "Default values applied when opening the options chain and building orders.",
+    id: "display",
+    label: "Display & UI",
+    icon: <Palette size={14} />,
+    description: "Visual density, layout, animation, and dashboard widget preferences.",
     settings: [
-      { key: "defaultDTE", label: "Default DTE", description: "Target days to expiration when browsing chains", type: "number", default: 45, min: 1, max: 365, unit: "days" },
-      { key: "minDTE", label: "Minimum DTE", description: "Filter out expirations closer than this", type: "number", default: 7, min: 0, max: 60, unit: "days" },
-      { key: "maxDTE", label: "Maximum DTE", description: "Filter out expirations farther than this", type: "number", default: 90, min: 1, max: 365, unit: "days" },
-      { key: "defaultContracts", label: "Default contracts", description: "Number of contracts pre-filled on order entry", type: "number", default: 1, min: 1, max: 100 },
-      { key: "defaultOrderType", label: "Default order type", type: "select", default: "limit", options: [{ label: "Limit", value: "limit" }, { label: "Market", value: "market" }, { label: "Midpoint", value: "midpoint" }] },
-      { key: "slippageTolerance", label: "Slippage tolerance", description: "Max cents from midpoint before alerting", type: "number", default: 5, min: 0, max: 50, unit: "¢" },
-      { key: "confirmOrders", label: "Confirm before submitting", description: "Show a review screen before placing orders", type: "toggle", default: true },
-      { key: "preferEvenLots", label: "Prefer even lot sizes", description: "Suggest quantities in multiples of 10", type: "toggle", default: false },
+      { key: "theme", label: "Theme", type: "select", default: "dark", options: [{ label: "Dark", value: "dark" }, { label: "Light", value: "light" }, { label: "System", value: "system" }] },
+      { key: "uiDensity", label: "UI density", type: "select", default: "comfortable", options: [{ label: "Compact", value: "compact" }, { label: "Comfortable", value: "comfortable" }, { label: "Spacious", value: "spacious" }] },
+      { key: "fontSize", label: "Font size", type: "select", default: "medium", options: [{ label: "Small", value: "small" }, { label: "Medium", value: "medium" }, { label: "Large", value: "large" }] },
+      { key: "tableRowHeight", label: "Table row height", type: "select", default: "default", options: [{ label: "Compact", value: "compact" }, { label: "Default", value: "default" }, { label: "Relaxed", value: "relaxed" }] },
+      { key: "animateTransitions", label: "Animate transitions", description: "Fade and slide effects between states", type: "toggle", default: true },
+      { key: "sidebarDefaultOpen", label: "Sidebar expanded by default", type: "toggle", default: true },
+      { key: "showMiniCharts", label: "Show mini charts in screener", description: "Sparkline for each stock row", type: "toggle", default: false },
+      { key: "showMarketHoursIndicator", label: "Show market hours indicator", description: "Display market open/closed status in the header", type: "toggle", default: true },
+      { key: "showBreadthBar", label: "Show breadth indicator", description: "Highlight advancing vs declining stocks on the dashboard", type: "toggle", default: true },
+      { key: "dashboardCompactCards", label: "Compact dashboard cards", description: "Reduce padding in account summary cards", type: "toggle", default: false },
+      { key: "moverCount", label: "Movers list size", description: "Number of top gainers/losers shown on the dashboard", type: "select", default: 5, options: [{ label: "5", value: 5 }, { label: "10", value: 10 }, { label: "20", value: 20 }] },
+    ],
+  },
+  {
+    id: "data",
+    label: "Data & Universe",
+    icon: <Database size={14} />,
+    description: "Define the stock universe and control how market data is fetched and cached.",
+    settings: [
+      { key: "marketDataSource", label: "Market data source", type: "select", default: "auto", options: [{ label: "Auto (prefer Tastytrade)", value: "auto" }, { label: "Polygon only", value: "polygon" }, { label: "Tastytrade only", value: "tastytrade" }] },
+      { key: "polygonRefreshRate", label: "Polygon refresh rate", type: "select", default: 30, options: [{ label: "15 seconds", value: 15 }, { label: "30 seconds", value: 30 }, { label: "1 minute", value: 60 }, { label: "2 minutes", value: 120 }] },
+      { key: "screenerUniverseSize", label: "Screener universe", description: "Number of stocks scanned per cycle", type: "select", default: 1000, options: [{ label: "500 stocks", value: 500 }, { label: "1,000 stocks", value: 1000 }, { label: "2,500 stocks", value: 2500 }, { label: "5,000 stocks", value: 5000 }] },
+      { key: "includeETFs", label: "Include ETFs", description: "Include exchange-traded funds in the screened universe", type: "toggle", default: true },
+      { key: "includeIndices", label: "Include indices", description: "Include index trackers (SPY, QQQ, etc.)", type: "toggle", default: false },
+      { key: "enablePreMarket", label: "Include pre-market data", description: "Show pre-market quotes where available", type: "toggle", default: false },
+      { key: "enableAfterHours", label: "Include after-hours data", description: "Show after-hours quotes where available", type: "toggle", default: false },
+      { key: "cacheStrategy", label: "Cache strategy", description: "How aggressively to cache API responses", type: "select", default: "moderate", options: [{ label: "Aggressive (longer TTL)", value: "aggressive" }, { label: "Moderate", value: "moderate" }, { label: "Minimal (always fresh)", value: "minimal" }] },
+    ],
+  },
+  {
+    id: "screener",
+    label: "Screener & Scoring",
+    icon: <Search size={14} />,
+    description: "Default filter values and scoring thresholds when the Screener loads.",
+    settings: [
+      { key: "defaultMinIvRank", label: "Min IV rank", description: "Default lower bound for IV rank filter", type: "slider", default: 30, min: 0, max: 100, unit: "%" },
+      { key: "defaultMinVolume", label: "Min daily volume", description: "Minimum share volume to include", type: "number", default: 500000, min: 0, unit: "shares" },
+      { key: "defaultMinMarketCap", label: "Min market cap", type: "select", default: "1B", options: [{ label: "Any", value: "any" }, { label: "$300M+", value: "300M" }, { label: "$1B+", value: "1B" }, { label: "$10B+", value: "10B" }, { label: "$100B+", value: "100B" }] },
+      { key: "defaultMinOpportunityScore", label: "Min opportunity score", description: "Only show stocks above this composite score", type: "slider", default: 50, min: 0, max: 100 },
+      { key: "minPrice", label: "Min stock price", type: "number", default: 5, min: 0, unit: "$" },
+      { key: "maxPrice", label: "Max stock price", description: "0 = no limit", type: "number", default: 0, min: 0, unit: "$" },
+      { key: "minLiquidity", label: "Min liquidity", type: "select", default: "medium", options: [{ label: "Any", value: "any" }, { label: "Low", value: "low" }, { label: "Medium", value: "medium" }, { label: "High", value: "high" }] },
+      { key: "screenerRowsPerPage", label: "Rows per page", description: "Maximum rows displayed in the screener table", type: "select", default: 100, options: [{ label: "50", value: 50 }, { label: "100", value: 100 }, { label: "200", value: 200 }, { label: "500", value: 500 }] },
+      { key: "screenerDefaultTab", label: "Default column view", description: "Which tab opens when you navigate to the screener", type: "select", default: "overview", options: [{ label: "Overview", value: "overview" }, { label: "Performance", value: "performance" }, { label: "Technicals", value: "technicals" }, { label: "Fundamentals", value: "fundamentals" }, { label: "Options", value: "options" }, { label: "Factor Alpha", value: "factors" }] },
+      { key: "showSectorBadge", label: "Show sector column", description: "Display sector label in Overview tab", type: "toggle", default: true },
+      { key: "showOutlookBadge", label: "Show outlook badge", description: "Display bullish/bearish badge in Overview and Options tabs", type: "toggle", default: true },
+    ],
+  },
+  {
+    id: "strategy",
+    label: "Strategy Preferences",
+    icon: <Target size={14} />,
+    description: "Preferred strategies and default scoring parameters for recommendations.",
+    settings: [
+      { key: "preferredStrategies", label: "Preferred strategies", description: "Highlighted in strategy recommendations", type: "multiselect", default: ["Short Put", "Iron Condor"], options: [{ label: "Short Put", value: "Short Put" }, { label: "Iron Condor", value: "Iron Condor" }, { label: "Covered Call", value: "Covered Call" }, { label: "Short Strangle", value: "Short Strangle" }, { label: "Calendar Spread", value: "Calendar Spread" }, { label: "Diagonal Spread", value: "Diagonal Spread" }, { label: "Bull Put Spread", value: "Bull Put Spread" }, { label: "Bear Call Spread", value: "Bear Call Spread" }] },
+      { key: "minCredit", label: "Min premium credit", description: "Minimum credit received to surface a strategy", type: "number", default: 0.5, min: 0, step: 0.05, unit: "$" },
+      { key: "targetProfitPct", label: "Target profit %", description: "Default take-profit as % of max credit", type: "slider", default: 50, min: 10, max: 90, unit: "%" },
+      { key: "maxLossMultiplier", label: "Max loss multiplier", description: "Stop-loss as multiple of premium received", type: "number", default: 2, min: 1, max: 5, step: 0.5 },
+      { key: "showProbabilityOfProfit", label: "Show probability of profit", type: "toggle", default: true },
+      { key: "useTheoreticalValue", label: "Use theoretical value", description: "Price strategies using model value vs mark", type: "toggle", default: false },
     ],
   },
   {
     id: "risk",
     label: "Risk Management",
     icon: <ShieldAlert size={14} />,
-    description: "Position sizing limits and loss thresholds. These are advisory — no orders are blocked.",
+    description: "Position sizing limits and loss thresholds. Advisory — no orders are blocked.",
     settings: [
       { key: "maxPositionPct", label: "Max position size", description: "Largest single position as % of account value", type: "slider", default: 5, min: 1, max: 25, unit: "%" },
       { key: "maxPortfolioRisk", label: "Max portfolio risk", description: "Max % of account at risk across all open positions", type: "slider", default: 20, min: 1, max: 50, unit: "%" },
@@ -80,157 +133,111 @@ const CATEGORIES: CategoryDef[] = [
     ],
   },
   {
-    id: "screener",
-    label: "Screener",
-    icon: <Search size={14} />,
-    description: "Default filter values when the Screener loads.",
+    id: "timeHorizon",
+    label: "Time Horizon",
+    icon: <Clock size={14} />,
+    description: "Default DTE targets and time-based filters applied across the options chain and screener.",
     settings: [
-      { key: "defaultMinIvRank", label: "Min IV rank", description: "Default lower bound for IV rank filter", type: "slider", default: 30, min: 0, max: 100, unit: "%" },
-      { key: "defaultMinVolume", label: "Min daily volume", description: "Minimum share volume to include", type: "number", default: 500000, min: 0, unit: "shares" },
-      { key: "defaultMinMarketCap", label: "Min market cap", type: "select", default: "1B", options: [{ label: "Any", value: "any" }, { label: "$300M+", value: "300M" }, { label: "$1B+", value: "1B" }, { label: "$10B+", value: "10B" }, { label: "$100B+", value: "100B" }] },
-      { key: "defaultMinOpportunityScore", label: "Min opportunity score", description: "Only show stocks above this score", type: "slider", default: 50, min: 0, max: 100 },
-      { key: "includeETFs", label: "Include ETFs", type: "toggle", default: true },
-      { key: "includeIndices", label: "Include indices", type: "toggle", default: false },
-      { key: "minPrice", label: "Min stock price", type: "number", default: 5, min: 0, unit: "$" },
-      { key: "maxPrice", label: "Max stock price", type: "number", default: 0, min: 0, unit: "$", description: "0 = no limit" },
-      { key: "minLiquidity", label: "Min liquidity", type: "select", default: "medium", options: [{ label: "Any", value: "any" }, { label: "Low", value: "low" }, { label: "Medium", value: "medium" }, { label: "High", value: "high" }] },
+      { key: "defaultDTE", label: "Default DTE", description: "Target days to expiration when browsing chains", type: "number", default: 45, min: 1, max: 365, unit: "days" },
+      { key: "minDTE", label: "Minimum DTE", description: "Filter out expirations closer than this", type: "number", default: 7, min: 0, max: 60, unit: "days" },
+      { key: "maxDTE", label: "Maximum DTE", description: "Filter out expirations farther than this", type: "number", default: 90, min: 1, max: 365, unit: "days" },
+      { key: "defaultChartPeriod", label: "Default chart period", description: "Time range shown when opening a chart", type: "select", default: "1M", options: [{ label: "1 Day", value: "1D" }, { label: "1 Week", value: "1W" }, { label: "1 Month", value: "1M" }, { label: "3 Months", value: "3M" }, { label: "1 Year", value: "1Y" }] },
+      { key: "expiryWarningDays", label: "Expiry warning", description: "Alert when a position is within this many days of expiry", type: "number", default: 7, min: 1, max: 30, unit: "days" },
+      { key: "earningsBlackoutDays", label: "Earnings blackout", description: "Flag new positions with earnings within this many days", type: "number", default: 3, min: 0, max: 14, unit: "days" },
     ],
   },
   {
-    id: "dashboard",
-    label: "Dashboard",
-    icon: <LayoutDashboard size={14} />,
-    description: "Controls what the Dashboard shows and how often it refreshes.",
+    id: "chartAnalysis",
+    label: "Chart & Analysis",
+    icon: <TrendingUp size={14} />,
+    description: "Default chart style, indicators, and technical analysis display preferences.",
     settings: [
-      { key: "dashboardRefreshInterval", label: "Data refresh interval", type: "select", default: 60, options: [{ label: "30 seconds", value: 30 }, { label: "1 minute", value: 60 }, { label: "2 minutes", value: 120 }, { label: "5 minutes", value: 300 }] },
-      { key: "showMarketHoursIndicator", label: "Show market hours indicator", type: "toggle", default: true },
-      { key: "dashboardCompactCards", label: "Compact stat cards", description: "Reduce padding in account summary cards", type: "toggle", default: false },
-      { key: "moverCount", label: "Movers list size", description: "Number of gainers/losers to display", type: "select", default: 5, options: [{ label: "5", value: 5 }, { label: "10", value: 10 }, { label: "20", value: 20 }] },
-      { key: "showBreadthBar", label: "Show breadth indicator", description: "Highlight advancing vs declining stocks", type: "toggle", default: true },
-      { key: "defaultChartPeriod", label: "Default chart period", type: "select", default: "1M", options: [{ label: "1 Day", value: "1D" }, { label: "1 Week", value: "1W" }, { label: "1 Month", value: "1M" }, { label: "3 Months", value: "3M" }, { label: "1 Year", value: "1Y" }] },
+      { key: "chartStyle", label: "Chart style", type: "select", default: "line", options: [{ label: "Line", value: "line" }, { label: "Area", value: "area" }, { label: "Candlestick", value: "candlestick" }] },
+      { key: "candleInterval", label: "Default candle interval", type: "select", default: "1D", options: [{ label: "1 minute", value: "1m" }, { label: "5 minutes", value: "5m" }, { label: "15 minutes", value: "15m" }, { label: "1 hour", value: "1H" }, { label: "1 day", value: "1D" }] },
+      { key: "defaultChartIndicators", label: "Default indicators", description: "Indicators pre-loaded when opening a chart", type: "multiselect", default: ["SMA20", "SMA50"], options: [{ label: "SMA 20", value: "SMA20" }, { label: "SMA 50", value: "SMA50" }, { label: "SMA 200", value: "SMA200" }, { label: "EMA 20", value: "EMA20" }, { label: "VWAP", value: "VWAP" }, { label: "Bollinger Bands", value: "BB" }, { label: "RSI", value: "RSI" }, { label: "MACD", value: "MACD" }] },
+      { key: "showVolumeOnChart", label: "Show volume bars", description: "Display volume histogram below the price chart", type: "toggle", default: true },
+      { key: "rsiOverbought", label: "RSI overbought line", description: "Red dashed threshold on the RSI panel", type: "slider", default: 70, min: 60, max: 85 },
+      { key: "rsiOversold", label: "RSI oversold line", description: "Green dashed threshold on the RSI panel", type: "slider", default: 30, min: 15, max: 40 },
     ],
   },
   {
-    id: "optionsChain",
-    label: "Options Chain",
-    icon: <Link2 size={14} />,
-    description: "Default display and filter settings for the options chain viewer.",
-    settings: [
-      { key: "defaultMinDelta", label: "Min delta", description: "Lower delta bound for contract filter", type: "number", default: 0.1, min: 0, max: 1, step: 0.01 },
-      { key: "defaultMaxDelta", label: "Max delta", description: "Upper delta bound for contract filter", type: "number", default: 0.5, min: 0, max: 1, step: 0.01 },
-      { key: "maxBidAskSpread", label: "Max bid-ask spread", description: "Filter out wide markets", type: "number", default: 0.5, min: 0, step: 0.05, unit: "$" },
-      { key: "minOpenInterest", label: "Min open interest", description: "Filter out illiquid strikes", type: "number", default: 100, min: 0 },
-      { key: "showWeeklyExp", label: "Show weekly expirations", type: "toggle", default: true },
-      { key: "chainStrikeRange", label: "Strikes around ATM", description: "How many strikes above/below to show", type: "number", default: 10, min: 3, max: 30 },
-      { key: "highlightITM", label: "Highlight in-the-money strikes", type: "toggle", default: true },
-      { key: "showGreeks", label: "Show Greeks columns", type: "toggle", default: true },
-    ],
-  },
-  {
-    id: "strategy",
-    label: "Strategy",
-    icon: <Target size={14} />,
-    description: "Preferred strategies and default scoring parameters.",
-    settings: [
-      { key: "preferredStrategies", label: "Preferred strategies", description: "Highlighted in strategy recommendations", type: "multiselect", default: ["Short Put", "Iron Condor"], options: [{ label: "Short Put", value: "Short Put" }, { label: "Iron Condor", value: "Iron Condor" }, { label: "Covered Call", value: "Covered Call" }, { label: "Short Strangle", value: "Short Strangle" }, { label: "Calendar Spread", value: "Calendar Spread" }, { label: "Diagonal Spread", value: "Diagonal Spread" }, { label: "Bull Put Spread", value: "Bull Put Spread" }, { label: "Bear Call Spread", value: "Bear Call Spread" }] },
-      { key: "minCredit", label: "Min premium credit", description: "Minimum credit received to surface a strategy", type: "number", default: 0.5, min: 0, step: 0.05, unit: "$" },
-      { key: "targetProfitPct", label: "Target profit %", description: "Default take-profit as % of max credit", type: "slider", default: 50, min: 10, max: 90, unit: "%" },
-      { key: "maxLossMultiplier", label: "Max loss multiplier", description: "Stop-loss as multiple of premium received", type: "number", default: 2, min: 1, max: 5, step: 0.5 },
-      { key: "showProbabilityOfProfit", label: "Show probability of profit", type: "toggle", default: true },
-      { key: "useTheoreticalValue", label: "Use theoretical value", description: "Price strategies using model value vs mark", type: "toggle", default: false },
-    ],
-  },
-  {
-    id: "portfolio",
-    label: "Portfolio & P&L",
+    id: "pnl",
+    label: "P&L & Simulation",
     icon: <BarChart2 size={14} />,
-    description: "How positions are valued and performance is calculated.",
+    description: "How positions are valued, performance is calculated, and P&L is reported.",
     settings: [
       { key: "pnlMethod", label: "P&L calculation method", type: "select", default: "mark", options: [{ label: "Mark price", value: "mark" }, { label: "Last price", value: "last" }, { label: "Theoretical value", value: "theoretical" }] },
       { key: "benchmark", label: "Performance benchmark", type: "select", default: "SPY", options: [{ label: "None", value: "none" }, { label: "SPY", value: "SPY" }, { label: "QQQ", value: "QQQ" }, { label: "IWM", value: "IWM" }, { label: "DIA", value: "DIA" }] },
       { key: "showUnrealizedPnl", label: "Show unrealized P&L", type: "toggle", default: true },
       { key: "showRealizedPnl", label: "Show realized P&L", type: "toggle", default: true },
       { key: "taxMethod", label: "Tax lot method", type: "select", default: "FIFO", options: [{ label: "FIFO", value: "FIFO" }, { label: "LIFO", value: "LIFO" }, { label: "Specific lot", value: "SpecificLot" }] },
-      { key: "showPortfolioDelta", label: "Show portfolio delta", type: "toggle", default: true },
-      { key: "showPortfolioTheta", label: "Show portfolio theta / day", type: "toggle", default: true },
     ],
   },
   {
-    id: "alerts",
-    label: "Alerts",
-    icon: <Bell size={14} />,
-    description: "Notification thresholds and delivery preferences.",
+    id: "greeks",
+    label: "Greeks & Options Display",
+    icon: <SlidersHorizontal size={14} />,
+    description: "Options chain display, greek filters, and default order-entry parameters.",
+    settings: [
+      { key: "showGreeks", label: "Show Greeks columns", description: "Display Δ Γ Θ Vega in the options chain", type: "toggle", default: true },
+      { key: "defaultMinDelta", label: "Min delta filter", description: "Lower delta bound for contract filter", type: "number", default: 0.1, min: 0, max: 1, step: 0.01 },
+      { key: "defaultMaxDelta", label: "Max delta filter", description: "Upper delta bound for contract filter", type: "number", default: 0.5, min: 0, max: 1, step: 0.01 },
+      { key: "maxBidAskSpread", label: "Max bid-ask spread", description: "Filter out wide markets", type: "number", default: 0.5, min: 0, step: 0.05, unit: "$" },
+      { key: "minOpenInterest", label: "Min open interest", description: "Filter out illiquid strikes", type: "number", default: 100, min: 0 },
+      { key: "showWeeklyExp", label: "Show weekly expirations", type: "toggle", default: true },
+      { key: "chainStrikeRange", label: "Strikes around ATM", description: "How many strikes above/below ATM to show", type: "number", default: 10, min: 3, max: 30 },
+      { key: "highlightITM", label: "Highlight in-the-money strikes", type: "toggle", default: true },
+      { key: "defaultContracts", label: "Default contracts", description: "Number of contracts pre-filled on order entry", type: "number", default: 1, min: 1, max: 100 },
+      { key: "defaultOrderType", label: "Default order type", type: "select", default: "limit", options: [{ label: "Limit", value: "limit" }, { label: "Market", value: "market" }, { label: "Midpoint", value: "midpoint" }] },
+      { key: "slippageTolerance", label: "Slippage tolerance", description: "Max cents from midpoint before alerting", type: "number", default: 5, min: 0, max: 50, unit: "¢" },
+      { key: "confirmOrders", label: "Confirm before submitting", description: "Show a review screen before placing orders", type: "toggle", default: true },
+      { key: "preferEvenLots", label: "Prefer even lot sizes", description: "Suggest quantities in multiples of 10", type: "toggle", default: false },
+    ],
+  },
+  {
+    id: "watchlist",
+    label: "Watchlist",
+    icon: <Bookmark size={14} />,
+    description: "Default sort order, display columns, and alert thresholds for the watchlist.",
+    settings: [
+      { key: "watchlistDefaultSort", label: "Default sort", type: "select", default: "symbol", options: [{ label: "Symbol (A–Z)", value: "symbol" }, { label: "IV Rank (high–low)", value: "ivRankDesc" }, { label: "Daily change %", value: "changePctDesc" }, { label: "Added date", value: "addedDate" }] },
+      { key: "watchlistShowIVRank", label: "Show IV Rank column", type: "toggle", default: true },
+      { key: "watchlistShowEarnings", label: "Show earnings date", type: "toggle", default: true },
+      { key: "watchlistShowDailyChange", label: "Show daily change", type: "toggle", default: true },
+      { key: "ivRankAlertThreshold", label: "IV rank alert threshold", description: "Notify when a watchlist stock's IV rank crosses this level", type: "slider", default: 60, min: 0, max: 100, unit: "%" },
+      { key: "priceMoveAlertPct", label: "Price move alert", description: "Notify on intraday move beyond this percentage", type: "slider", default: 5, min: 1, max: 20, unit: "%" },
+      { key: "earningsAlertDays", label: "Earnings alert window", description: "Alert when a watchlist stock has earnings within this window", type: "number", default: 5, min: 1, max: 14, unit: "days" },
+    ],
+  },
+  {
+    id: "positions",
+    label: "Positions",
+    icon: <Briefcase size={14} />,
+    description: "How your open positions are grouped, sorted, and displayed.",
+    settings: [
+      { key: "positionsGroupBy", label: "Group positions by", type: "select", default: "none", options: [{ label: "None (flat list)", value: "none" }, { label: "Symbol", value: "symbol" }, { label: "Strategy", value: "strategy" }, { label: "Expiry", value: "expiry" }] },
+      { key: "positionsDefaultSort", label: "Default sort", type: "select", default: "openDate", options: [{ label: "Open date (newest)", value: "openDate" }, { label: "P&L ($)", value: "pnlAbs" }, { label: "P&L (%)", value: "pnlPct" }, { label: "DTE (soonest)", value: "dte" }, { label: "Symbol", value: "symbol" }] },
+      { key: "showPortfolioDelta", label: "Show portfolio delta", description: "Display total portfolio Δ in the positions header", type: "toggle", default: true },
+      { key: "showPortfolioTheta", label: "Show portfolio theta / day", description: "Display total portfolio Θ in the positions header", type: "toggle", default: true },
+      { key: "autoCloseAtExpiry", label: "Auto-close at expiry warning", description: "Surface a reminder to close positions within 1 DTE", type: "toggle", default: false },
+      { key: "pnlAlertThreshold", label: "Daily P&L alert", description: "Alert when daily P&L exceeds this amount (absolute)", type: "number", default: 1000, min: 0, unit: "$" },
+    ],
+  },
+  {
+    id: "security",
+    label: "Security & Account",
+    icon: <Lock size={14} />,
+    description: "Notification delivery, connected account settings, and maintenance utilities.",
     settings: [
       { key: "browserNotifications", label: "Browser notifications", description: "Show OS-level push notifications", type: "toggle", default: false },
       { key: "soundAlerts", label: "Sound alerts", description: "Play a tone when important alerts fire", type: "toggle", default: false },
-      { key: "toastDuration", label: "Toast duration", type: "select", default: 3000, options: [{ label: "2 seconds", value: 2000 }, { label: "3 seconds", value: 3000 }, { label: "5 seconds", value: 5000 }, { label: "8 seconds", value: 8000 }] },
-      { key: "ivRankAlertThreshold", label: "IV rank alert", description: "Notify when a watchlist stock crosses this IV rank", type: "slider", default: 60, min: 0, max: 100, unit: "%" },
-      { key: "priceMoveAlertPct", label: "Price move alert", description: "Notify on intraday move beyond this percentage", type: "slider", default: 5, min: 1, max: 20, unit: "%" },
-      { key: "pnlAlertThreshold", label: "P&L alert threshold", description: "Alert when daily P&L exceeds this amount (abs)", type: "number", default: 1000, min: 0, unit: "$" },
-      { key: "expiryWarningDays", label: "Expiry warning", description: "Alert when a position is within this many days of expiry", type: "number", default: 7, min: 1, max: 30, unit: "days" },
-      { key: "earningsAlertDays", label: "Earnings alert", description: "Alert when a held stock has earnings within this window", type: "number", default: 5, min: 1, max: 14, unit: "days" },
-    ],
-  },
-  {
-    id: "appearance",
-    label: "Appearance",
-    icon: <Palette size={14} />,
-    description: "Visual density, layout, and animation preferences.",
-    settings: [
-      { key: "uiDensity", label: "UI density", type: "select", default: "comfortable", options: [{ label: "Compact", value: "compact" }, { label: "Comfortable", value: "comfortable" }, { label: "Spacious", value: "spacious" }] },
-      { key: "fontSize", label: "Font size", type: "select", default: "medium", options: [{ label: "Small", value: "small" }, { label: "Medium", value: "medium" }, { label: "Large", value: "large" }] },
-      { key: "chartStyle", label: "Chart line style", type: "select", default: "line", options: [{ label: "Line", value: "line" }, { label: "Area", value: "area" }] },
-      { key: "animateTransitions", label: "Animate transitions", description: "Fade and slide effects between states", type: "toggle", default: true },
-      { key: "showMiniCharts", label: "Show mini charts in screener", description: "Sparkline for each stock row", type: "toggle", default: false },
-      { key: "tableRowHeight", label: "Table row height", type: "select", default: "default", options: [{ label: "Compact", value: "compact" }, { label: "Default", value: "default" }, { label: "Relaxed", value: "relaxed" }] },
-      { key: "sidebarDefaultOpen", label: "Sidebar expanded by default", type: "toggle", default: true },
-    ],
-  },
-  {
-    id: "data",
-    label: "Data & Sources",
-    icon: <Database size={14} />,
-    description: "Control how market data is fetched, cached, and refreshed.",
-    settings: [
-      { key: "polygonRefreshRate", label: "Polygon refresh rate", type: "select", default: 30, options: [{ label: "15 seconds", value: 15 }, { label: "30 seconds", value: 30 }, { label: "1 minute", value: 60 }, { label: "2 minutes", value: 120 }] },
-      { key: "marketDataSource", label: "Market data source", type: "select", default: "auto", options: [{ label: "Auto (prefer Tastytrade)", value: "auto" }, { label: "Polygon only", value: "polygon" }, { label: "Tastytrade only", value: "tastytrade" }] },
-      { key: "screenerUniverseSize", label: "Screener universe", description: "Number of stocks scanned per cycle", type: "select", default: 1000, options: [{ label: "500 stocks", value: 500 }, { label: "1,000 stocks", value: 1000 }, { label: "2,500 stocks", value: 2500 }, { label: "5,000 stocks", value: 5000 }] },
-      { key: "enablePreMarket", label: "Include pre-market data", type: "toggle", default: false },
-      { key: "enableAfterHours", label: "Include after-hours data", type: "toggle", default: false },
-      { key: "cacheStrategy", label: "Cache strategy", description: "How aggressively to cache API responses", type: "select", default: "moderate", options: [{ label: "Aggressive (longer TTL)", value: "aggressive" }, { label: "Moderate", value: "moderate" }, { label: "Minimal (always fresh)", value: "minimal" }] },
-    ],
-  },
-  {
-    id: "shortcuts",
-    label: "Keyboard Shortcuts",
-    icon: <Keyboard size={14} />,
-    description: "Global keyboard shortcuts available anywhere in the app.",
-    settings: [],
-  },
-  {
-    id: "advanced",
-    label: "Advanced",
-    icon: <Wrench size={14} />,
-    description: "Developer options and maintenance utilities.",
-    settings: [
+      { key: "toastDuration", label: "Toast duration", description: "How long in-app notifications stay on screen", type: "select", default: 3000, options: [{ label: "2 seconds", value: 2000 }, { label: "3 seconds", value: 3000 }, { label: "5 seconds", value: 5000 }, { label: "8 seconds", value: 8000 }] },
       { key: "debugMode", label: "Debug mode", description: "Log API calls and render cycles to the browser console", type: "toggle", default: false },
       { key: "apiTimeout", label: "API request timeout", description: "Abort requests that take longer than this", type: "number", default: 15000, min: 5000, max: 60000, step: 1000, unit: "ms" },
       { key: "logLevel", label: "Log level", type: "select", default: "warn", options: [{ label: "Error only", value: "error" }, { label: "Warnings", value: "warn" }, { label: "Info", value: "info" }, { label: "Debug (verbose)", value: "debug" }] },
       { key: "disableStreamer", label: "Disable live streamer", description: "Fall back to REST polling instead of DXLink WebSocket", type: "toggle", default: false },
     ],
   },
-];
-
-const SHORTCUTS = [
-  { keys: ["/"], action: "Open global search" },
-  { keys: ["Escape"], action: "Close panel / dismiss modal" },
-  { keys: ["G", "D"], action: "Go to Dashboard" },
-  { keys: ["G", "S"], action: "Go to Screener" },
-  { keys: ["G", "A"], action: "Go to Analysis (Scanner)" },
-  { keys: ["G", "W"], action: "Go to Watchlist" },
-  { keys: ["G", "P"], action: "Go to Positions" },
-  { keys: ["R"], action: "Refresh current page data" },
-  { keys: ["?"], action: "Show this shortcuts reference" },
 ];
 
 // ── Control components ─────────────────────────────────────────────────────
@@ -551,38 +558,8 @@ export default function SettingsPage() {
         <ScrollArea style={{ flex: 1 }}>
           <div style={{ padding: isMobile ? "0 16px 40px" : "0 32px 60px", maxWidth: 720 }}>
 
-            {/* Keyboard Shortcuts — special display */}
-            {activeCategory === "shortcuts" && (
-              <div style={{ paddingTop: 8 }}>
-                {SHORTCUTS.map((s, i) => (
-                  <div key={i} style={{
-                    display: "flex", alignItems: "center", justifyContent: "space-between",
-                    padding: "13px 0", borderBottom: "1px solid rgba(255,255,255,0.04)",
-                  }}>
-                    <div style={{ fontSize: 13, color: "hsl(var(--foreground))" }}>{s.action}</div>
-                    <div style={{ display: "flex", gap: 4 }}>
-                      {s.keys.map((k, ki) => (
-                        <kbd key={ki} style={{
-                          fontSize: 11, fontWeight: 600,
-                          padding: "2px 7px", borderRadius: 5,
-                          border: "1px solid rgba(255,255,255,0.15)",
-                          background: "rgba(255,255,255,0.06)",
-                          color: "hsl(var(--foreground))",
-                          fontFamily: "ui-monospace, monospace",
-                          letterSpacing: "0.03em",
-                        }}>{k}</kbd>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-                <div style={{ marginTop: 24, padding: "14px 16px", borderRadius: 8, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)", fontSize: 12, color: "hsl(var(--muted-foreground))", lineHeight: 1.6 }}>
-                  Keyboard shortcuts are global and not currently user-configurable. Chord shortcuts (e.g. G then D) require pressing both keys in sequence within 500ms.
-                </div>
-              </div>
-            )}
-
-            {/* Advanced — settings + action buttons */}
-            {activeCategory === "advanced" && (
+            {/* Security & Account — settings + action buttons */}
+            {activeCategory === "security" && (
               <div style={{ paddingTop: 8 }}>
                 {activeCategoryDef.settings.map(s => (
                   <SettingRow key={s.key} setting={s} value={settings[s.key as keyof AppSettings]} onChange={handleChange} />
@@ -615,7 +592,7 @@ export default function SettingsPage() {
             )}
 
             {/* All other categories */}
-            {activeCategory !== "shortcuts" && activeCategory !== "advanced" && (
+            {activeCategory !== "security" && (
               <div style={{ paddingTop: 8 }}>
                 {activeCategoryDef.settings.map(s => (
                   <SettingRow key={s.key} setting={s} value={settings[s.key as keyof AppSettings]} onChange={handleChange} />
