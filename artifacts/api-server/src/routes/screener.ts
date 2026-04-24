@@ -103,9 +103,11 @@ async function getScreenerSettings(): Promise<ScreenerSettings> {
     },
   };
   const riskPreferences: RiskPreferences = {
-    riskMinDTE: typeof values.riskMinDTE === "number" ? values.riskMinDTE : DEFAULT_RISK_PREFERENCES.riskMinDTE,
-    riskMaxDTE: typeof values.riskMaxDTE === "number" ? values.riskMaxDTE : DEFAULT_RISK_PREFERENCES.riskMaxDTE,
+    riskMinDTE: typeof values.minDTE === "number" ? values.minDTE : typeof values.riskMinDTE === "number" ? values.riskMinDTE : DEFAULT_RISK_PREFERENCES.riskMinDTE,
+    riskMaxDTE: typeof values.maxDTE === "number" ? values.maxDTE : typeof values.riskMaxDTE === "number" ? values.riskMaxDTE : DEFAULT_RISK_PREFERENCES.riskMaxDTE,
     earningsAvoidanceDays: typeof values.earningsAvoidanceDays === "number" ? values.earningsAvoidanceDays : DEFAULT_RISK_PREFERENCES.earningsAvoidanceDays,
+    earningsAvoidanceBeforeDays: typeof values.earningsAvoidanceBeforeDays === "number" ? values.earningsAvoidanceBeforeDays : typeof values.earningsAvoidanceDays === "number" ? values.earningsAvoidanceDays : DEFAULT_RISK_PREFERENCES.earningsAvoidanceBeforeDays,
+    earningsAvoidanceAfterDays: typeof values.earningsAvoidanceAfterDays === "number" ? values.earningsAvoidanceAfterDays : DEFAULT_RISK_PREFERENCES.earningsAvoidanceAfterDays,
     minOpenInterest: typeof values.minOpenInterest === "number" ? values.minOpenInterest : DEFAULT_RISK_PREFERENCES.minOpenInterest,
     minContractVolume: typeof values.minContractVolume === "number" ? values.minContractVolume : DEFAULT_RISK_PREFERENCES.minContractVolume,
     maxBidAskSpreadPct: typeof values.maxBidAskSpreadPct === "number" ? values.maxBidAskSpreadPct : DEFAULT_RISK_PREFERENCES.maxBidAskSpreadPct,
@@ -158,8 +160,7 @@ function daysUntilEarnings(earningsDate: string): number | undefined {
   try {
     const d = new Date(earningsDate);
     if (isNaN(d.getTime())) return undefined;
-    const diff = Math.floor((d.getTime() - Date.now()) / 86_400_000);
-    return diff >= 0 ? diff : undefined; // ignore past earnings
+    return Math.floor((d.getTime() - Date.now()) / 86_400_000);
   } catch { return undefined; }
 }
 

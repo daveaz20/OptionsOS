@@ -74,6 +74,19 @@ function setupTone(outlook?: string): "bull" | "bear" | "neutral" {
 }
 
 // Compact label for the setup badge — handles registry IDs (snake_case) and legacy names
+function daysUntilEarnings(earningsDate?: string): number | null {
+  if (!earningsDate || earningsDate === "TBD") return null;
+  const date = new Date(earningsDate);
+  if (Number.isNaN(date.getTime())) return null;
+  return Math.floor((date.getTime() - Date.now()) / 86_400_000);
+}
+
+function formatEarningsBadge(days: number): string {
+  if (days === 0) return "Earnings today";
+  if (days > 0) return `Earnings ${days}d`;
+  return `Earnings ${Math.abs(days)}d ago`;
+}
+
 function shortLabel(setupType?: string): string {
   if (!setupType) return "Neutral";
   // Registry ID → display name (truncated for badge width)
@@ -370,6 +383,12 @@ export function StockListPanel({ selectedSymbol, onSelect, initialTab = "ideas" 
               const tier       = strategyTierFromId(item.setupType);
               const tierColor  = tier ? (TIER_BADGE_COLOR[tier] ?? "hsl(var(--muted-foreground))") : null;
               const stratDesc  = (item as any).topStrategies?.[0]?.fitReason ?? "";
+              const earningsDays = daysUntilEarnings((item as any).earningsDate);
+              const showEarningsWarning = settings.showEarningsWarningBadge
+                && earningsDays !== null
+                && earningsDays >= -settings.earningsAvoidanceAfterDays
+                && earningsDays <= settings.earningsAvoidanceBeforeDays;
+              const showEarningsDate = settings.showEarningsDateColumnDefault && Boolean((item as any).earningsDate) && (item as any).earningsDate !== "TBD";
 
               return (
                 <button
@@ -448,6 +467,20 @@ export function StockListPanel({ selectedSymbol, onSelect, initialTab = "ideas" 
                             EOD
                           </span>
                         )}
+                        {showEarningsWarning && earningsDays !== null && (
+                          <span
+                            title={`Earnings date: ${(item as any).earningsDate}`}
+                            style={{
+                              fontSize: 9, fontWeight: 700, letterSpacing: "0.04em",
+                              padding: "1.5px 5px", borderRadius: 3, flexShrink: 0,
+                              color: "hsl(38 92% 50%)",
+                              background: "hsl(38 92% 50% / 0.12)",
+                              border: "1px solid hsl(38 92% 50% / 0.28)",
+                            }}
+                          >
+                            {formatEarningsBadge(earningsDays)}
+                          </span>
+                        )}
                       </div>
                       <div style={{ fontSize: 11, color: "hsl(var(--muted-foreground))", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 140, lineHeight: 1.3 }}>
                         {item.name}
@@ -500,6 +533,7 @@ export function StockListPanel({ selectedSymbol, onSelect, initialTab = "ideas" 
                     {isVisible("volume") && <span style={{ fontSize: 9, color: "hsl(var(--muted-foreground))" }}>Vol {fmtCompact((item as any).volume ?? 0)}</span>}
                     {isVisible("marketCap") && <span style={{ fontSize: 9, color: "hsl(var(--muted-foreground))" }}>Cap {fmtCompact((item as any).marketCap ?? 0)}</span>}
                     {isVisible("beta") && <span style={{ fontSize: 9, color: "hsl(var(--muted-foreground))" }}>Beta {Number((item as any).beta ?? 0).toFixed(2)}</span>}
+                    {showEarningsDate && <span style={{ fontSize: 9, color: "hsl(var(--muted-foreground))" }}>Earn {(item as any).earningsDate}</span>}
                     {isVisible("recommendedOutlook") && settings.showOutlookBadge && <span style={{
                       fontSize: 9, fontWeight: 600, textTransform: "uppercase", padding: "1px 5px", borderRadius: 3,
                       color: tone === "bull" ? "hsl(var(--success))" : tone === "bear" ? "hsl(var(--destructive))" : "hsl(var(--muted-foreground))",

@@ -25,6 +25,7 @@ type SelectOption = { label: string; value: string | number };
 type SettingDef =
   | { key: string; label: string; description?: string; type: "toggle"; default: boolean }
   | { key: string; label: string; description?: string; type: "select"; default: string | number; options: SelectOption[] }
+  | { key: string; label: string; description?: string; type: "time"; default: string }
   | { key: string; label: string; description?: string; type: "number"; default: number; min?: number; max?: number; step?: number; unit?: string }
   | { key: string; label: string; description?: string; type: "slider"; default: number; min: number; max: number; step?: number; unit?: string; showMaxInLabel?: boolean }
   | { key: string; label: string; description?: string; type: "multiselect"; default: string[]; options: SelectOption[] }
@@ -222,12 +223,26 @@ const CATEGORIES: CategoryDef[] = [
     icon: <Clock size={14} />,
     description: "Default DTE targets and time-based filters applied across the options chain and screener.",
     settings: [
-      { key: "defaultDTE", label: "Default DTE", description: "Target days to expiration when browsing chains", type: "number", default: 45, min: 1, max: 365, unit: "days" },
-      { key: "minDTE", label: "Minimum DTE", description: "Filter out expirations closer than this", type: "number", default: 7, min: 0, max: 60, unit: "days" },
-      { key: "maxDTE", label: "Maximum DTE", description: "Filter out expirations farther than this", type: "number", default: 90, min: 1, max: 365, unit: "days" },
-      { key: "defaultChartPeriod", label: "Default chart period", description: "Time range shown when opening a chart", type: "select", default: "1M", options: [{ label: "1 Day", value: "1D" }, { label: "1 Week", value: "1W" }, { label: "1 Month", value: "1M" }, { label: "3 Months", value: "3M" }, { label: "1 Year", value: "1Y" }] },
-      { key: "expiryWarningDays", label: "Expiry warning", description: "Alert when a position is within this many days of expiry", type: "number", default: 7, min: 1, max: 30, unit: "days" },
-      { key: "earningsBlackoutDays", label: "Earnings blackout", description: "Flag new positions with earnings within this many days", type: "number", default: 3, min: 0, max: 14, unit: "days" },
+      { key: "minDTE", label: "Default DTE minimum", description: "Overrides Risk Management DTE floor for strategy recommendations", type: "slider", default: 21, min: 0, max: 180, unit: "d" },
+      { key: "maxDTE", label: "Default DTE maximum", description: "Overrides Risk Management DTE ceiling for strategy recommendations", type: "slider", default: 60, min: 7, max: 365, unit: "d" },
+      { key: "showDteRangeFilterDefault", label: "Show DTE range filter in screener by default", type: "toggle", default: true },
+      { key: "preferredExpirationCycles", label: "Preferred expiration cycles", type: "multiselect", default: ["weekly", "monthly"], options: [{ label: "Weekly", value: "weekly" }, { label: "Monthly", value: "monthly" }, { label: "Quarterly", value: "quarterly" }, { label: "LEAPS", value: "leaps" }] },
+      { key: "highlightPreferredExpirationCycles", label: "Highlight preferred cycles in options chain", type: "toggle", default: true },
+      { key: "warnOutsidePreferredExpirationCycle", label: "Warn outside preferred cycle", type: "toggle", default: true },
+      { key: "earningsAvoidanceBeforeDays", label: "Avoid before earnings", type: "slider", default: 5, min: 0, max: 21, unit: "d" },
+      { key: "earningsAvoidanceAfterDays", label: "Avoid after earnings", type: "slider", default: 1, min: 0, max: 7, unit: "d" },
+      { key: "showEarningsDateColumnDefault", label: "Show earnings date column in screener by default", type: "toggle", default: true },
+      { key: "showEarningsWarningBadge", label: "Show earnings warning badge in screener", type: "toggle", default: true },
+      { key: "allowEarningsAvoidanceOverride", label: "Allow earnings override with confirmation", type: "toggle", default: false },
+      { key: "thetaOpenMinDTE", label: "Theta open zone minimum", type: "slider", default: 21, min: 0, max: 180, unit: "d" },
+      { key: "thetaOpenMaxDTE", label: "Theta open zone maximum", type: "slider", default: 45, min: 7, max: 365, unit: "d" },
+      { key: "thetaCloseProfitPct", label: "Theta close profit target", description: "Close when this % of max profit is reached", type: "slider", default: 50, min: 1, max: 100, unit: "%" },
+      { key: "thetaCloseDTE", label: "Theta close DTE", description: "Close or roll when DTE reaches this value", type: "slider", default: 21, min: 0, max: 90, unit: "d" },
+      { key: "showThetaDecayChart", label: "Show theta decay chart in StrategyPanel by default", type: "toggle", default: true },
+      { key: "avoidMondayMorningEntries", label: "Avoid Monday morning entries", type: "toggle", default: false },
+      { key: "avoidFridayAfternoonEntries", label: "Avoid Friday afternoon entries", type: "toggle", default: false },
+      { key: "preferredTradingWindowStart", label: "Preferred trading window start", type: "time", default: "09:45" },
+      { key: "preferredTradingWindowEnd", label: "Preferred trading window end", type: "time", default: "15:45" },
     ],
   },
   {
@@ -405,6 +420,23 @@ function NumberInput({ value, min, max, step = 1, unit, onChange }: { value: num
   );
 }
 
+function TimeInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <input
+      type="time"
+      value={value}
+      onChange={e => onChange(e.target.value)}
+      style={{
+        width: 110, background: "rgba(255,255,255,0.06)",
+        border: "1px solid rgba(255,255,255,0.1)",
+        borderRadius: 6, color: "hsl(var(--foreground))",
+        fontSize: 12, fontWeight: 500, padding: "5px 10px",
+        outline: "none",
+      }}
+    />
+  );
+}
+
 function SliderInput({ value, min, max, step = 1, unit, onChange }: { value: number; min: number; max: number; step?: number; unit?: string; onChange: (v: number) => void }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0, minWidth: 180 }}>
@@ -522,6 +554,8 @@ function SettingRow({
         return <Toggle checked={Boolean(value ?? setting.default)} onChange={v => onChange(setting.key, v)} />;
       case "select":
         return <StyledSelect value={(value ?? setting.default) as string | number} options={setting.options} onChange={v => onChange(setting.key, v)} />;
+      case "time":
+        return <TimeInput value={String(value ?? setting.default)} onChange={v => onChange(setting.key, v)} />;
       case "number":
         return <NumberInput value={Number(value ?? setting.default)} min={setting.min} max={setting.max} step={setting.step} unit={setting.unit} onChange={v => onChange(setting.key, v)} />;
       case "slider":
@@ -998,6 +1032,153 @@ function RiskManagementPanel({
   );
 }
 
+const TIME_HORIZON_SECTION_SLICES = [
+  { label: "Expiration Cycle Preferences", start: 3, end: 6 },
+  { label: "Earnings Awareness", start: 6, end: 11 },
+  { label: "Theta Decay Preferences", start: 11, end: 16 },
+  { label: "Time-Based Rules", start: 16, end: 20 },
+] as const;
+
+function RangeSliderInput({
+  minValue,
+  maxValue,
+  min,
+  max,
+  minLimit,
+  onChange,
+}: {
+  minValue: number;
+  maxValue: number;
+  min: number;
+  max: number;
+  minLimit: number;
+  onChange: (values: { minValue: number; maxValue: number }) => void;
+}) {
+  return (
+    <div style={{ display: "grid", gap: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+        <span style={{ fontSize: 12, fontWeight: 700, color: "hsl(var(--foreground))", fontVariantNumeric: "tabular-nums" }}>{minValue}d</span>
+        <span style={{ fontSize: 11, color: "hsl(var(--muted-foreground))" }}>to</span>
+        <span style={{ fontSize: 12, fontWeight: 700, color: "hsl(var(--foreground))", fontVariantNumeric: "tabular-nums" }}>{maxValue}d</span>
+      </div>
+      <input type="range" value={minValue} min={min} max={Math.min(maxValue - minLimit, 180)} onChange={e => onChange({ minValue: Number(e.target.value), maxValue })} style={{ accentColor: "hsl(var(--primary))" }} />
+      <input type="range" value={maxValue} min={Math.max(minValue + minLimit, 7)} max={max} onChange={e => onChange({ minValue, maxValue: Number(e.target.value) })} style={{ accentColor: "hsl(var(--primary))" }} />
+    </div>
+  );
+}
+
+function CycleCheckboxes({ value, onChange }: { value: string[]; onChange: (value: string[]) => void }) {
+  const options = [
+    { label: "Weekly", value: "weekly" },
+    { label: "Monthly", value: "monthly" },
+    { label: "Quarterly", value: "quarterly" },
+    { label: "LEAPS", value: "leaps" },
+  ];
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 8, marginTop: 12 }}>
+      {options.map(option => {
+        const checked = value.includes(option.value);
+        return (
+          <label key={option.value} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 6, border: checked ? "1px solid hsl(var(--primary) / 0.35)" : "1px solid rgba(255,255,255,0.08)", background: checked ? "hsl(var(--primary) / 0.10)" : "rgba(255,255,255,0.03)", color: checked ? "hsl(var(--foreground))" : "hsl(var(--muted-foreground))", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={checked}
+              onChange={() => onChange(checked ? value.filter(item => item !== option.value) : [...value, option.value])}
+              style={{ accentColor: "hsl(var(--primary))" }}
+            />
+            {option.label}
+          </label>
+        );
+      })}
+    </div>
+  );
+}
+
+function formatEtTime(value: string): string {
+  const [h = "0", m = "0"] = value.split(":");
+  const hour = Number(h);
+  const suffix = hour >= 12 ? "PM" : "AM";
+  const displayHour = hour % 12 || 12;
+  return `${displayHour}:${m.padStart(2, "0")} ${suffix} ET`;
+}
+
+function TimeHorizonPanel({
+  settings,
+  onChange,
+  onReset,
+}: {
+  settings: AppSettings;
+  onChange: (key: string, value: unknown) => void;
+  onReset: () => void;
+}) {
+  const timeSettings = CATEGORIES.find(category => category.id === "timeHorizon")!.settings;
+  const localTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const differsFromEt = localTimezone !== "America/New_York";
+
+  return (
+    <div style={{ paddingTop: 8, display: "grid", gap: 24 }}>
+      <div>
+        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: "hsl(var(--muted-foreground))", textTransform: "uppercase" }}>Default DTE Settings</div>
+        <div style={{ padding: "14px 0", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 24 }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 500 }}>Default DTE range</div>
+              <div style={{ fontSize: 11.5, color: "hsl(var(--muted-foreground))", marginTop: 3 }}>Overrides Risk Management DTE limits for strategy recommendations.</div>
+            </div>
+            <div style={{ width: 220, flexShrink: 0 }}>
+              <RangeSliderInput
+                minValue={settings.minDTE}
+                maxValue={settings.maxDTE}
+                min={0}
+                max={365}
+                minLimit={7}
+                onChange={({ minValue, maxValue }) => {
+                  onChange("minDTE", minValue);
+                  onChange("maxDTE", maxValue);
+                }}
+              />
+            </div>
+          </div>
+        </div>
+        <SettingRow setting={timeSettings[2]!} value={settings.showDteRangeFilterDefault} onChange={onChange} />
+      </div>
+
+      <div>
+        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: "hsl(var(--muted-foreground))", textTransform: "uppercase" }}>Expiration Cycle Preferences</div>
+        <div style={{ padding: "14px 0", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+          <div style={{ fontSize: 13, fontWeight: 500 }}>Preferred expiration cycles</div>
+          <div style={{ fontSize: 11.5, color: "hsl(var(--muted-foreground))", marginTop: 3 }}>Used by the options chain for highlighting and warnings.</div>
+          <CycleCheckboxes value={settings.preferredExpirationCycles} onChange={value => onChange("preferredExpirationCycles", value)} />
+        </div>
+        {timeSettings.slice(4, 6).map(setting => (
+          <SettingRow key={setting.key} setting={setting} value={settings[setting.key as keyof AppSettings]} onChange={onChange} />
+        ))}
+      </div>
+
+      {TIME_HORIZON_SECTION_SLICES.slice(1).map(section => (
+        <div key={section.label}>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: "hsl(var(--muted-foreground))", textTransform: "uppercase" }}>{section.label}</div>
+          {section.label === "Time-Based Rules" && (
+            <div style={{ marginTop: 8, padding: "8px 10px", borderRadius: 6, background: "rgba(255,255,255,0.03)", color: "hsl(var(--muted-foreground))", fontSize: 12 }}>
+              Trading window is {formatEtTime(settings.preferredTradingWindowStart)} to {formatEtTime(settings.preferredTradingWindowEnd)}. {differsFromEt ? `Your local timezone is ${localTimezone}.` : "Your local timezone matches ET."}
+            </div>
+          )}
+          {timeSettings.slice(section.start, section.end).map(setting => (
+            <SettingRow key={setting.key} setting={setting} value={settings[setting.key as keyof AppSettings]} onChange={onChange} />
+          ))}
+        </div>
+      ))}
+
+      <ActionRow
+        label="Reset to Defaults"
+        description="Restore every Time Horizon option to its default value"
+        icon={<RotateCcw size={13} />}
+        onClick={onReset}
+      />
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const isMobile = useIsMobile();
   const [activeCategory, setActiveCategory] = useState("general");
@@ -1142,6 +1323,14 @@ export default function SettingsPage() {
               />
             )}
 
+            {activeCategory === "timeHorizon" && (
+              <TimeHorizonPanel
+                settings={settings}
+                onChange={handleChange}
+                onReset={() => handleResetCategory(activeCategoryDef)}
+              />
+            )}
+
             {activeCategory === "security" && (
               <div style={{ paddingTop: 8 }}>
                 {activeCategoryDef.settings.map(s => (
@@ -1175,7 +1364,7 @@ export default function SettingsPage() {
             )}
 
             {/* All other categories */}
-            {activeCategory !== "security" && activeCategory !== "data" && activeCategory !== "strategy" && activeCategory !== "risk" && (
+            {activeCategory !== "security" && activeCategory !== "data" && activeCategory !== "strategy" && activeCategory !== "risk" && activeCategory !== "timeHorizon" && (
               <div style={{ paddingTop: 8 }}>
                 {activeCategoryDef.settings.map(s => (
                   <SettingRow key={s.key} setting={s} value={settings[s.key as keyof AppSettings]} onChange={handleChange} />

@@ -208,6 +208,32 @@ function PayoffDiagram({ legs, currentPrice }: { legs: StrategyLeg[]; currentPri
 }
 
 // ── Strategy Detail (OptionsPlay-style card) ─────────────────────────────
+function ThetaDecayChart({ dte, closeDte, profitTarget }: { dte: number; closeDte: number; profitTarget: number }) {
+  const W = 300, H = 58;
+  const maxDte = Math.max(dte, closeDte, 60);
+  const points = Array.from({ length: 28 }, (_, i) => {
+    const x = (i / 27) * W;
+    const remaining = maxDte - (i / 27) * maxDte;
+    const decay = Math.pow(1 - remaining / maxDte, 1.65);
+    const y = 48 - decay * 38;
+    return `${i === 0 ? "M" : "L"} ${x.toFixed(1)} ${y.toFixed(1)}`;
+  }).join(" ");
+  const closeX = W * (1 - closeDte / maxDte);
+  return (
+    <div style={{ padding: "0 10px 8px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, fontSize: 9.5, color: "hsl(var(--muted-foreground))" }}>
+        <span>Theta decay</span>
+        <span>Close at {profitTarget}% profit or {closeDte} DTE</span>
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: "block", borderRadius: 6, background: "rgba(0,0,0,0.24)" }}>
+        <path d={points} fill="none" stroke="hsl(var(--primary))" strokeWidth="2" strokeLinecap="round" />
+        <line x1={closeX} x2={closeX} y1="8" y2="52" stroke="hsl(38 92% 50%)" strokeWidth="1" strokeDasharray="3 4" />
+        <line x1="0" x2={W} y1="48" y2="48" stroke="rgba(255,255,255,0.10)" />
+      </svg>
+    </div>
+  );
+}
+
 function StrategyDetail({
   strategy, currentPrice, symbol, iv, onModify,
 }: {
@@ -270,6 +296,9 @@ function StrategyDetail({
       <div style={{ padding: "10px 10px 8px" }}>
         <PayoffDiagram legs={strategy.legs} currentPrice={currentPrice} />
       </div>
+      {settings.showThetaDecayChart && (
+        <ThetaDecayChart dte={dte} closeDte={settings.thetaCloseDTE} profitTarget={settings.thetaCloseProfitPct} />
+      )}
 
       {/* Metrics grid */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 0, borderTop: "1px solid rgba(255,255,255,0.05)" }}>

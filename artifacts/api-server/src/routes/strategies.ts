@@ -20,8 +20,8 @@ async function getRiskPreferences(): Promise<StrategyRiskPreferences> {
   const rows = await db.select().from(userSettingsTable);
   const values = Object.fromEntries(rows.map((row) => [row.key, row.value])) as Record<string, unknown>;
   return {
-    riskMinDTE: typeof values.riskMinDTE === "number" ? values.riskMinDTE : DEFAULT_STRATEGY_RISK_PREFERENCES.riskMinDTE,
-    riskMaxDTE: typeof values.riskMaxDTE === "number" ? values.riskMaxDTE : DEFAULT_STRATEGY_RISK_PREFERENCES.riskMaxDTE,
+    riskMinDTE: typeof values.minDTE === "number" ? values.minDTE : typeof values.riskMinDTE === "number" ? values.riskMinDTE : DEFAULT_STRATEGY_RISK_PREFERENCES.riskMinDTE,
+    riskMaxDTE: typeof values.maxDTE === "number" ? values.maxDTE : typeof values.riskMaxDTE === "number" ? values.riskMaxDTE : DEFAULT_STRATEGY_RISK_PREFERENCES.riskMaxDTE,
   };
 }
 

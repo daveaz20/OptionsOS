@@ -163,6 +163,24 @@ export interface AppSettings {
   disableStreamer: boolean;
   // Time Horizon
   earningsBlackoutDays: number;
+  showDteRangeFilterDefault: boolean;
+  preferredExpirationCycles: string[];
+  highlightPreferredExpirationCycles: boolean;
+  warnOutsidePreferredExpirationCycle: boolean;
+  earningsAvoidanceBeforeDays: number;
+  earningsAvoidanceAfterDays: number;
+  showEarningsDateColumnDefault: boolean;
+  showEarningsWarningBadge: boolean;
+  allowEarningsAvoidanceOverride: boolean;
+  thetaOpenMinDTE: number;
+  thetaOpenMaxDTE: number;
+  thetaCloseProfitPct: number;
+  thetaCloseDTE: number;
+  showThetaDecayChart: boolean;
+  avoidMondayMorningEntries: boolean;
+  avoidFridayAfternoonEntries: boolean;
+  preferredTradingWindowStart: string;
+  preferredTradingWindowEnd: string;
   // Chart & Analysis
   defaultChartIndicators: string[];
   showVolumeOnChart: boolean;
@@ -188,8 +206,8 @@ export const SETTING_DEFAULTS: AppSettings = {
   autoRefreshInterval: 60,
   // Trading Defaults
   defaultDTE: 45,
-  minDTE: 7,
-  maxDTE: 90,
+  minDTE: 21,
+  maxDTE: 60,
   defaultContracts: 1,
   defaultOrderType: "limit",
   slippageTolerance: 5,
@@ -340,7 +358,25 @@ export const SETTING_DEFAULTS: AppSettings = {
   logLevel: "warn",
   disableStreamer: false,
   // Time Horizon
-  earningsBlackoutDays: 3,
+  earningsBlackoutDays: 5,
+  showDteRangeFilterDefault: true,
+  preferredExpirationCycles: ["weekly", "monthly"],
+  highlightPreferredExpirationCycles: true,
+  warnOutsidePreferredExpirationCycle: true,
+  earningsAvoidanceBeforeDays: 5,
+  earningsAvoidanceAfterDays: 1,
+  showEarningsDateColumnDefault: true,
+  showEarningsWarningBadge: true,
+  allowEarningsAvoidanceOverride: false,
+  thetaOpenMinDTE: 21,
+  thetaOpenMaxDTE: 45,
+  thetaCloseProfitPct: 50,
+  thetaCloseDTE: 21,
+  showThetaDecayChart: true,
+  avoidMondayMorningEntries: false,
+  avoidFridayAfternoonEntries: false,
+  preferredTradingWindowStart: "09:45",
+  preferredTradingWindowEnd: "15:45",
   // Chart & Analysis
   defaultChartIndicators: ["SMA20", "SMA50"],
   showVolumeOnChart: true,

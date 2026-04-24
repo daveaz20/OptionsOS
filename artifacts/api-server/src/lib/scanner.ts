@@ -122,6 +122,8 @@ export interface RiskPreferences {
   riskMinDTE: number;
   riskMaxDTE: number;
   earningsAvoidanceDays: number;
+  earningsAvoidanceBeforeDays: number;
+  earningsAvoidanceAfterDays: number;
   minOpenInterest: number;
   minContractVolume: number;
   maxBidAskSpreadPct: number;
@@ -131,6 +133,8 @@ export const DEFAULT_RISK_PREFERENCES: RiskPreferences = {
   riskMinDTE: 21,
   riskMaxDTE: 60,
   earningsAvoidanceDays: 5,
+  earningsAvoidanceBeforeDays: 5,
+  earningsAvoidanceAfterDays: 1,
   minOpenInterest: 100,
   minContractVolume: 10,
   maxBidAskSpreadPct: 10,
@@ -195,10 +199,12 @@ export function scanOpportunity(
   // Covered Calls require owning shares (not applicable to ETF options).
   if (isETF) setup = restrictETFSetup(setup, etfCat, outlook, ivRank, strategyPreferences);
 
+  const earningsBeforeDays = riskPreferences.earningsAvoidanceBeforeDays ?? riskPreferences.earningsAvoidanceDays;
+  const earningsAfterDays = riskPreferences.earningsAvoidanceAfterDays ?? 0;
   const withinEarningsWindow = !isETF
     && daysToEarnings !== undefined
-    && daysToEarnings >= 0
-    && daysToEarnings <= riskPreferences.earningsAvoidanceDays;
+    && daysToEarnings >= -earningsAfterDays
+    && daysToEarnings <= earningsBeforeDays;
 
   // ETFs have no earnings — skip earnings-proximity adjustments to ivScore
   const effectiveDte = isETF ? undefined : daysToEarnings;
@@ -206,7 +212,10 @@ export function scanOpportunity(
   // ── 3. Score each dimension ──────────────────────────────────────────────
   const rawTechnical = scoreTechnical(signals, outlook);
   const rawIv        = scoreIvAlignment(ivRank, setup, effectiveDte);
-  const entryScore   = scoreEntryQuality(signals, price, outlook);
+  let entryScore     = scoreEntryQuality(signals, price, outlook);
+  if (withinEarningsWindow) {
+    entryScore = Math.max(0, entryScore - 8);
+  }
   const rawMomentum  = scoreMomentum(signals, changePercent, outlook, price);
   const vwapScore    = scoreVwap(price, dayVwap, prevDayVwap, outlook);
 
@@ -252,17 +261,11 @@ export function scanOpportunity(
     cappedScore = Math.min(cappedScore, 62);
   }
 
-  if (withinEarningsWindow) {
-    cappedScore = Math.min(cappedScore, 44);
-    cappedSetup = "Neutral";
-    cappedOutlook = "neutral";
-  }
-
   const opportunityScore = Math.max(0, Math.min(100, cappedScore));
 
   // Use the registry to find the best-fit strategies for this stock's conditions
   const enabledStrategyIds = strategyPreferences.enabledStrategyIds ?? {};
-  const registryMatches = withinEarningsWindow ? [] : getStrategiesForConditions({
+  const registryMatches = getStrategiesForConditions({
     outlook: cappedOutlook,
     ivRank: ivRankValue,
     rsi14: signals.rsi14 ?? 50,
