@@ -15,7 +15,7 @@ export interface StrategyMatchSummary {
   url?: string;
 }
 
-const FALLBACK_STRATEGY_REGISTRY: StrategyRegistryEntry[] = [
+export const FALLBACK_STRATEGY_REGISTRY: StrategyRegistryEntry[] = [
   { id: "covered_call", name: "Covered Call", tier: "rookie" },
   { id: "protective_put", name: "Protective Put", tier: "rookie" },
   { id: "collar", name: "Collar", tier: "rookie" },
@@ -69,7 +69,7 @@ export const STRATEGY_TIER_LABELS: Record<string, string> = {
   rookie: "Rookie",
   veteran: "Veteran",
   "seasoned-veteran": "Seasoned Veteran",
-  "all-star": "All-Star",
+  "all-star": "Expert",
 };
 
 export function useStrategyRegistry() {

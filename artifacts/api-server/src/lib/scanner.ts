@@ -87,6 +87,37 @@ export const DEFAULT_HIGH_CONVICTION_THRESHOLDS: HighConvictionThresholds = {
   momentumScore: 8,
 };
 
+export interface StrategyScoreWeights {
+  iv: number;
+  technical: number;
+  entry: number;
+  momentum: number;
+  vwap: number;
+}
+
+export interface StrategyPreferences {
+  enabledStrategyIds?: Record<string, boolean>;
+  preferredIvEnvironment: "high" | "low" | "any";
+  ivRankLowThreshold: number;
+  ivRankHighThreshold: number;
+  strategyAutoSelectByIv: boolean;
+  scoreWeights: StrategyScoreWeights;
+}
+
+export const DEFAULT_STRATEGY_PREFERENCES: StrategyPreferences = {
+  ivRankLowThreshold: 30,
+  ivRankHighThreshold: 60,
+  preferredIvEnvironment: "any",
+  strategyAutoSelectByIv: true,
+  scoreWeights: {
+    iv: 25,
+    technical: 35,
+    entry: 25,
+    momentum: 15,
+    vwap: 10,
+  },
+};
+
 export function isHighConviction(
   row: HighConvictionCandidate,
   thresholds: HighConvictionThresholds = DEFAULT_HIGH_CONVICTION_THRESHOLDS,
@@ -101,6 +132,7 @@ export function isHighConviction(
 export interface ScanOpts {
   isETF?: boolean;
   etfCategory?: "leveraged-bull" | "leveraged-bear" | "leveraged-single" | "sector";
+  strategyPreferences?: StrategyPreferences;
 }
 
 export function scanOpportunity(
@@ -115,6 +147,14 @@ export function scanOpportunity(
 ): ScanResult {
   const isETF      = opts?.isETF ?? false;
   const etfCat     = opts?.etfCategory;
+  const strategyPreferences = {
+    ...DEFAULT_STRATEGY_PREFERENCES,
+    ...(opts?.strategyPreferences ?? {}),
+    scoreWeights: {
+      ...DEFAULT_STRATEGY_PREFERENCES.scoreWeights,
+      ...(opts?.strategyPreferences?.scoreWeights ?? {}),
+    },
+  };
   // Capture ivRank for registry matching later
   const ivRankValue = ivRank;
 
@@ -126,11 +166,11 @@ export function scanOpportunity(
   // leveraged-single: don't force outlook — let technicals decide direction
 
   // ── 2. Choose the best setup for this outlook + IV environment ───────────
-  let setup: LegacySetup = chooseSetup(outlook, ivRank, signals);
+  let setup: LegacySetup = chooseSetup(outlook, ivRank, signals, strategyPreferences);
 
   // Restrict leveraged/single-stock ETF setups to directional strategies only.
   // Covered Calls require owning shares (not applicable to ETF options).
-  if (isETF) setup = restrictETFSetup(setup, etfCat, outlook, ivRank);
+  if (isETF) setup = restrictETFSetup(setup, etfCat, outlook, ivRank, strategyPreferences);
 
   // ETFs have no earnings — skip earnings-proximity adjustments to ivScore
   const effectiveDte = isETF ? undefined : daysToEarnings;
@@ -153,7 +193,13 @@ export function scanOpportunity(
   const ivScore        = Math.max(0, rawIv + ivAdj);
   const momentumScore  = rawMomentum + momAdj;
 
-  const total = Math.round(technicalScore + ivScore + entryScore + momentumScore + vwapScore);
+  const total = Math.round(
+    (technicalScore / 35) * strategyPreferences.scoreWeights.technical +
+    (ivScore / 25) * strategyPreferences.scoreWeights.iv +
+    (entryScore / 25) * strategyPreferences.scoreWeights.entry +
+    (momentumScore / 15) * strategyPreferences.scoreWeights.momentum +
+    (vwapScore / 10) * strategyPreferences.scoreWeights.vwap,
+  );
 
   // ── Hard gates: ensure ALL key dimensions meet a minimum bar ───────────────
   // A setup with a great score in two areas but weak in others isn't actionable.
@@ -181,6 +227,7 @@ export function scanOpportunity(
   const opportunityScore = Math.max(0, Math.min(100, cappedScore));
 
   // Use the registry to find the best-fit strategies for this stock's conditions
+  const enabledStrategyIds = strategyPreferences.enabledStrategyIds ?? {};
   const registryMatches = getStrategiesForConditions({
     outlook: cappedOutlook,
     ivRank: ivRankValue,
@@ -188,6 +235,11 @@ export function scanOpportunity(
     technicalScore: Math.round(technicalScore),
     momentumScore: Math.round(momentumScore),
     hasEarnings: daysToEarnings !== undefined && daysToEarnings <= 14,
+    enabledStrategyIds,
+    preferredIvEnvironment: strategyPreferences.preferredIvEnvironment,
+    ivRankLowThreshold: strategyPreferences.ivRankLowThreshold,
+    ivRankHighThreshold: strategyPreferences.ivRankHighThreshold,
+    strategyAutoSelectByIv: strategyPreferences.strategyAutoSelectByIv,
   });
 
   const topStrategies: TopStrategy[] = registryMatches.slice(0, 5).map(s => ({
@@ -262,27 +314,30 @@ function restrictETFSetup(
   etfCat: ScanOpts["etfCategory"],
   outlook: ScanOutlook,
   ivRank: number,
+  strategyPreferences: StrategyPreferences,
 ): LegacySetup {
+  const highIv = strategyPreferences.ivRankHighThreshold;
+  const lowIv = strategyPreferences.ivRankLowThreshold;
   // Covered Calls require owning the underlying — not applicable to ETF options
   if (setup === "Covered Call") {
-    return ivRank >= 60 ? "Bull Put Spread" : "Call Spread";
+    return ivRank >= highIv ? "Bull Put Spread" : "Call Spread";
   }
 
   // Pure leveraged ETFs: lock to their directional setup list
   if (etfCat === "leveraged-bull" && !BULL_SETUPS.includes(setup)) {
-    return ivRank >= 60 ? "Bull Put Spread" : ivRank < 30 ? "Long Call" : "Call Spread";
+    return ivRank >= highIv ? "Bull Put Spread" : ivRank < lowIv ? "Long Call" : "Call Spread";
   }
   if (etfCat === "leveraged-bear" && !BEAR_SETUPS.includes(setup)) {
-    return ivRank >= 60 ? "Bear Call Spread" : ivRank < 30 ? "Long Put" : "Bear Put Spread";
+    return ivRank >= highIv ? "Bear Call Spread" : ivRank < lowIv ? "Long Put" : "Bear Put Spread";
   }
 
   // Single-stock leveraged ETFs: restrict based on the computed outlook
   if (etfCat === "leveraged-single") {
     if (outlook === "bullish" && !BULL_SETUPS.includes(setup)) {
-      return ivRank >= 60 ? "Bull Put Spread" : ivRank < 30 ? "Long Call" : "Call Spread";
+      return ivRank >= highIv ? "Bull Put Spread" : ivRank < lowIv ? "Long Call" : "Call Spread";
     }
     if (outlook === "bearish" && !BEAR_SETUPS.includes(setup)) {
-      return ivRank >= 60 ? "Bear Call Spread" : ivRank < 30 ? "Long Put" : "Bear Put Spread";
+      return ivRank >= highIv ? "Bear Call Spread" : ivRank < lowIv ? "Long Put" : "Bear Put Spread";
     }
   }
 
@@ -291,24 +346,32 @@ function restrictETFSetup(
 
 // ─── Setup selection ───────────────────────────────────────────────────────
 
-function chooseSetup(outlook: ScanOutlook, ivRank: number, signals: TechnicalSignals): LegacySetup {
+function chooseSetup(
+  outlook: ScanOutlook,
+  ivRank: number,
+  signals: TechnicalSignals,
+  strategyPreferences: StrategyPreferences,
+): LegacySetup {
+  const highIv = strategyPreferences.ivRankHighThreshold;
+  const lowIv = strategyPreferences.ivRankLowThreshold;
+  const useIv = strategyPreferences.strategyAutoSelectByIv;
   if (outlook === "bullish") {
-    if (ivRank >= 60) return "Bull Put Spread";
-    if (ivRank >= 40 && signals.strength >= 6) return "Covered Call";
-    if (ivRank < 30 && signals.strength >= 7) return "Long Call";
+    if (useIv && ivRank >= highIv) return "Bull Put Spread";
+    if (useIv && ivRank >= Math.max(lowIv, highIv - 20) && signals.strength >= 6) return "Covered Call";
+    if (useIv && ivRank < lowIv && signals.strength >= 7) return "Long Call";
     return "Call Spread";
   }
 
   if (outlook === "bearish") {
-    if (ivRank >= 60) return "Bear Call Spread";
-    if (ivRank < 30 && signals.strength <= 4) return "Long Put";
+    if (useIv && ivRank >= highIv) return "Bear Call Spread";
+    if (useIv && ivRank < lowIv && signals.strength <= 4) return "Long Put";
     return "Bear Put Spread";
   }
 
   // Neutral
-  if (ivRank >= 65) return "Iron Condor";
-  if (ivRank <= 25) return "Straddle";
-  if (ivRank >= 45) return "Iron Condor";
+  if (useIv && ivRank >= highIv + 5) return "Iron Condor";
+  if (useIv && ivRank <= Math.max(0, lowIv - 5)) return "Straddle";
+  if (useIv && ivRank >= Math.max(lowIv, highIv - 15)) return "Iron Condor";
   return "Calendar";
 }
 

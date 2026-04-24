@@ -5,6 +5,12 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useSettings } from "@/contexts/SettingsContext";
 import { SETTING_DEFAULTS, type AppSettings } from "@/lib/settings-defaults";
 import {
+  STRATEGY_TIER_LABELS,
+  STRATEGY_TIER_ORDER,
+  useStrategyRegistry,
+  type StrategyRegistryEntry,
+} from "@/lib/strategy-catalog";
+import {
   Settings, SlidersHorizontal, ShieldAlert, Search,
   Target, BarChart2, Palette, Database, Check,
   Loader2, RotateCcw, Download, ChevronDown,
@@ -167,12 +173,19 @@ const CATEGORIES: CategoryDef[] = [
     icon: <Target size={14} />,
     description: "Preferred strategies and default scoring parameters for recommendations.",
     settings: [
-      { key: "preferredStrategies", label: "Preferred strategies", description: "Highlighted in strategy recommendations", type: "multiselect", default: ["Short Put", "Iron Condor"], options: [{ label: "Short Put", value: "Short Put" }, { label: "Iron Condor", value: "Iron Condor" }, { label: "Covered Call", value: "Covered Call" }, { label: "Short Strangle", value: "Short Strangle" }, { label: "Calendar Spread", value: "Calendar Spread" }, { label: "Diagonal Spread", value: "Diagonal Spread" }, { label: "Bull Put Spread", value: "Bull Put Spread" }, { label: "Bear Call Spread", value: "Bear Call Spread" }] },
-      { key: "minCredit", label: "Min premium credit", description: "Minimum credit received to surface a strategy", type: "number", default: 0.5, min: 0, step: 0.05, unit: "$" },
-      { key: "targetProfitPct", label: "Target profit %", description: "Default take-profit as % of max credit", type: "slider", default: 50, min: 10, max: 90, unit: "%" },
-      { key: "maxLossMultiplier", label: "Max loss multiplier", description: "Stop-loss as multiple of premium received", type: "number", default: 2, min: 1, max: 5, step: 0.5 },
-      { key: "showProbabilityOfProfit", label: "Show probability of profit", type: "toggle", default: true },
-      { key: "useTheoreticalValue", label: "Use theoretical value", description: "Price strategies using model value vs mark", type: "toggle", default: false },
+      { key: "enabledStrategyIds", label: "Enabled strategies", type: "toggleGroup", default: {}, options: [] },
+      { key: "strategyDefaultOutlook", label: "Default outlook", type: "select", default: "all", options: [{ label: "All", value: "all" }, { label: "Bullish", value: "bullish" }, { label: "Bearish", value: "bearish" }, { label: "Neutral", value: "neutral" }] },
+      { key: "strategyDefaultTier", label: "Default strategy tier filter", type: "select", default: "all", options: [{ label: "All", value: "all" }, { label: "Rookie", value: "rookie" }, { label: "Veteran", value: "veteran" }, { label: "Seasoned Veteran", value: "seasoned-veteran" }, { label: "Expert", value: "all-star" }] },
+      { key: "strategyDefaultStrategyId", label: "Default strategy on screener load", type: "select", default: "", options: [{ label: "None", value: "" }] },
+      { key: "preferredIvEnvironment", label: "Preferred IV environment", type: "select", default: "any", options: [{ label: "Any", value: "any" }, { label: "High IV", value: "high" }, { label: "Low IV", value: "low" }] },
+      { key: "ivRankLowThreshold", label: "IV Rank low threshold", type: "slider", default: 30, min: 0, max: 100 },
+      { key: "ivRankHighThreshold", label: "IV Rank high threshold", type: "slider", default: 60, min: 0, max: 100 },
+      { key: "strategyAutoSelectByIv", label: "Strategy auto-selection based on IV environment", type: "toggle", default: true },
+      { key: "ivScoreWeight", label: "IV score weight", type: "slider", default: 25, min: 0, max: 40 },
+      { key: "technicalScoreWeight", label: "Technical score weight", type: "slider", default: 35, min: 0, max: 50 },
+      { key: "entryScoreWeight", label: "Entry score weight", type: "slider", default: 25, min: 0, max: 40 },
+      { key: "momentumScoreWeight", label: "Momentum score weight", type: "slider", default: 15, min: 0, max: 25 },
+      { key: "vwapScoreWeight", label: "VWAP score weight", type: "slider", default: 10, min: 0, max: 20 },
     ],
   },
   {
@@ -751,6 +764,140 @@ function DataUniversePanel({ settings, onChange }: { settings: AppSettings; onCh
   );
 }
 
+const STRATEGY_WEIGHT_KEYS: Array<keyof AppSettings> = [
+  "ivScoreWeight",
+  "technicalScoreWeight",
+  "entryScoreWeight",
+  "momentumScoreWeight",
+  "vwapScoreWeight",
+];
+
+function StrategyPreferencesPanel({
+  settings,
+  onChange,
+  onReset,
+}: {
+  settings: AppSettings;
+  onChange: (key: string, value: unknown) => void;
+  onReset: () => void;
+}) {
+  const { data: registry = [] } = useStrategyRegistry();
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const enabledMap = settings.enabledStrategyIds ?? {};
+  const weightTotal = STRATEGY_WEIGHT_KEYS.reduce((sum, key) => sum + Number(settings[key] ?? 0), 0);
+  const strategyOptions = [{ label: "None", value: "" }, ...registry.map(strategy => ({ label: strategy.name, value: strategy.id }))];
+
+  const grouped = STRATEGY_TIER_ORDER.map(tier => ({
+    tier,
+    strategies: registry.filter(strategy => strategy.tier === tier),
+  })).filter(group => group.strategies.length > 0);
+
+  const isEnabled = (strategy: StrategyRegistryEntry) => enabledMap[strategy.id] !== false;
+  const setStrategyEnabled = (id: string, enabled: boolean) => {
+    onChange("enabledStrategyIds", { ...enabledMap, [id]: enabled });
+  };
+  const setTierEnabled = (strategies: StrategyRegistryEntry[], enabled: boolean) => {
+    const next = { ...enabledMap };
+    for (const strategy of strategies) next[strategy.id] = enabled;
+    onChange("enabledStrategyIds", next);
+  };
+
+  const defaultFilterSettings = CATEGORIES.find(category => category.id === "strategy")!.settings.slice(1, 5);
+  const ivSettings = CATEGORIES.find(category => category.id === "strategy")!.settings.slice(5, 8);
+  const weightSettings = CATEGORIES.find(category => category.id === "strategy")!.settings.slice(8);
+
+  const settingValue = (setting: SettingDef) => {
+    if (setting.key === "strategyDefaultStrategyId" && setting.type === "select") {
+      return settings.strategyDefaultStrategyId && registry.some(strategy => strategy.id === settings.strategyDefaultStrategyId)
+        ? settings.strategyDefaultStrategyId
+        : "";
+    }
+    return settings[setting.key as keyof AppSettings];
+  };
+
+  return (
+    <div style={{ paddingTop: 8, display: "grid", gap: 24 }}>
+      <div>
+        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: "hsl(var(--muted-foreground))", textTransform: "uppercase", marginBottom: 8 }}>Strategy Enable/Disable</div>
+        <div style={{ display: "grid", gap: 10 }}>
+          {grouped.map(group => {
+            const isCollapsed = collapsed[group.tier] ?? false;
+            const enabledCount = group.strategies.filter(isEnabled).length;
+            return (
+              <div key={group.tier} style={{ border: "1px solid rgba(255,255,255,0.07)", borderRadius: 8, background: "rgba(255,255,255,0.02)", overflow: "hidden" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "11px 12px", borderBottom: isCollapsed ? "none" : "1px solid rgba(255,255,255,0.05)" }}>
+                  <button type="button" onClick={() => setCollapsed(current => ({ ...current, [group.tier]: !isCollapsed }))} style={{ display: "inline-flex", alignItems: "center", gap: 8, border: "none", background: "transparent", color: "hsl(var(--foreground))", cursor: "pointer", padding: 0, fontSize: 13, fontWeight: 700 }}>
+                    <ChevronDown size={14} style={{ transform: isCollapsed ? "rotate(-90deg)" : "rotate(0deg)", transition: "transform 0.12s" }} />
+                    {STRATEGY_TIER_LABELS[group.tier] ?? group.tier}
+                    <span style={{ fontSize: 11, color: "hsl(var(--muted-foreground))", fontWeight: 500 }}>{enabledCount}/{group.strategies.length}</span>
+                  </button>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <button type="button" onClick={() => setTierEnabled(group.strategies, true)} style={smallButtonStyle()}>Enable All</button>
+                    <button type="button" onClick={() => setTierEnabled(group.strategies, false)} style={smallButtonStyle()}>Disable All</button>
+                  </div>
+                </div>
+                {!isCollapsed && (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 8, padding: 12 }}>
+                    {group.strategies.map(strategy => (
+                      <div key={strategy.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "8px 10px", borderRadius: 6, background: "rgba(255,255,255,0.035)" }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 12, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{strategy.name}</div>
+                        </div>
+                        <Toggle checked={isEnabled(strategy)} onChange={(enabled) => setStrategyEnabled(strategy.id, enabled)} />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div>
+        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: "hsl(var(--muted-foreground))", textTransform: "uppercase" }}>Default Filters</div>
+        {defaultFilterSettings.map(setting => (
+          <SettingRow
+            key={setting.key}
+            setting={setting.key === "strategyDefaultStrategyId" && setting.type === "select" ? { ...setting, options: strategyOptions } : setting}
+            value={settingValue(setting)}
+            onChange={onChange}
+          />
+        ))}
+      </div>
+
+      <div>
+        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: "hsl(var(--muted-foreground))", textTransform: "uppercase" }}>IV Environment Preferences</div>
+        {ivSettings.map(setting => (
+          <SettingRow key={setting.key} setting={setting} value={settings[setting.key as keyof AppSettings]} onChange={onChange} />
+        ))}
+      </div>
+
+      <div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: "hsl(var(--muted-foreground))", textTransform: "uppercase" }}>Strategy Scoring Weights</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: weightTotal > 110 ? "hsl(var(--destructive))" : "hsl(var(--foreground))" }}>Total {weightTotal} / 110</div>
+        </div>
+        {weightTotal > 110 && (
+          <div style={{ marginTop: 8, padding: "8px 10px", borderRadius: 6, background: "hsl(var(--destructive) / 0.10)", color: "hsl(var(--destructive))", fontSize: 12, fontWeight: 600 }}>
+            Total weights exceed 110. Opportunity scores will still be capped at 100.
+          </div>
+        )}
+        {weightSettings.map(setting => (
+          <SettingRow key={setting.key} setting={setting} value={settings[setting.key as keyof AppSettings]} onChange={onChange} />
+        ))}
+      </div>
+
+      <ActionRow
+        label="Reset to Defaults"
+        description="Restore every Strategy Preferences option to its default value"
+        icon={<RotateCcw size={13} />}
+        onClick={onReset}
+      />
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const isMobile = useIsMobile();
   const [activeCategory, setActiveCategory] = useState("general");
@@ -879,6 +1026,14 @@ export default function SettingsPage() {
               <DataUniversePanel settings={settings} onChange={handleChange} />
             )}
 
+            {activeCategory === "strategy" && (
+              <StrategyPreferencesPanel
+                settings={settings}
+                onChange={handleChange}
+                onReset={() => handleResetCategory(activeCategoryDef)}
+              />
+            )}
+
             {activeCategory === "security" && (
               <div style={{ paddingTop: 8 }}>
                 {activeCategoryDef.settings.map(s => (
@@ -912,7 +1067,7 @@ export default function SettingsPage() {
             )}
 
             {/* All other categories */}
-            {activeCategory !== "security" && activeCategory !== "data" && (
+            {activeCategory !== "security" && activeCategory !== "data" && activeCategory !== "strategy" && (
               <div style={{ paddingTop: 8 }}>
                 {activeCategoryDef.settings.map(s => (
                   <SettingRow key={s.key} setting={s} value={settings[s.key as keyof AppSettings]} onChange={handleChange} />

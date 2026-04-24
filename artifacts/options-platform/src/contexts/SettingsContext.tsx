@@ -24,6 +24,10 @@ function normalizeSettings(settings: Partial<AppSettings> | undefined): AppSetti
       ...SETTING_DEFAULTS.screenerColumnVisibility,
       ...(settings?.screenerColumnVisibility ?? {}),
     },
+    enabledStrategyIds: {
+      ...SETTING_DEFAULTS.enabledStrategyIds,
+      ...(settings?.enabledStrategyIds ?? {}),
+    },
   };
 }
 

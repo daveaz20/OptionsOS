@@ -149,6 +149,10 @@ function filtersFromScreenerDefaults(settings: AppSettings): ActiveFilter[] {
     filters.push({ key: "outlook", value: settings.screenerDefaultOutlook });
   }
 
+  if (settings.strategyDefaultOutlook && settings.strategyDefaultOutlook !== "all") {
+    filters.push({ key: "outlook", value: settings.strategyDefaultOutlook });
+  }
+
   return filters;
 }
 
@@ -432,7 +436,7 @@ export default function Screener() {
   const [sortDir,         setSortDir]         = useState<"asc"|"desc">(settings.screenerDefaultSortDirection || "desc");
   const [tab,             setTab]             = useState<TabKey>(() => (settings.screenerDefaultTab as TabKey) || "overview");
   const [showPicker,      setShowPicker]      = useState(false);
-  const [strategyFilter,  setStrategyFilter]  = useState<string>("");
+  const [strategyFilter,  setStrategyFilter]  = useState<string>(settings.strategyDefaultStrategyId || "");
   const pickerRef = useRef<HTMLDivElement>(null);
   const { data: strategyRegistry = [] } = useStrategyRegistry();
 
@@ -451,13 +455,15 @@ export default function Screener() {
     setSortDir(settings.screenerDefaultSortDirection || "desc");
     setActivePreset(settings.screenerDefaultPreset || "All");
     setActiveFilters(filtersFromScreenerDefaults(settings));
-    setStrategyFilter("");
+    setStrategyFilter(settings.strategyDefaultStrategyId || "");
   }, [
     settings.screenerDefaultSortColumn,
     settings.screenerDefaultSortDirection,
     settings.screenerDefaultPreset,
     settings.screenerDefaultLiquidity,
     settings.screenerDefaultOutlook,
+    settings.strategyDefaultOutlook,
+    settings.strategyDefaultStrategyId,
   ]);
 
   const factored = useMemo(() => computeFactors(raw), [raw]);
@@ -525,6 +531,12 @@ export default function Screener() {
   };
 
   const existingKeys = activeFilters.map(f => f.key);
+  const strategyRegistryForDropdown = useMemo(() => {
+    const enabled = strategyRegistry.filter(strategy => settings.enabledStrategyIds?.[strategy.id] !== false);
+    return settings.strategyDefaultTier && settings.strategyDefaultTier !== "all"
+      ? enabled.filter(strategy => strategy.tier === settings.strategyDefaultTier)
+      : enabled;
+  }, [strategyRegistry, settings.enabledStrategyIds, settings.strategyDefaultTier]);
 
   return (
     <div style={{ display:"flex", flexDirection:"column", height:"100%", background:"#0a0a0a", color:"#fff", fontFamily:"Inter,system-ui,sans-serif", overflow:"hidden" }}>
@@ -582,10 +594,10 @@ export default function Screener() {
                 ? "#0a84ff" : "rgba(255,255,255,0.55)",
             }}>{p.label}</button>
           ))}
-          {strategyRegistry.length > 0 && (
+          {strategyRegistryForDropdown.length > 0 && (
             <div style={{ marginLeft:"auto" }}>
               <StrategyFilterDropdown
-                registry={strategyRegistry}
+                registry={strategyRegistryForDropdown}
                 value={strategyFilter}
                 onChange={setStrategyFilter}
                 placeholder="Browse all 40 strategies"

@@ -85,6 +85,19 @@ export interface AppSettings {
   rsiOverbought: number;
   rsiOversold: number;
   // Strategy
+  enabledStrategyIds: Record<string, boolean>;
+  strategyDefaultOutlook: string;
+  strategyDefaultTier: string;
+  strategyDefaultStrategyId: string;
+  preferredIvEnvironment: string;
+  ivRankLowThreshold: number;
+  ivRankHighThreshold: number;
+  strategyAutoSelectByIv: boolean;
+  ivScoreWeight: number;
+  technicalScoreWeight: number;
+  entryScoreWeight: number;
+  momentumScoreWeight: number;
+  vwapScoreWeight: number;
   preferredStrategies: string[];
   minCredit: number;
   targetProfitPct: number;
@@ -234,6 +247,19 @@ export const SETTING_DEFAULTS: AppSettings = {
   rsiOverbought: 70,
   rsiOversold: 30,
   // Strategy
+  enabledStrategyIds: {},
+  strategyDefaultOutlook: "all",
+  strategyDefaultTier: "all",
+  strategyDefaultStrategyId: "",
+  preferredIvEnvironment: "any",
+  ivRankLowThreshold: 30,
+  ivRankHighThreshold: 60,
+  strategyAutoSelectByIv: true,
+  ivScoreWeight: 25,
+  technicalScoreWeight: 35,
+  entryScoreWeight: 25,
+  momentumScoreWeight: 15,
+  vwapScoreWeight: 10,
   preferredStrategies: ["Short Put", "Iron Condor"],
   minCredit: 0.5,
   targetProfitPct: 50,

@@ -647,8 +647,25 @@ export function getStrategiesForConditions(params: {
   momentumScore: number;
   hasEarnings?: boolean;
   maxTier?: StrategyTier;
+  enabledStrategyIds?: Record<string, boolean>;
+  preferredIvEnvironment?: 'high' | 'low' | 'any';
+  ivRankLowThreshold?: number;
+  ivRankHighThreshold?: number;
+  strategyAutoSelectByIv?: boolean;
 }): Array<StrategyDefinition & { fitScore: number; fitReason: string }> {
-  const { outlook, ivRank, rsi14, technicalScore, momentumScore, hasEarnings = false } = params;
+  const {
+    outlook,
+    ivRank,
+    rsi14,
+    technicalScore,
+    momentumScore,
+    hasEarnings = false,
+    enabledStrategyIds = {},
+    preferredIvEnvironment = 'any',
+    ivRankLowThreshold = 30,
+    ivRankHighThreshold = 60,
+    strategyAutoSelectByIv = true,
+  } = params;
 
   const outlookMap: Record<string, StrategyOutlook[]> = {
     bullish: ['bullish', 'bullish-neutral', 'volatile'],
@@ -662,6 +679,7 @@ export function getStrategiesForConditions(params: {
 
   const results = STRATEGY_REGISTRY
     .filter(s => {
+      if (enabledStrategyIds[s.id] === false) return false;
       if (tierOrder.indexOf(s.tier) > maxTierIndex) return false;
       return s.outlook.some(o => acceptableOutlooks.includes(o));
     })
@@ -679,6 +697,30 @@ export function getStrategiesForConditions(params: {
           Math.abs(ivRank - s.ivRankMax)
         );
         fitScore += Math.max(0, 40 - distance * 1.5);
+      }
+
+      if (strategyAutoSelectByIv) {
+        const environment = ivRank >= ivRankHighThreshold ? 'high' : ivRank <= ivRankLowThreshold ? 'low' : 'neutral';
+        const likesHighIv = s.ivPreference === 'high' || s.ivPreference === 'very-high';
+        const likesLowIv = s.ivPreference === 'low' || s.ivPreference === 'very-low';
+        const likesNeutralIv = s.ivPreference === 'neutral';
+        if ((environment === 'high' && likesHighIv) || (environment === 'low' && likesLowIv) || (environment === 'neutral' && likesNeutralIv)) {
+          fitScore += 8;
+          reasons.push(`${environment.toUpperCase()} IV environment aligns`);
+        } else {
+          fitScore -= 8;
+        }
+      }
+
+      if (preferredIvEnvironment !== 'any') {
+        const prefersHigh = s.ivPreference === 'high' || s.ivPreference === 'very-high';
+        const prefersLow = s.ivPreference === 'low' || s.ivPreference === 'very-low';
+        if ((preferredIvEnvironment === 'high' && prefersHigh) || (preferredIvEnvironment === 'low' && prefersLow)) {
+          fitScore += 6;
+          reasons.push(`${preferredIvEnvironment.toUpperCase()} IV preference matches`);
+        } else {
+          fitScore -= 6;
+        }
       }
 
       // RSI fit (0-20 points)

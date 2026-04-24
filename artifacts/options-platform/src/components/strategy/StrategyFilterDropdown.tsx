@@ -5,6 +5,7 @@ import {
   STRATEGY_TIER_LABELS,
   type StrategyRegistryEntry,
 } from "@/lib/strategy-catalog";
+import { useSettings } from "@/contexts/SettingsContext";
 
 interface StrategyFilterDropdownProps {
   registry: StrategyRegistryEntry[];
@@ -24,6 +25,11 @@ export function StrategyFilterDropdown({
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const rootRef = useRef<HTMLDivElement>(null);
+  const { settings } = useSettings();
+  const enabledRegistry = useMemo(
+    () => registry.filter((strategy) => settings.enabledStrategyIds?.[strategy.id] !== false),
+    [registry, settings.enabledStrategyIds],
+  );
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -41,11 +47,11 @@ export function StrategyFilterDropdown({
   }, [open]);
 
   const selected = useMemo(
-    () => registry.find((strategy) => strategy.id === value) ?? null,
-    [registry, value],
+    () => enabledRegistry.find((strategy) => strategy.id === value) ?? null,
+    [enabledRegistry, value],
   );
-  const groups = useMemo(() => getStrategyGroups(registry, search), [registry, search]);
-  const totalStrategies = registry.length;
+  const groups = useMemo(() => getStrategyGroups(enabledRegistry, search), [enabledRegistry, search]);
+  const totalStrategies = enabledRegistry.length;
   const buttonLabel = selected?.name ?? (totalStrategies > 0 ? `Browse ${totalStrategies} strategies` : placeholder);
 
   return (

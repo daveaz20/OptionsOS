@@ -25,9 +25,11 @@ import {
 import { computeSignals } from "../lib/technical-analysis.js";
 import {
   DEFAULT_HIGH_CONVICTION_THRESHOLDS,
+  DEFAULT_STRATEGY_PREFERENCES,
   isHighConviction,
   scanOpportunity,
   type HighConvictionThresholds,
+  type StrategyPreferences,
 } from "../lib/scanner.js";
 import {
   isPolygonEnabled,
@@ -58,6 +60,7 @@ interface ScreenerSettings {
   cacheRefreshInterval: number;
   minOpportunityScoreToShow: number;
   highConvictionThresholds: HighConvictionThresholds;
+  strategyPreferences: StrategyPreferences;
 }
 
 async function getScreenerSettings(): Promise<ScreenerSettings> {
@@ -79,8 +82,25 @@ async function getScreenerSettings(): Promise<ScreenerSettings> {
     entryScore: typeof values.highConvictionEntryScore === "number" ? values.highConvictionEntryScore : DEFAULT_HIGH_CONVICTION_THRESHOLDS.entryScore,
     momentumScore: typeof values.highConvictionMomentumScore === "number" ? values.highConvictionMomentumScore : DEFAULT_HIGH_CONVICTION_THRESHOLDS.momentumScore,
   };
+  const enabledStrategyIds = values.enabledStrategyIds && typeof values.enabledStrategyIds === "object" && !Array.isArray(values.enabledStrategyIds)
+    ? values.enabledStrategyIds as Record<string, boolean>
+    : {};
+  const strategyPreferences: StrategyPreferences = {
+    enabledStrategyIds,
+    preferredIvEnvironment: values.preferredIvEnvironment === "high" || values.preferredIvEnvironment === "low" ? values.preferredIvEnvironment : DEFAULT_STRATEGY_PREFERENCES.preferredIvEnvironment,
+    ivRankLowThreshold: typeof values.ivRankLowThreshold === "number" ? values.ivRankLowThreshold : DEFAULT_STRATEGY_PREFERENCES.ivRankLowThreshold,
+    ivRankHighThreshold: typeof values.ivRankHighThreshold === "number" ? values.ivRankHighThreshold : DEFAULT_STRATEGY_PREFERENCES.ivRankHighThreshold,
+    strategyAutoSelectByIv: typeof values.strategyAutoSelectByIv === "boolean" ? values.strategyAutoSelectByIv : DEFAULT_STRATEGY_PREFERENCES.strategyAutoSelectByIv,
+    scoreWeights: {
+      iv: typeof values.ivScoreWeight === "number" ? values.ivScoreWeight : DEFAULT_STRATEGY_PREFERENCES.scoreWeights.iv,
+      technical: typeof values.technicalScoreWeight === "number" ? values.technicalScoreWeight : DEFAULT_STRATEGY_PREFERENCES.scoreWeights.technical,
+      entry: typeof values.entryScoreWeight === "number" ? values.entryScoreWeight : DEFAULT_STRATEGY_PREFERENCES.scoreWeights.entry,
+      momentum: typeof values.momentumScoreWeight === "number" ? values.momentumScoreWeight : DEFAULT_STRATEGY_PREFERENCES.scoreWeights.momentum,
+      vwap: typeof values.vwapScoreWeight === "number" ? values.vwapScoreWeight : DEFAULT_STRATEGY_PREFERENCES.scoreWeights.vwap,
+    },
+  };
 
-  return { universeMode, cacheRefreshInterval, minOpportunityScoreToShow, highConvictionThresholds };
+  return { universeMode, cacheRefreshInterval, minOpportunityScoreToShow, highConvictionThresholds, strategyPreferences };
 }
 
 async function getActiveScreenerSource(): Promise<"polygon" | "yahoo"> {
@@ -134,7 +154,7 @@ function daysUntilEarnings(earningsDate: string): number | undefined {
 
 // ─── Yahoo Finance screener (original, ~477 symbols) ─────────────────────────
 
-async function buildYahooData(): Promise<ScreenerRow[]> {
+async function buildYahooData(strategyPreferences: StrategyPreferences): Promise<ScreenerRow[]> {
   const etfSymbols = ETF_UNIVERSE.map(e => e.symbol);
   const universe   = [...new Set([...DEFAULT_UNIVERSE, ...etfSymbols])];
   const quotes     = await getQuotes(universe);
@@ -184,7 +204,7 @@ async function buildYahooData(): Promise<ScreenerRow[]> {
         const tt     = ttMetrics.get(q.symbol);
         const ivRank = tt ? tt.ivRank : r2(hv.ivRank);
         const scan   = scanOpportunity(sig, ivRank, q.price, q.changePercent, dte,
-          undefined, undefined, etfCat ? { isETF: true, etfCategory: etfCat } : undefined);
+          undefined, undefined, { ...(etfCat ? { isETF: true, etfCategory: etfCat } : {}), strategyPreferences });
         return {
           ...base,
           technicalStrength: Math.round(sig.strength),
@@ -223,7 +243,7 @@ async function buildYahooData(): Promise<ScreenerRow[]> {
 
 // ─── Polygon screener (full US market, ~5 000+ quality stocks) ───────────────
 
-async function buildPolygonData(): Promise<ScreenerRow[]> {
+async function buildPolygonData(strategyPreferences: StrategyPreferences): Promise<ScreenerRow[]> {
   console.log("[screener] building from Polygon.io…");
 
   const [rawSnaps, tickerMap, etfRefs] = await Promise.all([
@@ -330,7 +350,7 @@ async function buildPolygonData(): Promise<ScreenerRow[]> {
         const tt       = ttMetrics.get(s.ticker);
         const ivRank   = tt ? tt.ivRank : r2(hv.ivRank);
         const scan     = scanOpportunity(sig, ivRank, price, chPct, dte, dayVwap, prevDayVwap,
-          etfRef ? { isETF: true, etfCategory: etfRef.etfCategory } : undefined);
+          { ...(etfRef ? { isETF: true, etfCategory: etfRef.etfCategory } : {}), strategyPreferences });
         return {
           ...base,
           technicalStrength: Math.round(sig.strength),
@@ -414,10 +434,11 @@ async function loadFromDb(): Promise<void> {
 
 async function doRefresh(): Promise<void> {
   try {
-    const source = await getActiveScreenerSource();
+    const settings = await getScreenerSettings();
+    const source = settings.universeMode === "polygon" && isPolygonEnabled() ? "polygon" : "yahoo";
     const rows   = source === "polygon"
-      ? await buildPolygonData()
-      : await buildYahooData();
+      ? await buildPolygonData(settings.strategyPreferences)
+      : await buildYahooData(settings.strategyPreferences);
     cache.data = await enrichWatchlistRows(rows);
     cache.at   = Date.now();
     console.log(`[screener] cache updated: ${cache.data.length} rows (${source})`);
