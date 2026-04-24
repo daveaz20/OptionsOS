@@ -25,10 +25,12 @@ import {
 import { computeSignals } from "../lib/technical-analysis.js";
 import {
   DEFAULT_HIGH_CONVICTION_THRESHOLDS,
+  DEFAULT_RISK_PREFERENCES,
   DEFAULT_STRATEGY_PREFERENCES,
   isHighConviction,
   scanOpportunity,
   type HighConvictionThresholds,
+  type RiskPreferences,
   type StrategyPreferences,
 } from "../lib/scanner.js";
 import {
@@ -61,6 +63,7 @@ interface ScreenerSettings {
   minOpportunityScoreToShow: number;
   highConvictionThresholds: HighConvictionThresholds;
   strategyPreferences: StrategyPreferences;
+  riskPreferences: RiskPreferences;
 }
 
 async function getScreenerSettings(): Promise<ScreenerSettings> {
@@ -99,8 +102,16 @@ async function getScreenerSettings(): Promise<ScreenerSettings> {
       vwap: typeof values.vwapScoreWeight === "number" ? values.vwapScoreWeight : DEFAULT_STRATEGY_PREFERENCES.scoreWeights.vwap,
     },
   };
+  const riskPreferences: RiskPreferences = {
+    riskMinDTE: typeof values.riskMinDTE === "number" ? values.riskMinDTE : DEFAULT_RISK_PREFERENCES.riskMinDTE,
+    riskMaxDTE: typeof values.riskMaxDTE === "number" ? values.riskMaxDTE : DEFAULT_RISK_PREFERENCES.riskMaxDTE,
+    earningsAvoidanceDays: typeof values.earningsAvoidanceDays === "number" ? values.earningsAvoidanceDays : DEFAULT_RISK_PREFERENCES.earningsAvoidanceDays,
+    minOpenInterest: typeof values.minOpenInterest === "number" ? values.minOpenInterest : DEFAULT_RISK_PREFERENCES.minOpenInterest,
+    minContractVolume: typeof values.minContractVolume === "number" ? values.minContractVolume : DEFAULT_RISK_PREFERENCES.minContractVolume,
+    maxBidAskSpreadPct: typeof values.maxBidAskSpreadPct === "number" ? values.maxBidAskSpreadPct : DEFAULT_RISK_PREFERENCES.maxBidAskSpreadPct,
+  };
 
-  return { universeMode, cacheRefreshInterval, minOpportunityScoreToShow, highConvictionThresholds, strategyPreferences };
+  return { universeMode, cacheRefreshInterval, minOpportunityScoreToShow, highConvictionThresholds, strategyPreferences, riskPreferences };
 }
 
 async function getActiveScreenerSource(): Promise<"polygon" | "yahoo"> {
@@ -154,7 +165,7 @@ function daysUntilEarnings(earningsDate: string): number | undefined {
 
 // ─── Yahoo Finance screener (original, ~477 symbols) ─────────────────────────
 
-async function buildYahooData(strategyPreferences: StrategyPreferences): Promise<ScreenerRow[]> {
+async function buildYahooData(strategyPreferences: StrategyPreferences, riskPreferences: RiskPreferences): Promise<ScreenerRow[]> {
   const etfSymbols = ETF_UNIVERSE.map(e => e.symbol);
   const universe   = [...new Set([...DEFAULT_UNIVERSE, ...etfSymbols])];
   const quotes     = await getQuotes(universe);
@@ -204,7 +215,7 @@ async function buildYahooData(strategyPreferences: StrategyPreferences): Promise
         const tt     = ttMetrics.get(q.symbol);
         const ivRank = tt ? tt.ivRank : r2(hv.ivRank);
         const scan   = scanOpportunity(sig, ivRank, q.price, q.changePercent, dte,
-          undefined, undefined, { ...(etfCat ? { isETF: true, etfCategory: etfCat } : {}), strategyPreferences });
+          undefined, undefined, { ...(etfCat ? { isETF: true, etfCategory: etfCat } : {}), strategyPreferences, riskPreferences });
         return {
           ...base,
           technicalStrength: Math.round(sig.strength),
@@ -243,7 +254,7 @@ async function buildYahooData(strategyPreferences: StrategyPreferences): Promise
 
 // ─── Polygon screener (full US market, ~5 000+ quality stocks) ───────────────
 
-async function buildPolygonData(strategyPreferences: StrategyPreferences): Promise<ScreenerRow[]> {
+async function buildPolygonData(strategyPreferences: StrategyPreferences, riskPreferences: RiskPreferences): Promise<ScreenerRow[]> {
   console.log("[screener] building from Polygon.io…");
 
   const [rawSnaps, tickerMap, etfRefs] = await Promise.all([
@@ -350,7 +361,7 @@ async function buildPolygonData(strategyPreferences: StrategyPreferences): Promi
         const tt       = ttMetrics.get(s.ticker);
         const ivRank   = tt ? tt.ivRank : r2(hv.ivRank);
         const scan     = scanOpportunity(sig, ivRank, price, chPct, dte, dayVwap, prevDayVwap,
-          { ...(etfRef ? { isETF: true, etfCategory: etfRef.etfCategory } : {}), strategyPreferences });
+          { ...(etfRef ? { isETF: true, etfCategory: etfRef.etfCategory } : {}), strategyPreferences, riskPreferences });
         return {
           ...base,
           technicalStrength: Math.round(sig.strength),
@@ -437,8 +448,8 @@ async function doRefresh(): Promise<void> {
     const settings = await getScreenerSettings();
     const source = settings.universeMode === "polygon" && isPolygonEnabled() ? "polygon" : "yahoo";
     const rows   = source === "polygon"
-      ? await buildPolygonData(settings.strategyPreferences)
-      : await buildYahooData(settings.strategyPreferences);
+      ? await buildPolygonData(settings.strategyPreferences, settings.riskPreferences)
+      : await buildYahooData(settings.strategyPreferences, settings.riskPreferences);
     cache.data = await enrichWatchlistRows(rows);
     cache.at   = Date.now();
     console.log(`[screener] cache updated: ${cache.data.length} rows (${source})`);

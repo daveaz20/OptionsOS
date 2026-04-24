@@ -56,6 +56,16 @@ export interface OptionsStrategy {
 
 type Outlook = "bullish" | "bearish" | "neutral";
 
+export interface StrategyRiskPreferences {
+  riskMinDTE: number;
+  riskMaxDTE: number;
+}
+
+export const DEFAULT_STRATEGY_RISK_PREFERENCES: StrategyRiskPreferences = {
+  riskMinDTE: 21,
+  riskMaxDTE: 60,
+};
+
 export function buildStrategies(
   symbol: string,
   currentPrice: number,
@@ -64,6 +74,7 @@ export function buildStrategies(
   signals: TechnicalSignals,
   outlook: Outlook,
   lookupContract?: ContractLookup,
+  riskPreferences: StrategyRiskPreferences = DEFAULT_STRATEGY_RISK_PREFERENCES,
 ): OptionsStrategy[] {
   // Helper: prefer real TT mid price, fall back to Black-Scholes
   const realPrem = (type: "call" | "put", strike: number, expiry: string, bsFallback: number): number => {
@@ -73,10 +84,16 @@ export function buildStrategies(
   // Use HV30 as our IV proxy (in %) — inflate slightly for option premiums
   const iv = Math.max(hv30 / 100, 0.15) * 1.15;
 
-  // Standard expiration: ~45 DTE (OptionsPlay sweet spot)
-  const exp45 = nthFriday(45);
-  const exp30 = nthFriday(30);
-  const exp60 = nthFriday(60);
+  const minDte = Math.max(0, Math.floor(riskPreferences.riskMinDTE));
+  const maxDte = Math.max(minDte + 1, Math.floor(riskPreferences.riskMaxDTE));
+  const targetDte = clampDte(45, minDte, maxDte);
+  const nearDte = clampDte(30, minDte, maxDte);
+  const farDte = maxDte > nearDte ? clampDte(60, nearDte + 1, maxDte) : maxDte;
+
+  // Standard expiration: ~45 DTE, constrained by Risk Management settings.
+  const exp45 = nthFridayWithin(targetDte, minDte, maxDte);
+  const exp30 = nthFridayWithin(nearDte, minDte, maxDte);
+  const exp60 = nthFridayWithin(farDte, minDte, maxDte);
 
   const strategies: OptionsStrategy[] = [];
 
@@ -395,7 +412,12 @@ export function buildStrategies(
     }));
   }
 
-  return strategies.slice(0, 3);
+  return strategies
+    .filter(strategy => {
+      const dte = daysBetween(Date.now(), new Date(strategy.expirationDate).getTime());
+      return dte >= minDte && dte <= maxDte;
+    })
+    .slice(0, 3);
 }
 
 // ─── Scoring ──────────────────────────────────────────────────────────────
@@ -547,6 +569,28 @@ function nthFriday(targetDte: number): { date: string; label: string } {
   const date = d.toISOString().split("T")[0]!;
   const label = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
   return { date, label };
+}
+
+function nthFridayWithin(targetDte: number, minDte: number, maxDte: number): { date: string; label: string } {
+  for (let dte = clampDte(targetDte, minDte, maxDte); dte >= minDte; dte -= 1) {
+    const d = new Date();
+    d.setDate(d.getDate() + dte);
+    if (d.getDay() === 5) {
+      const date = d.toISOString().split("T")[0]!;
+      const label = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      return { date, label };
+    }
+  }
+
+  return nthFriday(minDte);
+}
+
+function clampDte(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function daysBetween(startMs: number, endMs: number): number {
+  return Math.round((endMs - startMs) / 86_400_000);
 }
 
 function buildDescription(type: string, symbol: string, outlook: Outlook, price: number): string {

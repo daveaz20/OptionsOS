@@ -192,15 +192,28 @@ const CATEGORIES: CategoryDef[] = [
     id: "risk",
     label: "Risk Management",
     icon: <ShieldAlert size={14} />,
-    description: "Position sizing limits and loss thresholds. Advisory — no orders are blocked.",
+    description: "Position sizing, loss limits, and options-specific risk controls.",
     settings: [
-      { key: "maxPositionPct", label: "Max position size", description: "Largest single position as % of account value", type: "slider", default: 5, min: 1, max: 25, unit: "%" },
-      { key: "maxPortfolioRisk", label: "Max portfolio risk", description: "Max % of account at risk across all open positions", type: "slider", default: 20, min: 1, max: 50, unit: "%" },
-      { key: "maxSingleLoss", label: "Max single trade loss", description: "Dollar threshold before flagging a position", type: "number", default: 500, min: 0, unit: "$" },
-      { key: "stopLossPct", label: "Stop-loss trigger", description: "Alert when a position reaches this % loss", type: "slider", default: 50, min: 10, max: 100, unit: "%" },
-      { key: "marginBuffer", label: "Margin buffer", description: "Keep at least this % of buying power unused", type: "slider", default: 20, min: 0, max: 50, unit: "%" },
-      { key: "maxOpenPositions", label: "Max open positions", description: "Alert when this count is exceeded", type: "number", default: 10, min: 1, max: 50 },
-      { key: "enforceRiskLimits", label: "Show risk warnings", description: "Display warnings when limits would be exceeded", type: "toggle", default: true },
+      { key: "maxPositionPct", label: "Max position size", description: "Largest single position as % of portfolio", type: "slider", default: 5, min: 1, max: 25, unit: "%" },
+      { key: "maxCapitalPerTrade", label: "Max capital per trade", description: "Hard dollar cap before a strategy is flagged", type: "number", default: 2000, min: 0, step: 100, unit: "$" },
+      { key: "maxTotalCapitalDeployedPct", label: "Max total capital deployed", description: "Maximum deployed capital as % of portfolio", type: "slider", default: 50, min: 10, max: 100, unit: "%" },
+      { key: "maxSingleLoss", label: "Max loss per trade", description: "Dollar threshold before flagging a position", type: "number", default: 500, min: 0, step: 50, unit: "$" },
+      { key: "maxLossPerTradePct", label: "Max loss per trade", description: "Maximum loss as % of position value", type: "slider", default: 25, min: 5, max: 50, unit: "%" },
+      { key: "maxPortfolioDrawdownPct", label: "Max portfolio drawdown", description: "Portfolio drawdown threshold before warnings turn red", type: "slider", default: 10, min: 1, max: 25, unit: "%" },
+      { key: "dailyLossLimit", label: "Daily loss limit", description: "Stop trading for the day if exceeded", type: "number", default: 1000, min: 0, step: 100, unit: "$" },
+      { key: "maxOpenPositions", label: "Max open positions", description: "Alert when this count is exceeded", type: "slider", default: 10, min: 1, max: 50 },
+      { key: "maxPositionsPerSector", label: "Max positions per sector", type: "slider", default: 3, min: 1, max: 10 },
+      { key: "maxPositionsPerUnderlying", label: "Max positions per underlying", type: "slider", default: 1, min: 1, max: 5 },
+      { key: "maxLosingPositions", label: "Max losing positions at once", type: "number", default: 5, min: 0, max: 50 },
+      { key: "riskMinDTE", label: "Min days to expiration", description: "DTE floor for generated strategy recommendations", type: "number", default: 21, min: 0, max: 365, unit: "days" },
+      { key: "riskMaxDTE", label: "Max days to expiration", description: "DTE ceiling for generated strategy recommendations", type: "number", default: 60, min: 1, max: 365, unit: "days" },
+      { key: "earningsAvoidanceDays", label: "Avoid earnings window", description: "Avoid opening positions within this many days of earnings", type: "number", default: 5, min: 0, max: 30, unit: "days" },
+      { key: "minOpenInterest", label: "Min open interest per contract", type: "number", default: 100, min: 0 },
+      { key: "minContractVolume", label: "Min volume per contract", type: "number", default: 10, min: 0 },
+      { key: "maxBidAskSpreadPct", label: "Max bid/ask spread", type: "slider", default: 10, min: 1, max: 100, unit: "%" },
+      { key: "showRiskWarnings", label: "Show risk warnings", description: "Show yellow and red badges in the Strategy panel", type: "toggle", default: true },
+      { key: "showPositionSizingSuggestion", label: "Show position sizing suggestion", description: "Display suggested position size based on portfolio value", type: "toggle", default: true },
+      { key: "portfolioSize", label: "Portfolio size", description: "Used to calculate position sizing suggestions", type: "number", default: 50000, min: 0, step: 1000, unit: "$" },
     ],
   },
   {
@@ -898,6 +911,93 @@ function StrategyPreferencesPanel({
   );
 }
 
+const RISK_SECTION_SLICES = [
+  { label: "Position Sizing", start: 0, end: 3 },
+  { label: "Loss Limits", start: 3, end: 7 },
+  { label: "Position Limits", start: 7, end: 11 },
+  { label: "Options-Specific", start: 11, end: 17 },
+  { label: "Display", start: 17, end: 20 },
+] as const;
+
+function formatSettingCurrency(value: number): string {
+  return value.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+}
+
+function RiskSummaryItem({ label, value, tone = "default" }: { label: string; value: string; tone?: "default" | "warning" | "danger" }) {
+  const color = tone === "danger" ? "hsl(var(--destructive))" : tone === "warning" ? "hsl(38 92% 50%)" : "hsl(var(--foreground))";
+  return (
+    <div style={{ padding: "12px 14px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.025)", minWidth: 0 }}>
+      <div style={{ fontSize: 10.5, color: "hsl(var(--muted-foreground))", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>{label}</div>
+      <div style={{ marginTop: 4, fontSize: 16, fontWeight: 750, color, fontVariantNumeric: "tabular-nums" }}>{value}</div>
+    </div>
+  );
+}
+
+function RiskManagementPanel({
+  settings,
+  onChange,
+  onReset,
+}: {
+  settings: AppSettings;
+  onChange: (key: string, value: unknown) => void;
+  onReset: () => void;
+}) {
+  const riskSettings = CATEGORIES.find(category => category.id === "risk")!.settings;
+  const portfolioSize = Math.max(0, Number(settings.portfolioSize ?? SETTING_DEFAULTS.portfolioSize));
+  const maxPositionValue = portfolioSize * Number(settings.maxPositionPct ?? SETTING_DEFAULTS.maxPositionPct) / 100;
+  const suggestedPositionSize = Math.min(
+    maxPositionValue,
+    Number(settings.maxCapitalPerTrade ?? SETTING_DEFAULTS.maxCapitalPerTrade),
+  );
+  const deployedCap = portfolioSize * Number(settings.maxTotalCapitalDeployedPct ?? SETTING_DEFAULTS.maxTotalCapitalDeployedPct) / 100;
+  const maxDrawdown = portfolioSize * Number(settings.maxPortfolioDrawdownPct ?? SETTING_DEFAULTS.maxPortfolioDrawdownPct) / 100;
+
+  return (
+    <div style={{ paddingTop: 8, display: "grid", gap: 24 }}>
+      <div style={{ border: "1px solid rgba(255,255,255,0.07)", borderRadius: 8, background: "rgba(255,255,255,0.02)", padding: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 700 }}>Risk Summary</div>
+            <div style={{ fontSize: 11.5, color: "hsl(var(--muted-foreground))", marginTop: 3 }}>Current portfolio guardrails at a glance.</div>
+          </div>
+          <div style={{ fontSize: 11, fontWeight: 700, padding: "4px 8px", borderRadius: 999, color: settings.showRiskWarnings ? "hsl(38 92% 50%)" : "hsl(var(--muted-foreground))", background: settings.showRiskWarnings ? "hsl(38 92% 50% / 0.10)" : "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}>
+            {settings.showRiskWarnings ? "Warnings On" : "Warnings Off"}
+          </div>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
+          <RiskSummaryItem label="Suggested Size" value={formatSettingCurrency(suggestedPositionSize)} />
+          <RiskSummaryItem label="Capital Cap" value={formatSettingCurrency(settings.maxCapitalPerTrade)} />
+          <RiskSummaryItem label="Trade Loss Cap" value={formatSettingCurrency(settings.maxSingleLoss)} tone="danger" />
+          <RiskSummaryItem label="Deployed Cap" value={formatSettingCurrency(deployedCap)} tone="warning" />
+          <RiskSummaryItem label="Drawdown Cap" value={formatSettingCurrency(maxDrawdown)} tone="danger" />
+          <RiskSummaryItem label="DTE Window" value={`${settings.riskMinDTE}-${settings.riskMaxDTE}d`} />
+        </div>
+      </div>
+
+      {RISK_SECTION_SLICES.map(section => (
+        <div key={section.label}>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: "hsl(var(--muted-foreground))", textTransform: "uppercase" }}>{section.label}</div>
+          {riskSettings.slice(section.start, section.end).map(setting => (
+            <SettingRow
+              key={setting.key}
+              setting={setting}
+              value={settings[setting.key as keyof AppSettings]}
+              onChange={onChange}
+            />
+          ))}
+        </div>
+      ))}
+
+      <ActionRow
+        label="Reset to Defaults"
+        description="Restore every Risk Management option to its default value"
+        icon={<RotateCcw size={13} />}
+        onClick={onReset}
+      />
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const isMobile = useIsMobile();
   const [activeCategory, setActiveCategory] = useState("general");
@@ -1034,6 +1134,14 @@ export default function SettingsPage() {
               />
             )}
 
+            {activeCategory === "risk" && (
+              <RiskManagementPanel
+                settings={settings}
+                onChange={handleChange}
+                onReset={() => handleResetCategory(activeCategoryDef)}
+              />
+            )}
+
             {activeCategory === "security" && (
               <div style={{ paddingTop: 8 }}>
                 {activeCategoryDef.settings.map(s => (
@@ -1067,7 +1175,7 @@ export default function SettingsPage() {
             )}
 
             {/* All other categories */}
-            {activeCategory !== "security" && activeCategory !== "data" && activeCategory !== "strategy" && (
+            {activeCategory !== "security" && activeCategory !== "data" && activeCategory !== "strategy" && activeCategory !== "risk" && (
               <div style={{ paddingTop: 8 }}>
                 {activeCategoryDef.settings.map(s => (
                   <SettingRow key={s.key} setting={s} value={settings[s.key as keyof AppSettings]} onChange={handleChange} />

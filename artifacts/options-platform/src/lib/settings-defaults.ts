@@ -36,6 +36,22 @@ export interface AppSettings {
   marginBuffer: number;
   maxOpenPositions: number;
   enforceRiskLimits: boolean;
+  maxCapitalPerTrade: number;
+  maxTotalCapitalDeployedPct: number;
+  maxLossPerTradePct: number;
+  maxPortfolioDrawdownPct: number;
+  dailyLossLimit: number;
+  maxPositionsPerSector: number;
+  maxPositionsPerUnderlying: number;
+  maxLosingPositions: number;
+  riskMinDTE: number;
+  riskMaxDTE: number;
+  earningsAvoidanceDays: number;
+  minContractVolume: number;
+  maxBidAskSpreadPct: number;
+  showRiskWarnings: boolean;
+  showPositionSizingSuggestion: boolean;
+  portfolioSize: number;
   // Screener
   screenerColumnVisibility: ScreenerColumnVisibility;
   minOpportunityScoreToShow: number;
@@ -187,6 +203,22 @@ export const SETTING_DEFAULTS: AppSettings = {
   marginBuffer: 20,
   maxOpenPositions: 10,
   enforceRiskLimits: true,
+  maxCapitalPerTrade: 2000,
+  maxTotalCapitalDeployedPct: 50,
+  maxLossPerTradePct: 25,
+  maxPortfolioDrawdownPct: 10,
+  dailyLossLimit: 1000,
+  maxPositionsPerSector: 3,
+  maxPositionsPerUnderlying: 1,
+  maxLosingPositions: 5,
+  riskMinDTE: 21,
+  riskMaxDTE: 60,
+  earningsAvoidanceDays: 5,
+  minContractVolume: 10,
+  maxBidAskSpreadPct: 10,
+  showRiskWarnings: true,
+  showPositionSizingSuggestion: true,
+  portfolioSize: 50000,
   // Screener
   screenerColumnVisibility: {
     symbol: true,

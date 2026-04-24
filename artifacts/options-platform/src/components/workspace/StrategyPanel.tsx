@@ -7,6 +7,8 @@ import { Slider } from "@/components/ui/slider";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AlertCircle, BarChart2, ChevronDown, ChevronRight, ExternalLink, Minus, Pencil, Plus, X, TrendingUp } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useSettings } from "@/contexts/SettingsContext";
+import type { AppSettings } from "@/lib/settings-defaults";
 import type { OptionsStrategy, StrategyLeg, GetStrategiesOutlook, AccountPosition } from "@workspace/api-client-react";
 
 interface TopStrategyItem {
@@ -30,6 +32,42 @@ const OUTLOOK_TABS: { id: GetStrategiesOutlook; label: string; color: string }[]
   { id: "neutral", label: "Neutral", color: "hsl(var(--primary))" },
   { id: "bearish", label: "Bearish", color: "hsl(var(--destructive))" },
 ];
+
+type RiskBadge = { severity: "warning" | "danger"; label: string };
+
+function strategyCapital(strategy: OptionsStrategy, contracts: number): number {
+  return Math.max(Math.abs(strategy.tradeCost), Math.abs(strategy.maxLoss)) * contracts;
+}
+
+function getRiskBadges(strategy: OptionsStrategy, contracts: number, dte: number, settings: AppSettings): RiskBadge[] {
+  const badges: RiskBadge[] = [];
+  const positionCapital = strategyCapital(strategy, contracts);
+  const portfolioCap = Number(settings.portfolioSize || 0) * Number(settings.maxPositionPct || 0) / 100;
+  const capitalCap = Math.min(
+    Number.isFinite(portfolioCap) && portfolioCap > 0 ? portfolioCap : Number.POSITIVE_INFINITY,
+    Number(settings.maxCapitalPerTrade || Number.POSITIVE_INFINITY),
+  );
+  const maxRisk = Math.abs(strategy.maxLoss) * contracts;
+  const lossPct = positionCapital > 0 ? (maxRisk / positionCapital) * 100 : 0;
+
+  if (Number.isFinite(capitalCap) && positionCapital > capitalCap) {
+    badges.push({ severity: "danger", label: `Capital ${formatCurrency(positionCapital)} > ${formatCurrency(capitalCap)}` });
+  }
+  if (maxRisk > Number(settings.maxSingleLoss || 0)) {
+    badges.push({ severity: "danger", label: `Max risk ${formatCurrency(maxRisk)} > ${formatCurrency(settings.maxSingleLoss)}` });
+  }
+  if (lossPct > Number(settings.maxLossPerTradePct || 0)) {
+    badges.push({ severity: "warning", label: `Risk ${Math.round(lossPct)}% > ${settings.maxLossPerTradePct}%` });
+  }
+  if (dte < Number(settings.riskMinDTE || 0)) {
+    badges.push({ severity: "warning", label: `DTE ${dte} below ${settings.riskMinDTE}` });
+  }
+  if (dte > Number(settings.riskMaxDTE || 0)) {
+    badges.push({ severity: "warning", label: `DTE ${dte} above ${settings.riskMaxDTE}` });
+  }
+
+  return badges;
+}
 
 // ── Black-Scholes (frontend copy for modify recalc) ──────────────────────
 function normalCDF(x: number): number {
@@ -180,6 +218,7 @@ function StrategyDetail({
   onModify: () => void;
 }) {
   const { toast } = useToast();
+  const { settings } = useSettings();
   const [contracts, setContracts] = useState(1);
   // Reset contracts when the strategy changes (different expiry/type)
   useEffect(() => { setContracts(1); }, [strategy.id, strategy.expirationDate]);
@@ -194,6 +233,12 @@ function StrategyDetail({
   const pop = strategy.type === "income"
     ? Math.min(85, Math.max(20, Math.round((Math.abs(strategy.tradeCost) / Math.max(1, Math.abs(strategy.tradeCost) + Math.abs(strategy.maxLoss))) * 100)))
     : Math.min(75, Math.max(25, Math.round(42 + (strategy.score - 100) * 0.15)));
+  const riskBadges = settings.showRiskWarnings ? getRiskBadges(strategy, contracts, dte, settings) : [];
+  const suggestedCapital = Math.min(
+    Number(settings.maxCapitalPerTrade || 0),
+    Number(settings.portfolioSize || 0) * Number(settings.maxPositionPct || 0) / 100,
+  );
+  const suggestedContracts = Math.max(1, Math.floor(suggestedCapital / Math.max(1, strategyCapital(strategy, 1))));
 
   return (
     <div style={{ border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, background: "rgba(255,255,255,0.02)", overflow: "hidden" }}>
@@ -205,6 +250,20 @@ function StrategyDetail({
         <div style={{ fontSize: 10, color: "hsl(var(--muted-foreground))", marginTop: 2 }}>
           {strategy.type === "income" ? "Income" : "Trade"} · Exp {exp}
         </div>
+        {(riskBadges.length > 0 || settings.showPositionSizingSuggestion) && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+            {settings.showPositionSizingSuggestion && suggestedCapital > 0 && (
+              <span style={{ fontSize: 9.5, fontWeight: 700, padding: "3px 6px", borderRadius: 5, color: "hsl(var(--primary))", background: "hsl(var(--primary) / 0.12)", border: "1px solid hsl(var(--primary) / 0.22)" }}>
+                Suggested {formatCurrency(suggestedCapital)} / {suggestedContracts} contract{suggestedContracts === 1 ? "" : "s"}
+              </span>
+            )}
+            {riskBadges.map((badge) => (
+              <span key={badge.label} style={{ fontSize: 9.5, fontWeight: 700, padding: "3px 6px", borderRadius: 5, color: badge.severity === "danger" ? "hsl(var(--destructive))" : "hsl(38 92% 50%)", background: badge.severity === "danger" ? "hsl(var(--destructive) / 0.10)" : "hsl(38 92% 50% / 0.10)", border: badge.severity === "danger" ? "1px solid hsl(var(--destructive) / 0.24)" : "1px solid hsl(38 92% 50% / 0.24)" }}>
+                {badge.label}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Payoff diagram */}

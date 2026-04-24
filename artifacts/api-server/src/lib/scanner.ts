@@ -118,6 +118,24 @@ export const DEFAULT_STRATEGY_PREFERENCES: StrategyPreferences = {
   },
 };
 
+export interface RiskPreferences {
+  riskMinDTE: number;
+  riskMaxDTE: number;
+  earningsAvoidanceDays: number;
+  minOpenInterest: number;
+  minContractVolume: number;
+  maxBidAskSpreadPct: number;
+}
+
+export const DEFAULT_RISK_PREFERENCES: RiskPreferences = {
+  riskMinDTE: 21,
+  riskMaxDTE: 60,
+  earningsAvoidanceDays: 5,
+  minOpenInterest: 100,
+  minContractVolume: 10,
+  maxBidAskSpreadPct: 10,
+};
+
 export function isHighConviction(
   row: HighConvictionCandidate,
   thresholds: HighConvictionThresholds = DEFAULT_HIGH_CONVICTION_THRESHOLDS,
@@ -133,6 +151,7 @@ export interface ScanOpts {
   isETF?: boolean;
   etfCategory?: "leveraged-bull" | "leveraged-bear" | "leveraged-single" | "sector";
   strategyPreferences?: StrategyPreferences;
+  riskPreferences?: RiskPreferences;
 }
 
 export function scanOpportunity(
@@ -155,6 +174,10 @@ export function scanOpportunity(
       ...(opts?.strategyPreferences?.scoreWeights ?? {}),
     },
   };
+  const riskPreferences = {
+    ...DEFAULT_RISK_PREFERENCES,
+    ...(opts?.riskPreferences ?? {}),
+  };
   // Capture ivRank for registry matching later
   const ivRankValue = ivRank;
 
@@ -171,6 +194,11 @@ export function scanOpportunity(
   // Restrict leveraged/single-stock ETF setups to directional strategies only.
   // Covered Calls require owning shares (not applicable to ETF options).
   if (isETF) setup = restrictETFSetup(setup, etfCat, outlook, ivRank, strategyPreferences);
+
+  const withinEarningsWindow = !isETF
+    && daysToEarnings !== undefined
+    && daysToEarnings >= 0
+    && daysToEarnings <= riskPreferences.earningsAvoidanceDays;
 
   // ETFs have no earnings — skip earnings-proximity adjustments to ivScore
   const effectiveDte = isETF ? undefined : daysToEarnings;
@@ -224,11 +252,17 @@ export function scanOpportunity(
     cappedScore = Math.min(cappedScore, 62);
   }
 
+  if (withinEarningsWindow) {
+    cappedScore = Math.min(cappedScore, 44);
+    cappedSetup = "Neutral";
+    cappedOutlook = "neutral";
+  }
+
   const opportunityScore = Math.max(0, Math.min(100, cappedScore));
 
   // Use the registry to find the best-fit strategies for this stock's conditions
   const enabledStrategyIds = strategyPreferences.enabledStrategyIds ?? {};
-  const registryMatches = getStrategiesForConditions({
+  const registryMatches = withinEarningsWindow ? [] : getStrategiesForConditions({
     outlook: cappedOutlook,
     ivRank: ivRankValue,
     rsi14: signals.rsi14 ?? 50,

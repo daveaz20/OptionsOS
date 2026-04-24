@@ -10,10 +10,20 @@ import {
 } from "@workspace/api-zod";
 import { getQuote, getPriceHistory, getHistoricalVolatility } from "../lib/market-data.js";
 import { computeSignals } from "../lib/technical-analysis.js";
-import { buildStrategies, calcPnlCurve } from "../lib/strategy-engine.js";
+import { buildStrategies, calcPnlCurve, DEFAULT_STRATEGY_RISK_PREFERENCES, type StrategyRiskPreferences } from "../lib/strategy-engine.js";
 import { isTastytradeEnabled, isTastytradeAuthorized, getOptionsChain, makeContractLookup, getMarketMetrics } from "../lib/tastytrade.js";
+import { db, userSettingsTable } from "@workspace/db";
 
 const router: IRouter = Router();
+
+async function getRiskPreferences(): Promise<StrategyRiskPreferences> {
+  const rows = await db.select().from(userSettingsTable);
+  const values = Object.fromEntries(rows.map((row) => [row.key, row.value])) as Record<string, unknown>;
+  return {
+    riskMinDTE: typeof values.riskMinDTE === "number" ? values.riskMinDTE : DEFAULT_STRATEGY_RISK_PREFERENCES.riskMinDTE,
+    riskMaxDTE: typeof values.riskMaxDTE === "number" ? values.riskMaxDTE : DEFAULT_STRATEGY_RISK_PREFERENCES.riskMaxDTE,
+  };
+}
 
 // GET /strategies — returns all 40 strategy definitions
 router.get("/strategies", (_req, res) => {
@@ -48,10 +58,11 @@ router.get("/stocks/:symbol/strategies", async (req, res): Promise<void> => {
   const symbol = (Array.isArray(params.data.symbol) ? params.data.symbol[0] : params.data.symbol).toUpperCase();
 
   try {
-    const [quote, history, hv] = await Promise.all([
+    const [quote, history, hv, riskPreferences] = await Promise.all([
       getQuote(symbol),
       getPriceHistory(symbol, "3M"),
       getHistoricalVolatility(symbol),
+      getRiskPreferences(),
     ]);
 
     const signals = computeSignals(history, quote.price);
@@ -82,6 +93,7 @@ router.get("/stocks/:symbol/strategies", async (req, res): Promise<void> => {
       signals,
       outlook as "bullish" | "bearish" | "neutral",
       lookupContract,
+      riskPreferences,
     );
 
     res.json(GetStrategiesResponse.parse(strategies));
@@ -102,10 +114,11 @@ router.post("/stocks/:symbol/pnl", async (req, res): Promise<void> => {
   const { strategyId, targetPrice, targetDate, impliedVolatility, outlook } = parsed.data;
 
   try {
-    const [quote, history, hv] = await Promise.all([
+    const [quote, history, hv, riskPreferences] = await Promise.all([
       getQuote(symbol),
       getPriceHistory(symbol, "3M"),
       getHistoricalVolatility(symbol),
+      getRiskPreferences(),
     ]);
 
     const signals = computeSignals(history, quote.price);
@@ -126,13 +139,13 @@ router.post("/stocks/:symbol/pnl", async (req, res): Promise<void> => {
     }
 
     // Build strategies for the requested outlook first, then fall back to all
-    let strategy = buildStrategies(symbol, quote.price, ivRankPnl, hv30Pnl, signals, requestOutlook)
+    let strategy = buildStrategies(symbol, quote.price, ivRankPnl, hv30Pnl, signals, requestOutlook, undefined, riskPreferences)
       .find((s) => s.id === strategyId);
 
     if (!strategy) {
       for (const ol of ["bullish", "bearish", "neutral"] as const) {
         if (ol === requestOutlook) continue;
-        strategy = buildStrategies(symbol, quote.price, ivRankPnl, hv30Pnl, signals, ol)
+        strategy = buildStrategies(symbol, quote.price, ivRankPnl, hv30Pnl, signals, ol, undefined, riskPreferences)
           .find((s) => s.id === strategyId);
         if (strategy) break;
       }
