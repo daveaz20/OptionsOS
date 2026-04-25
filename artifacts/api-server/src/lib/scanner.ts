@@ -1,23 +1,30 @@
 /**
  * Options Opportunity Scanner
  *
- * Evaluates each stock on four criteria and produces an actionable scan result:
+ * Evaluates each stock on five factors and produces an actionable scan result:
  *
- * 1. Technical setup quality   (0–35 pts) — RSI, MACD, MA stack, trend confirmation
- * 2. IV alignment              (0–25 pts) — is IV rank high/low for the suggested strategy type?
- * 3. Entry quality             (0–25 pts) — is price at a good entry (near support/resistance)?
- * 4. Momentum confirmation     (0–15 pts) — volume, recent candle direction, ATR expansion
+ * 1. Technical Setup   (0–10) — MA stack, trend+RSI combo, MACD alignment
+ * 2. IV Regime         (0–10) — IV rank suitability for the chosen strategy (sell high, buy low)
+ * 3. Momentum          (0–10) — Volume confirmation + VWAP position + ATR environment
+ * 4. Entry Quality     (0–10) — Price position within the S/R range; penalises chasing
+ * 5. Earnings Risk     (0–10) — Days-to-earnings proximity relative to strategy type
  *
- * Total: 0–100. Scores >= 60 = high-conviction setup.
+ * Composite (0–100): weighted average × 10.
+ * Default weights: Technical 25, IV 25, Momentum 20, Entry 15, Risk 15.
  *
- * Setup types map to OptionsPlay strategy matrix:
- *   Bullish + IV low/med  → "Call Spread" or "Long Call"
- *   Bullish + IV high     → "Bull Put Spread" (sell credit)
- *   Bearish + IV low/med  → "Bear Put Spread" or "Long Put"
- *   Bearish + IV high     → "Bear Call Spread" (sell credit)
- *   Neutral + IV very high → "Iron Condor"
- *   Neutral + IV very low  → "Straddle"
- *   Bullish + IV high + trending → "Covered Call"
+ * Hard gates (transparent):
+ *   Any factor < 2.0  → score capped at 40, setup → Neutral  (critical weakness)
+ *   2+ factors < 4.0  → score capped at 62                   (marginal setup)
+ * Which factors triggered is returned in `weakFactors`.
+ *
+ * Setup types map to an OptionsPlay-style strategy matrix:
+ *   Bullish + IV low/med  → Call Spread | Long Call
+ *   Bullish + IV high     → Bull Put Spread (credit)
+ *   Bearish + IV low/med  → Bear Put Spread | Long Put
+ *   Bearish + IV high     → Bear Call Spread (credit)
+ *   Neutral + IV very high → Iron Condor
+ *   Neutral + IV very low  → Straddle
+ *   Bullish + IV high + trending → Covered Call
  */
 
 import type { TechnicalSignals } from "./technical-analysis.js";
@@ -38,23 +45,26 @@ export type SetupType =
 export type ScanOutlook = "bullish" | "bearish" | "neutral";
 
 export interface ScanResult {
-  opportunityScore: number;     // 0–100 (clamped from 0–110)
+  opportunityScore: number;     // 0–100 composite
   setupType: SetupType;
   recommendedOutlook: ScanOutlook;
   setupDescription: string;
-  technicalScore: number;       // 0–35
-  ivScore: number;              // 0–25
-  entryScore: number;           // 0–25
-  momentumScore: number;        // 0–15
-  vwapScore: number;            // 0–10
+  technicalScore: number;   // 0–10
+  ivScore: number;          // 0–10
+  momentumScore: number;    // 0–10 (includes VWAP)
+  entryScore: number;       // 0–10
+  riskScore: number;        // 0–10 (earnings proximity)
+  weakFactors: string[];    // factor names scoring < 4.0
+  scoreCapped: boolean;     // true when a hard gate reduced the composite
 }
 
 export interface HighConvictionThresholds {
   opportunityScore: number;
-  technicalScore: number;
-  ivScore: number;
-  entryScore: number;
-  momentumScore: number;
+  technicalScore: number;   // 0–10 scale
+  ivScore: number;          // 0–10 scale
+  entryScore: number;       // 0–10 scale
+  momentumScore: number;    // 0–10 scale
+  riskScore: number;        // 0–10 scale
 }
 
 export interface HighConvictionCandidate {
@@ -63,22 +73,24 @@ export interface HighConvictionCandidate {
   ivScore: number;
   entryScore: number;
   momentumScore: number;
+  riskScore: number;
 }
 
 export const DEFAULT_HIGH_CONVICTION_THRESHOLDS: HighConvictionThresholds = {
-  opportunityScore: 75,
-  technicalScore: 20,
-  ivScore: 15,
-  entryScore: 15,
-  momentumScore: 8,
+  opportunityScore: 72,
+  technicalScore: 6,
+  ivScore: 6,
+  entryScore: 5,
+  momentumScore: 5,
+  riskScore: 5,
 };
 
 export interface StrategyScoreWeights {
-  iv: number;
   technical: number;
+  iv: number;
   entry: number;
   momentum: number;
-  vwap: number;
+  risk: number;
 }
 
 export interface StrategyPreferences {
@@ -95,11 +107,11 @@ export const DEFAULT_STRATEGY_PREFERENCES: StrategyPreferences = {
   preferredIvEnvironment: "any",
   strategyAutoSelectByIv: true,
   scoreWeights: {
+    technical: 25,
     iv: 25,
-    technical: 35,
-    entry: 25,
-    momentum: 15,
-    vwap: 10,
+    momentum: 20,
+    entry: 15,
+    risk: 15,
   },
 };
 
@@ -130,10 +142,11 @@ export function isHighConviction(
   thresholds: HighConvictionThresholds = DEFAULT_HIGH_CONVICTION_THRESHOLDS,
 ): boolean {
   return row.opportunityScore >= thresholds.opportunityScore
-    && row.technicalScore >= thresholds.technicalScore
-    && row.ivScore >= thresholds.ivScore
-    && row.entryScore >= thresholds.entryScore
-    && row.momentumScore >= thresholds.momentumScore;
+    && row.technicalScore    >= thresholds.technicalScore
+    && row.ivScore           >= thresholds.ivScore
+    && row.entryScore        >= thresholds.entryScore
+    && row.momentumScore     >= thresholds.momentumScore
+    && row.riskScore         >= thresholds.riskScore;
 }
 
 export interface ScanOpts {
@@ -148,14 +161,14 @@ export function scanOpportunity(
   ivRank: number,
   price: number,
   changePercent: number,
-  daysToEarnings?: number,   // undefined = unknown, 0 = today/past
+  daysToEarnings?: number,   // undefined = unknown; negative = post-earnings
   dayVwap = 0,               // today's VWAP from Polygon snapshot (0 = unavailable)
-  prevDayVwap = 0,           // previous day's VWAP from Polygon snapshot
+  prevDayVwap = 0,           // previous day's VWAP
   opts?: ScanOpts,
 ): ScanResult {
-  const isETF      = opts?.isETF ?? false;
-  const etfCat     = opts?.etfCategory;
-  const strategyPreferences = {
+  const isETF  = opts?.isETF ?? false;
+  const etfCat = opts?.etfCategory;
+  const prefs: StrategyPreferences = {
     ...DEFAULT_STRATEGY_PREFERENCES,
     ...(opts?.strategyPreferences ?? {}),
     scoreWeights: {
@@ -163,136 +176,115 @@ export function scanOpportunity(
       ...(opts?.strategyPreferences?.scoreWeights ?? {}),
     },
   };
-  const riskPreferences = {
-    ...DEFAULT_RISK_PREFERENCES,
-    ...(opts?.riskPreferences ?? {}),
-  };
 
-  // ── 1. Determine directional outlook ────────────────────────────────────
+  // ── 1. Directional outlook ────────────────────────────────────────────────
   let outlook = determineOutlook(signals, ivRank);
-  // Leveraged ETFs are directional by design — lock in their intended direction
   if (etfCat === "leveraged-bull") outlook = "bullish";
   if (etfCat === "leveraged-bear") outlook = "bearish";
-  // leveraged-single: don't force outlook — let technicals decide direction
 
-  // ── 2. Choose the best setup for this outlook + IV environment ───────────
-  let setup: SetupType = chooseSetup(outlook, ivRank, signals, strategyPreferences);
+  // ── 2. Setup selection ────────────────────────────────────────────────────
+  let setup: SetupType = chooseSetup(outlook, ivRank, signals, prefs);
+  if (isETF) setup = restrictETFSetup(setup, etfCat, outlook, ivRank, prefs);
 
-  // Restrict leveraged/single-stock ETF setups to directional strategies only.
-  // Covered Calls require owning shares (not applicable to ETF options).
-  if (isETF) setup = restrictETFSetup(setup, etfCat, outlook, ivRank, strategyPreferences);
+  // ── 3. Grade each dimension (0–10 each) ───────────────────────────────────
+  let technicalScore = gradeTechnical(signals, outlook);
+  let ivScore        = gradeIvRegime(ivRank, setup);
+  let momentumScore  = gradeMomentum(signals, changePercent, outlook, price, dayVwap, prevDayVwap);
+  let entryScore     = gradeEntry(signals, price, outlook);
+  const riskScore    = gradeEarningsRisk(setup, daysToEarnings, isETF);
 
-  const earningsBeforeDays = riskPreferences.earningsAvoidanceBeforeDays ?? riskPreferences.earningsAvoidanceDays;
-  const earningsAfterDays = riskPreferences.earningsAvoidanceAfterDays ?? 0;
-  const withinEarningsWindow = !isETF
-    && daysToEarnings !== undefined
-    && daysToEarnings >= -earningsAfterDays
-    && daysToEarnings <= earningsBeforeDays;
-
-  // ETFs have no earnings — skip earnings-proximity adjustments to ivScore
-  const effectiveDte = isETF ? undefined : daysToEarnings;
-
-  // ── 3. Score each dimension ──────────────────────────────────────────────
-  const rawTechnical = scoreTechnical(signals, outlook);
-  const rawIv        = scoreIvAlignment(ivRank, setup, effectiveDte);
-  let entryScore     = scoreEntryQuality(signals, price, outlook);
-  if (withinEarningsWindow) {
-    entryScore = Math.max(0, entryScore - 8);
+  // ETF adjustments: cleaner trend signals but IV rank less meaningful
+  if (isETF) {
+    technicalScore = Math.min(10, technicalScore + 0.5);
+    momentumScore  = Math.min(10, momentumScore  + 0.5);
+    ivScore        = Math.max(0,  ivScore        - 0.5);
   }
-  const rawMomentum  = scoreMomentum(signals, changePercent, outlook, price);
-  const vwapScore    = scoreVwap(price, dayVwap, prevDayVwap, outlook);
 
-  // ETF weight adjustments: technical +5, momentum +5, IV −5
-  // Rationale: ETFs have cleaner trend signals and no earnings risk, but IV rank
-  // is less meaningful (no single-stock vol events).
-  const techAdj = isETF ? 5 : 0;
-  const momAdj  = isETF ? 5 : 0;
-  const ivAdj   = isETF ? -5 : 0;
+  // ── 4. Weighted composite (0–100) ─────────────────────────────────────────
+  const w = prefs.scoreWeights;
+  const totalWeight = w.technical + w.iv + w.momentum + w.entry + w.risk;
+  const safe = totalWeight > 0 ? totalWeight : 100;
 
-  const technicalScore = rawTechnical + techAdj;
-  const ivScore        = Math.max(0, rawIv + ivAdj);
-  const momentumScore  = rawMomentum + momAdj;
+  const raw = (
+    technicalScore * w.technical +
+    ivScore        * w.iv +
+    momentumScore  * w.momentum +
+    entryScore     * w.entry +
+    riskScore      * w.risk
+  ) / safe * 10;  // 0–100
 
-  const total = Math.round(
-    (technicalScore / 35) * strategyPreferences.scoreWeights.technical +
-    (ivScore / 25) * strategyPreferences.scoreWeights.iv +
-    (entryScore / 25) * strategyPreferences.scoreWeights.entry +
-    (momentumScore / 15) * strategyPreferences.scoreWeights.momentum +
-    (vwapScore / 10) * strategyPreferences.scoreWeights.vwap,
-  );
+  // ── 5. Track weak factors for transparency ────────────────────────────────
+  const factorMap = [
+    { name: "Technical", score: technicalScore },
+    { name: "IV",        score: ivScore },
+    { name: "Momentum",  score: momentumScore },
+    { name: "Entry",     score: entryScore },
+    { name: "Risk",      score: riskScore },
+  ];
+  const weakFactors  = factorMap.filter(f => f.score < 4.0).map(f => f.name);
+  const criticalCount = factorMap.filter(f => f.score < 2.0).length;
 
-  // ── Hard gates: ensure ALL key dimensions meet a minimum bar ───────────────
-  // A setup with a great score in two areas but weak in others isn't actionable.
-  // These gates prevent marginal multi-dimension stacks from appearing as setups.
-  let cappedScore = total;
-  let cappedSetup: SetupType = setup;
-  let cappedOutlook: ScanOutlook = outlook;
+  // ── 6. Hard gates (transparent) ──────────────────────────────────────────
+  let cappedScore   = raw;
+  let cappedSetup   = setup;
+  let cappedOutlook = outlook;
+  let scoreCapped   = false;
 
-  const dimensionsFailing =
-    (technicalScore < 18 ? 1 : 0) +   // must have real technical conviction (≥18/35)
-    (ivScore        < 10 ? 1 : 0) +   // IV must be in the right regime (≥10/25)
-    (entryScore     < 12 ? 1 : 0) +   // must be near a meaningful level (≥12/25)
-    (momentumScore  <  5 ? 1 : 0);    // must have at least mild confirmation (≥5/15)
-
-  if (dimensionsFailing >= 2) {
-    // Two or more weak dimensions = no actionable setup
-    cappedScore   = Math.min(cappedScore, 44);
+  if (criticalCount >= 1) {
+    cappedScore   = Math.min(cappedScore, 40);
     cappedSetup   = "Neutral";
     cappedOutlook = "neutral";
-  } else if (dimensionsFailing === 1) {
-    // One weak dimension: marginal setup — cap at 62
-    cappedScore = Math.min(cappedScore, 62);
+    scoreCapped   = true;
+  } else if (weakFactors.length >= 2) {
+    if (cappedScore > 62) {
+      cappedScore = 62;
+      scoreCapped = true;
+    }
   }
 
-  const opportunityScore = Math.max(0, Math.min(100, cappedScore));
+  const opportunityScore = Math.max(0, Math.min(100, Math.round(cappedScore)));
 
   return {
     opportunityScore,
     setupType: cappedSetup,
     recommendedOutlook: cappedOutlook,
-    setupDescription: buildDescription(cappedSetup, cappedOutlook, ivRank, signals, effectiveDte),
-    technicalScore: Math.round(technicalScore),
-    ivScore: Math.round(ivScore),
-    entryScore: Math.round(entryScore),
-    momentumScore: Math.round(momentumScore),
-    vwapScore: Math.round(vwapScore),
+    setupDescription: buildDescription(cappedSetup, cappedOutlook, ivRank, signals, isETF ? undefined : daysToEarnings),
+    technicalScore: round1(technicalScore),
+    ivScore:        round1(ivScore),
+    momentumScore:  round1(momentumScore),
+    entryScore:     round1(entryScore),
+    riskScore:      round1(riskScore),
+    weakFactors,
+    scoreCapped,
   };
 }
 
-// ─── Outlook determination ─────────────────────────────────────────────────
-// Weights: trend > RSI zone > MACD histogram > MA stack
+// ─── Outlook determination ────────────────────────────────────────────────────
 
-function determineOutlook(signals: TechnicalSignals, ivRank: number): ScanOutlook {
-  let bullScore = 0;
-  let bearScore = 0;
+function determineOutlook(signals: TechnicalSignals, _ivRank: number): ScanOutlook {
+  let bull = 0;
+  let bear = 0;
 
-  // Trend (strongest signal)
-  if (signals.trend === "bullish") bullScore += 3;
-  if (signals.trend === "bearish") bearScore += 3;
+  if (signals.trend === "bullish") bull += 3;
+  if (signals.trend === "bearish") bear += 3;
 
-  // RSI
-  if (signals.rsi14 > 55 && signals.rsi14 < 75) bullScore += 2;
-  if (signals.rsi14 < 45 && signals.rsi14 > 25) bearScore += 2;
-  if (signals.rsi14 >= 75) bullScore += 0.5;  // overbought, less conviction
-  if (signals.rsi14 <= 25) bearScore += 0.5;  // oversold, potential bounce
+  if (signals.rsi14 > 55 && signals.rsi14 < 75) bull += 2;
+  if (signals.rsi14 < 45 && signals.rsi14 > 25) bear += 2;
+  if (signals.rsi14 >= 75) bull += 0.5;
+  if (signals.rsi14 <= 25) bear += 0.5;
 
-  // MACD
-  if (signals.macd.histogram > 0) bullScore += 2;
-  if (signals.macd.histogram < 0) bearScore += 2;
+  if (signals.macd.histogram > 0) bull += 2;
+  if (signals.macd.histogram < 0) bear += 2;
 
-  // Moving average confirmation
-  if (signals.sma20 > signals.sma50) bullScore += 1;
-  if (signals.sma20 < signals.sma50) bearScore += 1;
+  if (signals.sma20 > signals.sma50) bull += 1;
+  if (signals.sma20 < signals.sma50) bear += 1;
 
-  // Volume (high vol on up move = bullish confirmation)
   if (signals.volumeRatio > 1.3) {
-    const price_vs_open_guess = signals.macd.histogram > 0 ? 1 : -1;
-    if (price_vs_open_guess > 0) bullScore += 1;
-    else bearScore += 1;
+    if (signals.macd.histogram > 0) bull += 1; else bear += 1;
   }
 
-  if (bullScore > bearScore + 2) return "bullish";
-  if (bearScore > bullScore + 2) return "bearish";
+  if (bull > bear + 2) return "bullish";
+  if (bear > bull + 2) return "bearish";
   return "neutral";
 }
 
@@ -306,60 +298,52 @@ function restrictETFSetup(
   etfCat: ScanOpts["etfCategory"],
   outlook: ScanOutlook,
   ivRank: number,
-  strategyPreferences: StrategyPreferences,
+  prefs: StrategyPreferences,
 ): SetupType {
-  const highIv = strategyPreferences.ivRankHighThreshold;
-  const lowIv = strategyPreferences.ivRankLowThreshold;
-  // Covered Calls require owning the underlying — not applicable to ETF options
+  const highIv = prefs.ivRankHighThreshold;
+  const lowIv  = prefs.ivRankLowThreshold;
+
   if (setup === "Covered Call") {
     return ivRank >= highIv ? "Bull Put Spread" : "Call Spread";
   }
-
-  // Pure leveraged ETFs: lock to their directional setup list
   if (etfCat === "leveraged-bull" && !BULL_SETUPS.includes(setup)) {
     return ivRank >= highIv ? "Bull Put Spread" : ivRank < lowIv ? "Long Call" : "Call Spread";
   }
   if (etfCat === "leveraged-bear" && !BEAR_SETUPS.includes(setup)) {
     return ivRank >= highIv ? "Bear Call Spread" : ivRank < lowIv ? "Long Put" : "Bear Put Spread";
   }
-
-  // Single-stock leveraged ETFs: restrict based on the computed outlook
   if (etfCat === "leveraged-single") {
-    if (outlook === "bullish" && !BULL_SETUPS.includes(setup)) {
+    if (outlook === "bullish" && !BULL_SETUPS.includes(setup))
       return ivRank >= highIv ? "Bull Put Spread" : ivRank < lowIv ? "Long Call" : "Call Spread";
-    }
-    if (outlook === "bearish" && !BEAR_SETUPS.includes(setup)) {
+    if (outlook === "bearish" && !BEAR_SETUPS.includes(setup))
       return ivRank >= highIv ? "Bear Call Spread" : ivRank < lowIv ? "Long Put" : "Bear Put Spread";
-    }
   }
-
   return setup;
 }
 
-// ─── Setup selection ───────────────────────────────────────────────────────
+// ─── Setup selection ──────────────────────────────────────────────────────────
 
 function chooseSetup(
   outlook: ScanOutlook,
   ivRank: number,
   signals: TechnicalSignals,
-  strategyPreferences: StrategyPreferences,
+  prefs: StrategyPreferences,
 ): SetupType {
-  const highIv = strategyPreferences.ivRankHighThreshold;
-  const lowIv = strategyPreferences.ivRankLowThreshold;
-  const useIv = strategyPreferences.strategyAutoSelectByIv;
+  const highIv = prefs.ivRankHighThreshold;
+  const lowIv  = prefs.ivRankLowThreshold;
+  const useIv  = prefs.strategyAutoSelectByIv;
+
   if (outlook === "bullish") {
     if (useIv && ivRank >= highIv) return "Bull Put Spread";
     if (useIv && ivRank >= Math.max(lowIv, highIv - 20) && signals.strength >= 6) return "Covered Call";
     if (useIv && ivRank < lowIv && signals.strength >= 7) return "Long Call";
     return "Call Spread";
   }
-
   if (outlook === "bearish") {
     if (useIv && ivRank >= highIv) return "Bear Call Spread";
     if (useIv && ivRank < lowIv && signals.strength <= 4) return "Long Put";
     return "Bear Put Spread";
   }
-
   // Neutral
   if (useIv && ivRank >= highIv + 5) return "Iron Condor";
   if (useIv && ivRank <= Math.max(0, lowIv - 5)) return "Straddle";
@@ -367,209 +351,187 @@ function chooseSetup(
   return "Calendar";
 }
 
-// ─── Scoring components ─────────────────────────────────────────────────────
+// ─── Factor graders ───────────────────────────────────────────────────────────
 
-function scoreTechnical(signals: TechnicalSignals, outlook: ScanOutlook): number {
-  // Max 35 pts
-  // Requires broad agreement across trend, RSI, MACD, and MA stack.
-  // Partial alignment scores much lower to avoid stacking mediocre signals.
+function gradeTechnical(signals: TechnicalSignals, outlook: ScanOutlook): number {
+  // MA stack (0–3) + Trend+RSI combo (0–4) + MACD (0–3) = max 10
   let score = 0;
 
   if (outlook === "bullish") {
-    // MA stack (0–10): require sma20 > sma50 > sma200 for full points
-    if (signals.sma20 > signals.sma50 && signals.sma50 > signals.sma200) score += 10;
-    else if (signals.sma20 > signals.sma50) score += 4;   // partial alignment only
+    if (signals.sma20 > signals.sma50 && signals.sma50 > signals.sma200) score += 3.0;
+    else if (signals.sma20 > signals.sma50) score += 1.5;
 
-    // Trend + RSI combo (0–13): trend must be confirmed by RSI being in bullish zone
-    if (signals.trend === "bullish" && signals.rsi14 >= 52 && signals.rsi14 <= 70) score += 13;
-    else if (signals.trend === "bullish" && signals.rsi14 >= 45) score += 8;
-    else if (signals.trend === "bullish") score += 4;           // trend without RSI confirmation
-    else if (signals.rsi14 >= 55 && signals.rsi14 <= 70) score += 3; // RSI without trend
+    if      (signals.trend === "bullish" && signals.rsi14 >= 52 && signals.rsi14 <= 70) score += 4.0;
+    else if (signals.trend === "bullish" && signals.rsi14 >= 45)                        score += 2.5;
+    else if (signals.trend === "bullish")                                                score += 1.5;
+    else if (signals.rsi14 >= 55 && signals.rsi14 <= 70)                               score += 0.5;
 
-    // MACD (0–8): both value and histogram must agree for full score
-    if (signals.macd.histogram > 0 && signals.macd.value > signals.macd.signal) score += 8;
-    else if (signals.macd.histogram > 0) score += 3;           // weak — histogram alone
+    if      (signals.macd.histogram > 0 && signals.macd.value > signals.macd.signal) score += 3.0;
+    else if (signals.macd.histogram > 0)                                               score += 1.5;
 
-    // Strength bonus (0–4)
-    if (signals.strength >= 8) score += 4;
-    else if (signals.strength >= 6) score += 2;
   } else if (outlook === "bearish") {
-    // Mirror: full MA stack bearish
-    if (signals.sma20 < signals.sma50 && signals.sma50 < signals.sma200) score += 10;
-    else if (signals.sma20 < signals.sma50) score += 4;
+    if (signals.sma20 < signals.sma50 && signals.sma50 < signals.sma200) score += 3.0;
+    else if (signals.sma20 < signals.sma50) score += 1.5;
 
-    if (signals.trend === "bearish" && signals.rsi14 <= 48 && signals.rsi14 >= 30) score += 13;
-    else if (signals.trend === "bearish" && signals.rsi14 <= 55) score += 8;
-    else if (signals.trend === "bearish") score += 4;
-    else if (signals.rsi14 <= 45 && signals.rsi14 >= 30) score += 3;
+    if      (signals.trend === "bearish" && signals.rsi14 <= 48 && signals.rsi14 >= 30) score += 4.0;
+    else if (signals.trend === "bearish" && signals.rsi14 <= 55)                        score += 2.5;
+    else if (signals.trend === "bearish")                                                score += 1.5;
+    else if (signals.rsi14 <= 45 && signals.rsi14 >= 30)                               score += 0.5;
 
-    if (signals.macd.histogram < 0 && signals.macd.value < signals.macd.signal) score += 8;
-    else if (signals.macd.histogram < 0) score += 3;
+    if      (signals.macd.histogram < 0 && signals.macd.value < signals.macd.signal) score += 3.0;
+    else if (signals.macd.histogram < 0)                                               score += 1.5;
 
-    if (signals.strength <= 3) score += 4;
-    else if (signals.strength <= 5) score += 2;
   } else {
-    // Neutral: RSI near 50 + flat MACD + neutral trend — all three required for high score
-    const rsiNeutral  = signals.rsi14 >= 43 && signals.rsi14 <= 57;
-    const macdFlat    = Math.abs(signals.macd.histogram) < Math.abs(signals.macd.signal) * 0.25;
-    const trendFlat   = signals.trend === "neutral";
+    // Neutral: RSI near 50 (0–3) + flat MACD (0–4) + neutral trend (0–3)
+    const rsiNeutral = signals.rsi14 >= 43 && signals.rsi14 <= 57;
+    const macdFlat   = Math.abs(signals.macd.histogram) < Math.abs(signals.macd.signal) * 0.25;
+    const trendFlat  = signals.trend === "neutral";
 
-    if (rsiNeutral)  score += 10;
-    else if (signals.rsi14 >= 38 && signals.rsi14 <= 62) score += 5;
+    if (rsiNeutral) score += 3.0;
+    else if (signals.rsi14 >= 38 && signals.rsi14 <= 62) score += 1.5;
 
-    if (macdFlat)    score += 10;
-    else if (Math.abs(signals.macd.histogram) < Math.abs(signals.macd.signal) * 0.5) score += 5;
+    if (macdFlat) score += 4.0;
+    else if (Math.abs(signals.macd.histogram) < Math.abs(signals.macd.signal) * 0.5) score += 2.0;
 
-    if (trendFlat)   score += 10;
-    else             score += 3;
-
-    // Confluence bonus: all three aligned is a genuine neutral environment
-    if (rsiNeutral && macdFlat && trendFlat) score += 5;
+    score += trendFlat ? 3.0 : 1.0;
   }
 
-  return Math.min(35, score);
+  return Math.min(10, score);
 }
 
-function scoreIvAlignment(ivRank: number, setup: SetupType, daysToEarnings?: number): number {
-  // Max 25 pts — does the IV rank environment suit the strategy?
-  const creditSelling = ["Bull Put Spread", "Bear Call Spread", "Iron Condor", "Covered Call"].includes(setup);
-  const debitBuying   = ["Call Spread", "Long Call", "Bear Put Spread", "Long Put", "Straddle"].includes(setup);
+// Exported so strategy-engine can reuse the same IV grading logic
+export function gradeIvRegime(ivRank: number, setup: SetupType): number {
+  const creditSelling = (["Bull Put Spread", "Bear Call Spread", "Iron Condor", "Covered Call"] as SetupType[]).includes(setup);
+  const debitBuying   = (["Call Spread", "Long Call", "Bear Put Spread", "Long Put", "Straddle"] as SetupType[]).includes(setup);
   const timeSpread    = setup === "Calendar";
 
-  let base: number;
   if (creditSelling) {
-    if (ivRank >= 70) base = 25;
-    else if (ivRank >= 55) base = 20;
-    else if (ivRank >= 45) base = 14;
-    else if (ivRank >= 35) base = 8;
-    else base = 3;
-  } else if (debitBuying) {
-    if (ivRank <= 20) base = 25;
-    else if (ivRank <= 35) base = 20;
-    else if (ivRank <= 50) base = 13;
-    else if (ivRank <= 65) base = 7;
-    else base = 3;
-  } else if (timeSpread) {
-    if (ivRank >= 30 && ivRank <= 55) base = 22;
-    else if (ivRank >= 20 && ivRank <= 65) base = 16;
-    else base = 9;
-  } else {
-    base = 12;
+    if (ivRank >= 70) return 10.0;
+    if (ivRank >= 60) return 8.5;
+    if (ivRank >= 50) return 7.0;
+    if (ivRank >= 40) return 5.5;
+    if (ivRank >= 30) return 3.0;
+    return 1.0;
   }
 
-  // Earnings proximity bonus: near-term earnings inflate IV, which favours credit strategies.
-  // Penalises debit buyers entering just before earnings crush.
-  if (daysToEarnings !== undefined && daysToEarnings >= 0) {
-    if (daysToEarnings <= 7) {
-      // Very close — IV expansion almost certain
-      base = creditSelling ? Math.min(25, base + 5) : Math.max(1, base - 4);
-    } else if (daysToEarnings <= 21) {
-      base = creditSelling ? Math.min(25, base + 3) : Math.max(1, base - 2);
-    }
-    // If earnings > 21 days away, no adjustment (normal vol environment)
+  if (debitBuying) {
+    if (ivRank <= 20) return 10.0;
+    if (ivRank <= 30) return 8.5;
+    if (ivRank <= 40) return 7.0;
+    if (ivRank <= 50) return 5.0;
+    if (ivRank <= 65) return 2.5;
+    return 1.0;
   }
 
-  return base;
+  if (timeSpread) {
+    if (ivRank >= 30 && ivRank <= 55) return 10.0;
+    if (ivRank >= 20 && ivRank <= 65) return 7.0;
+    return 3.0;
+  }
+
+  return 5.0;  // Neutral setup
 }
 
-function scoreEntryQuality(signals: TechnicalSignals, price: number, outlook: ScanOutlook): number {
-  // Max 25 pts — must be near a meaningful S/R level to score well.
-  // Mid-range positions score low — no edge, no setup.
-  const range = signals.resistance - signals.support;
-  if (range <= 0) return 6;
-
-  const pos = (price - signals.support) / range; // 0 = at support, 1 = at resistance
-
-  if (outlook === "bullish") {
-    // Excellent: bouncing off support (within 15% of the range from support)
-    if (pos >= 0.03 && pos <= 0.20) return 25;
-    // Good: recently cleared support, still in lower third
-    if (pos > 0.20 && pos <= 0.35) return 17;
-    // Mediocre: mid-range — no clear S/R edge
-    if (pos > 0.35 && pos <= 0.55) return 8;
-    // Poor: extended toward resistance — chasing
-    if (pos > 0.55 && pos <= 0.75) return 4;
-    // Very poor: at or beyond resistance
-    return 2;
-  }
-
-  if (outlook === "bearish") {
-    // Excellent: rejecting from resistance (within 15% of range from top)
-    if (pos >= 0.80 && pos <= 0.97) return 25;
-    // Good: recently failed at resistance, still in upper third
-    if (pos >= 0.65 && pos < 0.80) return 17;
-    // Mediocre: mid-range — no clear S/R edge
-    if (pos >= 0.45 && pos < 0.65) return 8;
-    // Poor: extended toward support
-    if (pos >= 0.25 && pos < 0.45) return 4;
-    return 2;
-  }
-
-  // Neutral: must be in the middle third for range strategies to make sense
-  if (pos >= 0.38 && pos <= 0.62) return 25;
-  if (pos >= 0.25 && pos <= 0.75) return 14;
-  return 5;
-}
-
-function scoreMomentum(signals: TechnicalSignals, changePercent: number, outlook: ScanOutlook, price: number): number {
-  // Max 15 pts — volume MUST confirm the trade direction to score well.
-  // Flat/opposing volume is a red flag, not neutral.
+function gradeMomentum(
+  signals: TechnicalSignals,
+  changePercent: number,
+  outlook: ScanOutlook,
+  price: number,
+  dayVwap: number,
+  prevDayVwap: number,
+): number {
+  // Volume (0–4) + VWAP (0–3) + ATR (0–2) + strength alignment (0–1) = max 10
   let score = 0;
 
-  // Volume confirmation (0–8): directional volume is required, not just present
+  // Volume confirmation (0–4)
   if (outlook === "bullish") {
-    if      (signals.volumeRatio >= 1.5 && changePercent > 0.5) score += 8;  // strong up volume
-    else if (signals.volumeRatio >= 1.2 && changePercent > 0)   score += 5;  // moderate up volume
-    else if (signals.volumeRatio >= 1.0 && changePercent > 0)   score += 2;  // mild up volume
-    // flat or down-volume day: 0 — not confirming the setup
+    if      (signals.volumeRatio >= 1.5 && changePercent >  0.5) score += 4.0;
+    else if (signals.volumeRatio >= 1.2 && changePercent >  0)   score += 2.5;
+    else if (signals.volumeRatio >= 1.0 && changePercent >  0)   score += 1.0;
   } else if (outlook === "bearish") {
-    if      (signals.volumeRatio >= 1.5 && changePercent < -0.5) score += 8;
-    else if (signals.volumeRatio >= 1.2 && changePercent < 0)    score += 5;
-    else if (signals.volumeRatio >= 1.0 && changePercent < 0)    score += 2;
+    if      (signals.volumeRatio >= 1.5 && changePercent < -0.5) score += 4.0;
+    else if (signals.volumeRatio >= 1.2 && changePercent <  0)   score += 2.5;
+    else if (signals.volumeRatio >= 1.0 && changePercent <  0)   score += 1.0;
   } else {
-    // Neutral: quiet volume is ideal — no big directional moves
-    if      (signals.volumeRatio < 0.7)  score += 8;
-    else if (signals.volumeRatio < 0.9)  score += 5;
-    else if (signals.volumeRatio < 1.15) score += 2;
-    // High volume in "neutral" environment: 0 — suggests breakout risk
+    // Neutral: quiet volume is ideal
+    if      (signals.volumeRatio < 0.7)  score += 4.0;
+    else if (signals.volumeRatio < 0.9)  score += 2.5;
+    else if (signals.volumeRatio < 1.15) score += 1.0;
   }
 
-  // Strength alignment (0–4): must match direction for full credit
-  if (outlook === "bullish" && signals.strength >= 7) score += 4;
-  else if (outlook === "bullish" && signals.strength >= 5) score += 2;
-  else if (outlook === "bearish" && signals.strength <= 4) score += 4;
-  else if (outlook === "bearish" && signals.strength <= 6) score += 2;
-  else if (outlook === "neutral") score += Math.round((1 - Math.abs(signals.strength - 5) / 5) * 4);
+  // VWAP position (0–3): 1.5 per confirming VWAP level
+  if (outlook === "bullish") {
+    if (dayVwap     > 0 && price > dayVwap)     score += 1.5;
+    if (prevDayVwap > 0 && price > prevDayVwap) score += 1.5;
+  } else if (outlook === "bearish") {
+    if (dayVwap     > 0 && price < dayVwap)     score += 1.5;
+    if (prevDayVwap > 0 && price < prevDayVwap) score += 1.5;
+  }
+  // Neutral strategies don't benefit from directional VWAP
 
-  // ATR environment check (0–3): volatility must suit the strategy type
-  const atrPct = (signals.atr14 / price) * 100;
-  if (outlook === "neutral" && atrPct < 2.0) score += 3;       // low ATR = range-bound
-  else if (outlook !== "neutral" && atrPct >= 1.5 && atrPct <= 5) score += 3;
-  else if (outlook !== "neutral" && atrPct >= 1.0) score += 1;
-  // ATR > 5%: too chaotic for most options strategies, 0
+  // ATR environment (0–2): volatility must suit strategy type
+  const atrPct = price > 0 ? (signals.atr14 / price) * 100 : 0;
+  if (outlook === "neutral" && atrPct < 2.0)                       score += 2.0;
+  else if (outlook !== "neutral" && atrPct >= 1.5 && atrPct <= 5) score += 2.0;
+  else if (outlook !== "neutral" && atrPct >= 1.0)                 score += 1.0;
 
-  return Math.min(15, score);
+  // Strength alignment (0–1)
+  if (outlook === "bullish") {
+    score += signals.strength >= 7 ? 1.0 : signals.strength >= 5 ? 0.5 : 0;
+  } else if (outlook === "bearish") {
+    score += signals.strength <= 3 ? 1.0 : signals.strength <= 5 ? 0.5 : 0;
+  } else {
+    score += Math.max(0, 1 - Math.abs(signals.strength - 5) / 5);
+  }
+
+  return Math.min(10, score);
 }
 
-// ─── VWAP position scoring ────────────────────────────────────────────────────
+function gradeEntry(signals: TechnicalSignals, price: number, outlook: ScanOutlook): number {
+  const range = signals.resistance - signals.support;
+  if (range <= 0) return 5.0;  // insufficient S/R data — neutral
 
-function scoreVwap(price: number, dayVwap: number, prevDayVwap: number, outlook: ScanOutlook): number {
-  // Max 10 pts — VWAP must confirm the trade direction to score
-  // A bullish stock below VWAP (failed intraday) gets 0. A bearish stock
-  // above VWAP (failed breakdown) gets 0. Neutral gets no VWAP credit.
+  const pos = (price - signals.support) / range;  // 0 = at support, 1 = at resistance
+
   if (outlook === "bullish") {
-    let score = 0;
-    if (dayVwap > 0 && price > dayVwap)          score += 5; // intraday above VWAP
-    if (prevDayVwap > 0 && price > prevDayVwap)  score += 5; // above yesterday's VWAP
-    return score;
+    if (pos >= 0.03 && pos <= 0.20) return 10.0;  // near support — ideal
+    if (pos >  0.20 && pos <= 0.35) return 7.0;   // lower third — good
+    if (pos >  0.35 && pos <= 0.55) return 3.5;   // mid-range — no edge
+    if (pos >  0.55 && pos <= 0.75) return 1.5;   // extended, chasing
+    return 0.5;                                    // at/beyond resistance
   }
+
   if (outlook === "bearish") {
-    let score = 0;
-    if (dayVwap > 0 && price < dayVwap)          score += 5; // intraday below VWAP
-    if (prevDayVwap > 0 && price < prevDayVwap)  score += 5; // below yesterday's VWAP
-    return score;
+    if (pos >= 0.80 && pos <= 0.97) return 10.0;  // near resistance — ideal
+    if (pos >= 0.65 && pos <  0.80) return 7.0;
+    if (pos >= 0.45 && pos <  0.65) return 3.5;
+    if (pos >= 0.25 && pos <  0.45) return 1.5;
+    return 0.5;
   }
-  return 0; // neutral strategies don't benefit from VWAP directionality
+
+  // Neutral: needs to be in the middle of the range
+  if (pos >= 0.38 && pos <= 0.62) return 10.0;
+  if (pos >= 0.25 && pos <= 0.75) return 5.5;
+  return 2.0;
+}
+
+function gradeEarningsRisk(setup: SetupType, daysToEarnings: number | undefined, isETF: boolean): number {
+  // 10 = safe, far from earnings; 1 = debit trade 2 days before earnings
+  if (isETF)                       return 7.5;  // no earnings risk
+  if (daysToEarnings === undefined) return 6.5;  // unknown — mild caution
+  if (daysToEarnings < 0)          return 8.5;  // post-earnings: vol crush done
+
+  const creditSelling = (["Bull Put Spread", "Bear Call Spread", "Iron Condor", "Covered Call"] as SetupType[]).includes(setup);
+
+  if (daysToEarnings > 30) return 10.0;
+  if (daysToEarnings > 21) return 8.5;
+  if (daysToEarnings > 14) return 7.0;
+  // 7–14 days: IV beginning to inflate toward the event
+  if (daysToEarnings >  7) return creditSelling ? 6.0 : 3.0;
+  // 3–7 days: binary event imminent
+  if (daysToEarnings >= 3) return creditSelling ? 4.5 : 1.5;
+  // 0–2 days: extreme risk on both sides
+  return creditSelling ? 3.0 : 1.0;
 }
 
 // ─── Human-readable setup description ────────────────────────────────────────
@@ -579,9 +541,9 @@ function buildDescription(
   outlook: ScanOutlook,
   ivRank: number,
   signals: TechnicalSignals,
-  daysToEarnings?: number
+  daysToEarnings?: number,
 ): string {
-  const ivLevel = ivRank >= 60 ? "high" : ivRank >= 35 ? "moderate" : "low";
+  const ivLevel  = ivRank >= 60 ? "high" : ivRank >= 35 ? "moderate" : "low";
   const trendStr = signals.trend === "bullish" ? "uptrend" : signals.trend === "bearish" ? "downtrend" : "sideways";
 
   const map: Record<SetupType, string> = {
@@ -592,15 +554,14 @@ function buildDescription(
     "Bear Call Spread": `IV rank ${ivRank}% (${ivLevel}) — sell call credit above the ${trendStr}. Profit if price stays below short strike.`,
     "Bear Put Spread":  `Defined-risk bearish play. Buy put, sell lower strike to reduce debit. IV at ${ivRank}%.`,
     "Long Put":         `Low IV (${ivRank}%) makes puts cheap. Strong ${trendStr} confirms bearish directional play.`,
-    "Iron Condor":      `IV rank ${ivRank}% — very elevated vol makes selling both wings attractive. Profit in a range.`,
-    "Straddle":         `IV rank ${ivRank}% is very low — options are cheap. Buy a straddle ahead of expected vol expansion.`,
+    "Iron Condor":      `IV rank ${ivRank}% — elevated vol makes selling both wings attractive. Profit if price stays in range.`,
+    "Straddle":         `IV rank ${ivRank}% is very low — options are cheap. Buy straddle ahead of expected vol expansion.`,
     "Calendar":         `Sell near-term, buy longer-dated same strike. IV at ${ivRank}% supports time decay differential.`,
     "Neutral":          `No high-conviction setup. Watch for trend development or IV expansion before entering.`,
   };
 
   let desc = map[setup] ?? "Options opportunity identified based on technical and volatility analysis.";
 
-  // Append earnings risk / opportunity note when relevant
   if (daysToEarnings !== undefined && daysToEarnings >= 0 && daysToEarnings <= 21) {
     const creditSelling = (["Bull Put Spread", "Bear Call Spread", "Iron Condor", "Covered Call"] as SetupType[]).includes(setup);
     if (daysToEarnings <= 7) {
@@ -614,3 +575,5 @@ function buildDescription(
 
   return desc;
 }
+
+function round1(n: number): number { return Math.round(n * 10) / 10; }

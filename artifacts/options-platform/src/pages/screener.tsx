@@ -17,7 +17,8 @@ interface ScreenerRow {
   pctFrom52High: number; pctFrom52Low: number; earningsDate: string;
   technicalStrength: number; rsi14: number; macdHistogram: number; ivRank: number;
   opportunityScore: number; technicalScore: number; ivScore: number; entryScore: number;
-  momentumScore: number; vwapScore: number;
+  momentumScore: number; riskScore: number;
+  weakFactors?: string[]; scoreCapped?: boolean;
   setupType: string; recommendedOutlook: string;
   supportPrice: number; resistancePrice: number; liquidity: string;
   source?: "polygon" | "yahoo" | "polygon-eod";
@@ -69,10 +70,11 @@ const FILTER_DEFS: FilterDef[] = [
   { key:"shortRatio",    label:"Short Ratio",     category:"Fundamentals", type:"minonly", unit:"d",  field:r=>r.shortRatio,     min:0,  max:30 },
   { key:"ivRank",        label:"IV Rank",         category:"Options",      type:"range",   unit:"%",  field:r=>r.ivRank,         min:0,  max:100 },
   { key:"opportunityScore",label:"Opp. Score",    category:"Options",      type:"minonly",            field:r=>r.opportunityScore,min:0,max:100 },
-  { key:"momentumScore", label:"Momentum Score",  category:"Options",      type:"minonly",            field:r=>r.momentumScore, min:0, max:15 },
-  { key:"technicalScore",label:"Technical Score", category:"Options",      type:"minonly",            field:r=>r.technicalScore, min:0, max:35 },
-  { key:"ivScore",       label:"IV Score",        category:"Options",      type:"minonly",            field:r=>r.ivScore, min:0, max:25 },
-  { key:"entryScore",    label:"Entry Score",     category:"Options",      type:"minonly",            field:r=>r.entryScore, min:0, max:25 },
+  { key:"technicalScore",label:"Technical",       category:"Options",      type:"minonly",            field:r=>r.technicalScore, min:0, max:10, step:0.5 },
+  { key:"ivScore",       label:"IV Regime",       category:"Options",      type:"minonly",            field:r=>r.ivScore, min:0, max:10, step:0.5 },
+  { key:"momentumScore", label:"Momentum",        category:"Options",      type:"minonly",            field:r=>r.momentumScore, min:0, max:10, step:0.5 },
+  { key:"entryScore",    label:"Entry Quality",   category:"Options",      type:"minonly",            field:r=>r.entryScore, min:0, max:10, step:0.5 },
+  { key:"riskScore",     label:"Risk (Earnings)", category:"Options",      type:"minonly",            field:r=>r.riskScore, min:0, max:10, step:0.5 },
   { key:"marketCapNum",  label:"Mkt Cap ($)",     category:"General",      type:"range",              field:r=>r.marketCap,       min:0 },
   { key:"daysToEarnings",label:"Days to Earnings",category:"General",      type:"range",              field:r=>r.daysToEarnings,  min:0, max:365 },
   { key:"alpha",         label:"Alpha Score",     category:"Factors",      type:"minonly",            field:r=>r.alpha,           min:0,  max:100 },
@@ -109,7 +111,7 @@ const TABS: { key: TabKey; label: string }[] = [
 const PRESETS = [
   { label:"All",           filters:[] as ActiveFilter[] },
   { label:"Options Seller",filters:[{key:"ivRank",min:"65"},{key:"marketCap",value:"mid"}] as ActiveFilter[] },
-  { label:"Momentum",      filters:[{key:"momentumScore",min:"12"},{key:"technicalScore",min:"25"}] as ActiveFilter[] },
+  { label:"Momentum",      filters:[{key:"momentumScore",min:"7"},{key:"technicalScore",min:"6"}] as ActiveFilter[] },
   { label:"High Volume",   filters:[{key:"relVol",min:"2"}] as ActiveFilter[] },
   { label:"Value",         filters:[{key:"pe",max:"20"},{key:"dividendYield",min:"1"}] as ActiveFilter[] },
   { label:"Bullish Setup", filters:[{key:"outlook",value:"bullish"},{key:"technicalStr",min:"6"}] as ActiveFilter[] },
@@ -645,7 +647,16 @@ function StockTable({ rows, tab, sortKey, sortDir, onSort, navigate, watchlistSy
   const columnVisibility = settings.screenerColumnVisibility;
   const isVisible = (key: string) => columnVisibility[key as keyof typeof columnVisibility] ?? true;
   const scoreTitle = (r: FactoredRow) => settings.showScoreBreakdownTooltip
-    ? `Opportunity ${r.opportunityScore}/100\nTechnical ${r.technicalScore}/35\nIV ${r.ivScore}/25\nEntry ${r.entryScore}/25\nMomentum ${r.momentumScore}/15\nVWAP ${r.vwapScore}/10`
+    ? [
+        `Opportunity ${r.opportunityScore}/100`,
+        `Technical  ${r.technicalScore}/10`,
+        `IV Regime  ${r.ivScore}/10`,
+        `Momentum   ${r.momentumScore}/10`,
+        `Entry      ${r.entryScore}/10`,
+        `Risk       ${r.riskScore}/10`,
+        r.scoreCapped ? `⚠ Score capped` : null,
+        r.weakFactors?.length ? `Weak: ${r.weakFactors.join(", ")}` : null,
+      ].filter(Boolean).join("\n")
     : undefined;
 
   const baseCol: Col = {

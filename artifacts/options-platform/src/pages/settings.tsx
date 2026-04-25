@@ -83,7 +83,7 @@ const SCREENER_SORT_FIELDS: SelectOption[] = [
   { label: "IV Score", value: "ivScore" },
   { label: "Entry Score", value: "entryScore" },
   { label: "Momentum Score", value: "momentumScore" },
-  { label: "VWAP Score", value: "vwapScore" },
+  { label: "Risk Score", value: "riskScore" },
   { label: "Setup Type", value: "setupType" },
   { label: "Outlook", value: "recommendedOutlook" },
   { label: "Support Price", value: "supportPrice" },
@@ -161,11 +161,12 @@ const CATEGORIES: CategoryDef[] = [
     description: "Default filter values and scoring thresholds when the Screener loads.",
     settings: [
       { key: "minOpportunityScoreToShow", label: "Minimum opportunity score", description: "Hide screener rows below this composite score.", type: "slider", default: 0, min: 0, max: 100 },
-      { key: "highConvictionOpportunityScore", label: "opportunityScore min", description: "Opportunity score required before a row can qualify as high conviction.", type: "slider", default: 75, min: 0, max: 100, showMaxInLabel: true },
-      { key: "highConvictionTechnicalScore", label: "technicalScore min", type: "slider", default: 20, min: 0, max: 35, showMaxInLabel: true },
-      { key: "highConvictionIvScore", label: "ivScore min", type: "slider", default: 15, min: 0, max: 25, showMaxInLabel: true },
-      { key: "highConvictionEntryScore", label: "entryScore min", type: "slider", default: 15, min: 0, max: 25, showMaxInLabel: true },
-      { key: "highConvictionMomentumScore", label: "momentumScore min", type: "slider", default: 8, min: 0, max: 15, showMaxInLabel: true },
+      { key: "highConvictionOpportunityScore", label: "Composite min (/100)", description: "Opportunity score required before a row can qualify as high conviction.", type: "slider", default: 72, min: 0, max: 100, showMaxInLabel: true },
+      { key: "highConvictionTechnicalScore",   label: "Technical min (/10)",  type: "slider", default: 6, min: 0, max: 10, showMaxInLabel: true },
+      { key: "highConvictionIvScore",          label: "IV Regime min (/10)",  type: "slider", default: 6, min: 0, max: 10, showMaxInLabel: true },
+      { key: "highConvictionEntryScore",       label: "Entry min (/10)",      type: "slider", default: 5, min: 0, max: 10, showMaxInLabel: true },
+      { key: "highConvictionMomentumScore",    label: "Momentum min (/10)",   type: "slider", default: 5, min: 0, max: 10, showMaxInLabel: true },
+      { key: "highConvictionRiskScore",        label: "Risk min (/10)",       description: "Minimum earnings-risk grade. Useful for avoiding entries near binary events.", type: "slider", default: 5, min: 0, max: 10, showMaxInLabel: true },
       { key: "screenerDefaultSortColumn", label: "Default sort column", description: "Column used when the screener opens or defaults are reset.", type: "select", default: "marketCap", options: SCREENER_SORT_FIELDS },
       { key: "screenerDefaultSortDirection", label: "Default sort direction", type: "select", default: "desc", options: [{ label: "Ascending", value: "asc" }, { label: "Descending", value: "desc" }] },
       { key: "screenerDefaultPreset", label: "Default filter preset on load", type: "select", default: "All", options: SCREENER_PRESET_OPTIONS },
@@ -187,11 +188,11 @@ const CATEGORIES: CategoryDef[] = [
       { key: "ivRankLowThreshold", label: "IV Rank low threshold", type: "slider", default: 30, min: 0, max: 100 },
       { key: "ivRankHighThreshold", label: "IV Rank high threshold", type: "slider", default: 60, min: 0, max: 100 },
       { key: "strategyAutoSelectByIv", label: "Strategy auto-selection based on IV environment", type: "toggle", default: true },
-      { key: "ivScoreWeight", label: "IV score weight", type: "slider", default: 25, min: 0, max: 40 },
-      { key: "technicalScoreWeight", label: "Technical score weight", type: "slider", default: 35, min: 0, max: 50 },
-      { key: "entryScoreWeight", label: "Entry score weight", type: "slider", default: 25, min: 0, max: 40 },
-      { key: "momentumScoreWeight", label: "Momentum score weight", type: "slider", default: 15, min: 0, max: 25 },
-      { key: "vwapScoreWeight", label: "VWAP score weight", type: "slider", default: 10, min: 0, max: 20 },
+      { key: "technicalScoreWeight", label: "Technical weight",  description: "Weight for MA stack + trend + MACD grade.",     type: "slider", default: 25, min: 0, max: 50 },
+      { key: "ivScoreWeight",        label: "IV Regime weight",  description: "Weight for IV rank vs strategy fit.",            type: "slider", default: 25, min: 0, max: 50 },
+      { key: "momentumScoreWeight",  label: "Momentum weight",   description: "Weight for volume confirmation + VWAP.",         type: "slider", default: 20, min: 0, max: 40 },
+      { key: "entryScoreWeight",     label: "Entry weight",      description: "Weight for price position within S/R range.",    type: "slider", default: 15, min: 0, max: 35 },
+      { key: "riskScoreWeight",      label: "Risk weight",       description: "Weight for earnings proximity safety grade.",    type: "slider", default: 15, min: 0, max: 35 },
     ],
   },
   {
@@ -957,11 +958,11 @@ function DataUniversePanel({ settings, onChange }: { settings: AppSettings; onCh
 }
 
 const STRATEGY_WEIGHT_KEYS: Array<keyof AppSettings> = [
-  "ivScoreWeight",
   "technicalScoreWeight",
-  "entryScoreWeight",
+  "ivScoreWeight",
   "momentumScoreWeight",
-  "vwapScoreWeight",
+  "entryScoreWeight",
+  "riskScoreWeight",
 ];
 
 function StrategyPreferencesPanel({

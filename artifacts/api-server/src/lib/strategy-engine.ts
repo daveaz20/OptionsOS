@@ -50,7 +50,11 @@ export interface OptionsStrategy {
   maxLoss: number;
   returnPercent: number;
   breakeven: number;
-  score: number;
+  score: number;          // 0–100 composite
+  technicalScore: number; // 0–10
+  ivScore: number;        // 0–10
+  rrScore: number;        // 0–10
+  popScore: number;       // 0–10
   expirationDate: string;
 }
 
@@ -448,7 +452,7 @@ function makeStrategy(
   signals: TechnicalSignals,
   params: StrategyParams
 ): OptionsStrategy {
-  const score = computeScore(params, signals, outlook);
+  const { score, technicalScore, ivScore, rrScore, popScore } = computeScore(params, signals, outlook, ivRank);
   return {
     id,
     name: params.name,
@@ -462,51 +466,123 @@ function makeStrategy(
     returnPercent: round2(params.returnPercent),
     breakeven: round2(params.breakeven),
     score,
+    technicalScore,
+    ivScore,
+    rrScore,
+    popScore,
     expirationDate: params.exp,
   };
 }
 
-function computeScore(params: StrategyParams, signals: TechnicalSignals, outlook: Outlook): number {
-  // 1. Risk/Reward (0–60): higher R/R = better
+function computeScore(
+  params: StrategyParams,
+  signals: TechnicalSignals,
+  outlook: Outlook,
+  ivRank: number,
+): { score: number; technicalScore: number; ivScore: number; rrScore: number; popScore: number } {
+  // Technical alignment (0–10): how well indicators confirm strategy direction
+  const technicalScore = calcTechGrade(signals, outlook);
+
+  // IV alignment (0–10): is the IV environment right for this strategy type?
+  const ivScore = calcIvGrade(ivRank, params.ivAlignment);
+
+  // Risk/Reward quality (0–10): normalized R/R ratio
   const rr = Math.abs(params.rrRatio);
-  const rrScore = Math.min(60, rr * 25);
+  const rrScore =
+    rr >= 2.0 ? 10.0 :
+    rr >= 1.5 ? 8.5  :
+    rr >= 1.0 ? 7.0  :
+    rr >= 0.6 ? 5.0  :
+    rr >= 0.3 ? 3.0  : 1.5;
 
-  // 2. Probability of Profit (0–60)
-  const probScore = Math.min(60, params.probProfit * 80);
+  // Probability of profit (0–10)
+  const popScore = Math.min(10, params.probProfit * 12);
 
-  // 3. IV Alignment (0–40): right strategy for the volatility environment
-  const ivScore = params.ivAlignment * 40;
+  // Weighted composite (technical 25%, iv 30%, rr 25%, pop 20%) → 0–100
+  const raw = (technicalScore * 25 + ivScore * 30 + rrScore * 25 + popScore * 20) / 100 * 10;
+  const score = Math.min(100, Math.max(10, Math.round(raw)));
 
-  // 4. Technical Alignment (0–40): technicals confirm strategy direction
-  const techAlign = calcTechAlignment(signals, outlook);
-  const techScore = techAlign * 40;
-
-  const raw = rrScore + probScore + ivScore + techScore;
-  return Math.min(200, Math.max(20, Math.round(raw)));
+  return {
+    score,
+    technicalScore: round1(technicalScore),
+    ivScore:        round1(ivScore),
+    rrScore:        round1(rrScore),
+    popScore:       round1(popScore),
+  };
 }
 
-function calcTechAlignment(signals: TechnicalSignals, outlook: Outlook): number {
+function calcTechGrade(signals: TechnicalSignals, outlook: Outlook): number {
+  // MA stack (0–3) + Trend+RSI (0–4) + MACD (0–3) = 0–10
   let score = 0;
-  let factors = 0;
 
   if (outlook === "bullish") {
-    if (signals.trend === "bullish") score += 1; factors++;
-    if (signals.rsi14 > 50 && signals.rsi14 < 70) score += 1; factors++;
-    if (signals.macd.histogram > 0) score += 1; factors++;
-    score += signals.strength / 10; factors++;
+    if (signals.sma20 > signals.sma50 && signals.sma50 > signals.sma200) score += 3.0;
+    else if (signals.sma20 > signals.sma50) score += 1.5;
+
+    if      (signals.trend === "bullish" && signals.rsi14 >= 52 && signals.rsi14 <= 70) score += 4.0;
+    else if (signals.trend === "bullish" && signals.rsi14 >= 45)                        score += 2.5;
+    else if (signals.trend === "bullish")                                                score += 1.5;
+    else if (signals.rsi14 >= 55 && signals.rsi14 <= 70)                               score += 0.5;
+
+    if      (signals.macd.histogram > 0 && signals.macd.value > signals.macd.signal) score += 3.0;
+    else if (signals.macd.histogram > 0)                                               score += 1.5;
+
   } else if (outlook === "bearish") {
-    if (signals.trend === "bearish") score += 1; factors++;
-    if (signals.rsi14 < 50 && signals.rsi14 > 30) score += 1; factors++;
-    if (signals.macd.histogram < 0) score += 1; factors++;
-    score += (10 - signals.strength) / 10; factors++;
+    if (signals.sma20 < signals.sma50 && signals.sma50 < signals.sma200) score += 3.0;
+    else if (signals.sma20 < signals.sma50) score += 1.5;
+
+    if      (signals.trend === "bearish" && signals.rsi14 <= 48 && signals.rsi14 >= 30) score += 4.0;
+    else if (signals.trend === "bearish" && signals.rsi14 <= 55)                        score += 2.5;
+    else if (signals.trend === "bearish")                                                score += 1.5;
+    else if (signals.rsi14 <= 45 && signals.rsi14 >= 30)                               score += 0.5;
+
+    if      (signals.macd.histogram < 0 && signals.macd.value < signals.macd.signal) score += 3.0;
+    else if (signals.macd.histogram < 0)                                               score += 1.5;
+
   } else {
-    // Neutral: want RSI near 50 and low vol
-    if (signals.rsi14 >= 40 && signals.rsi14 <= 60) score += 1; factors++;
-    if (signals.volumeRatio < 1.2) score += 0.8; factors++;
-    score += 0.6; factors++;
+    const rsiNeutral = signals.rsi14 >= 43 && signals.rsi14 <= 57;
+    const macdFlat   = Math.abs(signals.macd.histogram) < Math.abs(signals.macd.signal) * 0.25;
+
+    if (rsiNeutral) score += 3.0;
+    else if (signals.rsi14 >= 38 && signals.rsi14 <= 62) score += 1.5;
+
+    if (macdFlat) score += 4.0;
+    else if (Math.abs(signals.macd.histogram) < Math.abs(signals.macd.signal) * 0.5) score += 2.0;
+
+    score += signals.trend === "neutral" ? 3.0 : 1.0;
   }
 
-  return factors > 0 ? Math.min(1, score / factors) : 0.5;
+  return Math.min(10, score);
+}
+
+function calcIvGrade(ivRank: number, ivAlignment: number): number {
+  // ivAlignment: 0–1 passed in from the strategy builder (1 = perfect match, 0 = wrong environment)
+  // Combine with the absolute IV rank scoring for a richer picture
+  const creditFit  = ivAlignment >= 0.9;
+  const debitFit   = ivAlignment >= 0.9;
+  const neutralFit = ivAlignment >= 0.6;
+
+  let base: number;
+  if (creditFit && ivAlignment === 1) {
+    // This is a credit strategy in high IV — grade by how high IV is
+    if (ivRank >= 70) base = 10.0;
+    else if (ivRank >= 60) base = 8.5;
+    else if (ivRank >= 50) base = 7.0;
+    else if (ivRank >= 40) base = 5.5;
+    else base = ivAlignment * 5;
+  } else if (debitFit && ivAlignment >= 0.85) {
+    // Debit strategy in low IV
+    if (ivRank <= 20) base = 10.0;
+    else if (ivRank <= 30) base = 8.5;
+    else if (ivRank <= 40) base = 7.0;
+    else if (ivRank <= 50) base = 5.5;
+    else base = ivAlignment * 5;
+  } else {
+    // Partial or poor IV fit — scale by alignment ratio
+    base = ivAlignment * 10;
+  }
+
+  return Math.min(10, Math.max(0, base));
 }
 
 // ─── Black-Scholes Premium Approximation ─────────────────────────────────

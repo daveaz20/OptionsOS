@@ -60,6 +60,7 @@ export interface AppSettings {
   highConvictionIvScore: number;
   highConvictionEntryScore: number;
   highConvictionMomentumScore: number;
+  highConvictionRiskScore: number;
   screenerDefaultSortColumn: string;
   screenerDefaultSortDirection: "asc" | "desc";
   screenerDefaultPreset: string;
@@ -141,7 +142,7 @@ export interface AppSettings {
   technicalScoreWeight: number;
   entryScoreWeight: number;
   momentumScoreWeight: number;
-  vwapScoreWeight: number;
+  riskScoreWeight: number;
   preferredStrategies: string[];
   minCredit: number;
   targetProfitPct: number;
@@ -387,11 +388,12 @@ export const SETTING_DEFAULTS: AppSettings = {
     opportunityScore: true,
   },
   minOpportunityScoreToShow: 0,
-  highConvictionOpportunityScore: 75,
-  highConvictionTechnicalScore: 20,
-  highConvictionIvScore: 15,
-  highConvictionEntryScore: 15,
-  highConvictionMomentumScore: 8,
+  highConvictionOpportunityScore: 72,
+  highConvictionTechnicalScore: 6,
+  highConvictionIvScore: 6,
+  highConvictionEntryScore: 5,
+  highConvictionMomentumScore: 5,
+  highConvictionRiskScore: 5,
   screenerDefaultSortColumn: "marketCap",
   screenerDefaultSortDirection: "desc",
   screenerDefaultPreset: "All",
@@ -469,11 +471,11 @@ export const SETTING_DEFAULTS: AppSettings = {
   ivRankLowThreshold: 30,
   ivRankHighThreshold: 60,
   strategyAutoSelectByIv: true,
+  technicalScoreWeight: 25,
   ivScoreWeight: 25,
-  technicalScoreWeight: 35,
-  entryScoreWeight: 25,
-  momentumScoreWeight: 15,
-  vwapScoreWeight: 10,
+  momentumScoreWeight: 20,
+  entryScoreWeight: 15,
+  riskScoreWeight: 15,
   preferredStrategies: ["Short Put", "Iron Condor"],
   minCredit: 0.5,
   targetProfitPct: 50,

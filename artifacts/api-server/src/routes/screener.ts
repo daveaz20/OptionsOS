@@ -97,10 +97,12 @@ async function getScreenerSettings(): Promise<ScreenerSettings> {
       : "1Y";
   const highConvictionThresholds: HighConvictionThresholds = {
     opportunityScore: typeof values.highConvictionOpportunityScore === "number" ? values.highConvictionOpportunityScore : DEFAULT_HIGH_CONVICTION_THRESHOLDS.opportunityScore,
-    technicalScore: typeof values.highConvictionTechnicalScore === "number" ? values.highConvictionTechnicalScore : DEFAULT_HIGH_CONVICTION_THRESHOLDS.technicalScore,
-    ivScore: typeof values.highConvictionIvScore === "number" ? values.highConvictionIvScore : DEFAULT_HIGH_CONVICTION_THRESHOLDS.ivScore,
-    entryScore: typeof values.highConvictionEntryScore === "number" ? values.highConvictionEntryScore : DEFAULT_HIGH_CONVICTION_THRESHOLDS.entryScore,
-    momentumScore: typeof values.highConvictionMomentumScore === "number" ? values.highConvictionMomentumScore : DEFAULT_HIGH_CONVICTION_THRESHOLDS.momentumScore,
+    // Clamp legacy values that were stored on the old 0-35/25/15 scales
+    technicalScore: typeof values.highConvictionTechnicalScore === "number" ? Math.min(values.highConvictionTechnicalScore, 10) : DEFAULT_HIGH_CONVICTION_THRESHOLDS.technicalScore,
+    ivScore:        typeof values.highConvictionIvScore          === "number" ? Math.min(values.highConvictionIvScore, 10)        : DEFAULT_HIGH_CONVICTION_THRESHOLDS.ivScore,
+    entryScore:     typeof values.highConvictionEntryScore       === "number" ? Math.min(values.highConvictionEntryScore, 10)     : DEFAULT_HIGH_CONVICTION_THRESHOLDS.entryScore,
+    momentumScore:  typeof values.highConvictionMomentumScore    === "number" ? Math.min(values.highConvictionMomentumScore, 10)  : DEFAULT_HIGH_CONVICTION_THRESHOLDS.momentumScore,
+    riskScore:      typeof values.highConvictionRiskScore        === "number" ? values.highConvictionRiskScore                    : DEFAULT_HIGH_CONVICTION_THRESHOLDS.riskScore,
   };
   const strategyPreferences: StrategyPreferences = {
     preferredIvEnvironment: values.preferredIvEnvironment === "high" || values.preferredIvEnvironment === "low" ? values.preferredIvEnvironment : DEFAULT_STRATEGY_PREFERENCES.preferredIvEnvironment,
@@ -112,7 +114,7 @@ async function getScreenerSettings(): Promise<ScreenerSettings> {
       technical: typeof values.technicalScoreWeight === "number" ? values.technicalScoreWeight : DEFAULT_STRATEGY_PREFERENCES.scoreWeights.technical,
       entry: typeof values.entryScoreWeight === "number" ? values.entryScoreWeight : DEFAULT_STRATEGY_PREFERENCES.scoreWeights.entry,
       momentum: typeof values.momentumScoreWeight === "number" ? values.momentumScoreWeight : DEFAULT_STRATEGY_PREFERENCES.scoreWeights.momentum,
-      vwap: typeof values.vwapScoreWeight === "number" ? values.vwapScoreWeight : DEFAULT_STRATEGY_PREFERENCES.scoreWeights.vwap,
+      risk: typeof values.riskScoreWeight === "number" ? values.riskScoreWeight : DEFAULT_STRATEGY_PREFERENCES.scoreWeights.risk,
     },
   };
   const riskPreferences: RiskPreferences = {
@@ -155,7 +157,8 @@ export interface ScreenerRow {
   fiftyTwoWeekHigh: number; fiftyTwoWeekLow: number;
   pctFrom52High: number; pctFrom52Low: number; earningsDate: string;
   technicalStrength: number; rsi14: number; macdHistogram: number; ivRank: number;
-  opportunityScore: number; technicalScore: number; ivScore: number; entryScore: number; momentumScore: number; vwapScore: number;
+  opportunityScore: number; technicalScore: number; ivScore: number; entryScore: number; momentumScore: number; riskScore: number;
+  weakFactors: string[]; scoreCapped: boolean;
   setupType: string; recommendedOutlook: string;
   supportPrice: number; resistancePrice: number;
   liquidity: "Liquid" | "Illiquid";
@@ -245,7 +248,9 @@ async function buildYahooData(strategyPreferences: StrategyPreferences, riskPref
           ivScore: scan?.ivScore ?? 0,
           entryScore: scan?.entryScore ?? 0,
           momentumScore: scan?.momentumScore ?? 0,
-          vwapScore: scan?.vwapScore ?? 0,
+          riskScore: scan?.riskScore ?? 0,
+          weakFactors: scan?.weakFactors ?? [],
+          scoreCapped: scan?.scoreCapped ?? false,
           setupType: scan?.setupType ?? "Neutral",
           recommendedOutlook: scan?.recommendedOutlook ?? "neutral",
           supportPrice: sig.support, resistancePrice: sig.resistance,
@@ -256,7 +261,8 @@ async function buildYahooData(strategyPreferences: StrategyPreferences, riskPref
         return {
           ...base,
           technicalStrength: 5, rsi14: 50, macdHistogram: 0, ivRank: 30,
-          opportunityScore: 25, technicalScore: 0, ivScore: 0, entryScore: 0, momentumScore: 0, vwapScore: 0,
+          opportunityScore: 25, technicalScore: 0, ivScore: 0, entryScore: 0, momentumScore: 0, riskScore: 0,
+          weakFactors: [], scoreCapped: false,
           setupType: "Neutral", recommendedOutlook: "neutral",
           supportPrice: r2(q.price * 0.94), resistancePrice: r2(q.price * 1.06),
         } satisfies ScreenerRow;
@@ -389,7 +395,9 @@ async function buildPolygonData(strategyPreferences: StrategyPreferences, riskPr
           ivScore: scan.ivScore,
           entryScore: scan.entryScore,
           momentumScore: scan.momentumScore,
-          vwapScore: scan.vwapScore,
+          riskScore: scan.riskScore,
+          weakFactors: scan.weakFactors,
+          scoreCapped: scan.scoreCapped,
           setupType: scan.setupType,
           recommendedOutlook: scan.recommendedOutlook,
           supportPrice: sig.support, resistancePrice: sig.resistance,
@@ -400,7 +408,8 @@ async function buildPolygonData(strategyPreferences: StrategyPreferences, riskPr
         return {
           ...base,
           technicalStrength: 5, rsi14: 50, macdHistogram: 0, ivRank: 30,
-          opportunityScore: 25, technicalScore: 0, ivScore: 0, entryScore: 0, momentumScore: 0, vwapScore: 0,
+          opportunityScore: 25, technicalScore: 0, ivScore: 0, entryScore: 0, momentumScore: 0, riskScore: 0,
+          weakFactors: [], scoreCapped: false,
           setupType: "Neutral", recommendedOutlook: "neutral",
           supportPrice: r2(price * 0.94), resistancePrice: r2(price * 1.06),
         } satisfies ScreenerRow;

@@ -248,7 +248,7 @@ function StrategyDetail({
   // POP approximation â€” credit spreads: credit / width; debit: 1 - debit/width
   const pop = strategy.type === "income"
     ? Math.min(85, Math.max(20, Math.round((Math.abs(strategy.tradeCost) / Math.max(1, Math.abs(strategy.tradeCost) + Math.abs(strategy.maxLoss))) * 100)))
-    : Math.min(75, Math.max(25, Math.round(42 + (strategy.score - 100) * 0.15)));
+    : Math.min(75, Math.max(25, Math.round(42 + (strategy.score - 50) * 0.30)));
   const riskBadges = settings.showRiskWarnings ? getRiskBadges(strategy, contracts, dte, settings) : [];
   const suggestedCapital = Math.min(
     Number(settings.maxCapitalPerTrade || 0),
@@ -849,8 +849,8 @@ export function StrategyPanel({ symbol, currentPrice = 0, recommendedOutlook }: 
 function StrategyCard({ strategy, isSelected, isModified, isTopPick, onClick }: {
   strategy: OptionsStrategy; isSelected: boolean; isModified: boolean; isTopPick: boolean; onClick: () => void;
 }) {
-  const pct = Math.min(Math.max(strategy.score / 200, 0), 1);
-  const scoreColor = strategy.score > 120 ? "hsl(var(--success))" : strategy.score < 80 ? "hsl(var(--destructive))" : "hsl(var(--primary))";
+  const pct = Math.min(Math.max(strategy.score / 100, 0), 1);
+  const scoreColor = strategy.score > 65 ? "hsl(var(--success))" : strategy.score < 40 ? "hsl(var(--destructive))" : "hsl(var(--primary))";
   const topBorder = isTopPick && !isSelected ? "1px solid hsl(var(--success) / 0.25)" : isSelected ? "1px solid hsl(var(--primary) / 0.3)" : "1px solid rgba(255,255,255,0.06)";
 
   return (
