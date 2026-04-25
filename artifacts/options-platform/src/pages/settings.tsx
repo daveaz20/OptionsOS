@@ -16,6 +16,7 @@ import {
   Loader2, RotateCcw, Download, ChevronDown,
   Clock, TrendingUp, Bookmark, Briefcase, Lock,
   Eye, EyeOff, PlugZap, Trash2,
+  Upload, HardDrive, AlertTriangle,
 } from "lucide-react";
 
 // ── Types ─────────────────────────────────────────────────────────────────
@@ -444,15 +445,17 @@ const CATEGORIES: CategoryDef[] = [
     id: "security",
     label: "Security & Account",
     icon: <Lock size={14} />,
-    description: "Notification delivery, connected account settings, and maintenance utilities.",
+    description: "Protect sensitive account data, manage sessions, inspect account health, and handle data maintenance.",
     settings: [
-      { key: "browserNotifications", label: "Browser notifications", description: "Show OS-level push notifications", type: "toggle", default: false },
-      { key: "soundAlerts", label: "Sound alerts", description: "Play a tone when important alerts fire", type: "toggle", default: false },
-      { key: "toastDuration", label: "Toast duration", description: "How long in-app notifications stay on screen", type: "select", default: 3000, options: [{ label: "2 seconds", value: 2000 }, { label: "3 seconds", value: 3000 }, { label: "5 seconds", value: 5000 }, { label: "8 seconds", value: 8000 }] },
-      { key: "debugMode", label: "Debug mode", description: "Log API calls and render cycles to the browser console", type: "toggle", default: false },
-      { key: "apiTimeout", label: "API request timeout", description: "Abort requests that take longer than this", type: "number", default: 15000, min: 5000, max: 60000, step: 1000, unit: "ms" },
-      { key: "logLevel", label: "Log level", type: "select", default: "warn", options: [{ label: "Error only", value: "error" }, { label: "Warnings", value: "warn" }, { label: "Info", value: "info" }, { label: "Debug (verbose)", value: "debug" }] },
-      { key: "disableStreamer", label: "Disable live streamer", description: "Fall back to REST polling instead of DXLink WebSocket", type: "toggle", default: false },
+      { key: "hideSensitiveData", label: "Hide sensitive data mode", description: "Mask account numbers, balances, and P&L values for screensharing.", type: "toggle", default: false },
+      { key: "hideBuyingPowerDisplay", label: "Hide buying power display", type: "toggle", default: false },
+      { key: "hidePositionSizes", label: "Hide position sizes", type: "toggle", default: false },
+      { key: "hidePnlValues", label: "Hide P&L values", type: "toggle", default: false },
+      { key: "showSensitiveDataHiddenBanner", label: "Show Sensitive Data Hidden banner", type: "toggle", default: true },
+      { key: "autoLogoutTimer", label: "Auto-logout timer", type: "select", default: "never", options: [{ label: "Never", value: "never" }, { label: "30 minutes", value: "30m" }, { label: "1 hour", value: "1h" }, { label: "2 hours", value: "2h" }, { label: "4 hours", value: "4h" }] },
+      { key: "requirePasswordForCredentialChanges", label: "Require password confirmation before changing API keys or credentials", type: "toggle", default: true },
+      { key: "showLastLoginTimestamp", label: "Show last login timestamp in header", type: "toggle", default: false },
+      { key: "lockSettingsPageWithPassword", label: "Lock settings page with password", type: "toggle", default: false },
     ],
   },
 ];
@@ -741,6 +744,23 @@ type ServerEnvPayload = {
   };
 };
 
+type SettingsStatusPayload = {
+  database: { status: "connected" | "error"; latencyMs?: number; error?: string };
+  polygon: { status: "connected" | "disconnected" | "error" | "rate_limited" };
+  tastytrade: { status: "connected" | "disconnected" | "token_expired"; tokenExpiresAt: number | null };
+  serverUptimeMs: number;
+  lastScreenerRefresh: string | null;
+  appVersion: string;
+  nodeVersion: string;
+  storage: {
+    screenerCacheSize: number;
+    screenerCacheBytes: number;
+    watchlistSize: number;
+    settingsSize: number;
+    settingsBytes: number;
+  };
+};
+
 async function apiJson<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     ...init,
@@ -839,6 +859,10 @@ function DataUniversePanel({ settings, onChange }: { settings: AppSettings; onCh
   const saveServerEnv = async () => {
     const patch = Object.fromEntries(Object.entries(drafts).filter(([, value]) => value.trim() !== ""));
     if (Object.keys(patch).length === 0) return;
+    if (settings.requirePasswordForCredentialChanges) {
+      const typed = prompt('Type "CONFIRM" to save credential changes.');
+      if (typed !== "CONFIRM") return;
+    }
     setSaveMessage("Saving...");
     try {
       const next = await apiJson<ServerEnvPayload>("/api/settings/server-env", { method: "PATCH", body: JSON.stringify(patch) });
@@ -1693,6 +1717,251 @@ function PositionsSettingsPanel({
   );
 }
 
+const SECURITY_SECTION_SLICES = [
+  { label: "Display Security", start: 0, end: 5 },
+  { label: "Session Security", start: 5, end: 9 },
+] as const;
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function formatDuration(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m ${totalSeconds % 60}s`;
+}
+
+function formatStatusDate(value: string | null): string {
+  if (!value) return "Never";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
+function StatusDot({ status }: { status: string }) {
+  const ok = status === "connected";
+  const warning = status === "rate_limited" || status === "token_expired";
+  const error = status === "disconnected" || status === "error";
+  const color = ok ? "hsl(var(--success))" : warning ? "hsl(38 92% 50%)" : error ? "hsl(var(--destructive))" : "hsl(var(--muted-foreground))";
+  return <span style={{ width: 8, height: 8, borderRadius: "50%", background: color, boxShadow: `0 0 10px ${color}55`, flexShrink: 0 }} />;
+}
+
+function ConfirmActionRow({
+  label,
+  description,
+  icon,
+  onConfirm,
+}: {
+  label: string;
+  description: string;
+  icon: React.ReactNode;
+  onConfirm: () => void | Promise<void>;
+}) {
+  const run = useCallback(async () => {
+    if (!confirm(`${label}? This action cannot be undone.`)) return;
+    const typed = prompt('Type "CONFIRM" to continue.');
+    if (typed !== "CONFIRM") return;
+    await onConfirm();
+  }, [label, onConfirm]);
+
+  return <ActionRow label={label} description={description} icon={icon} onClick={run} variant="danger" />;
+}
+
+function SecuritySettingsPanel({
+  settings,
+  onChange,
+  onReset,
+  onResetAll,
+}: {
+  settings: AppSettings;
+  onChange: (key: string, value: unknown) => void;
+  onReset: () => void;
+  onResetAll: () => void;
+}) {
+  const securitySettings = CATEGORIES.find(category => category.id === "security")!.settings;
+  const queryClient = useQueryClient();
+  const [status, setStatus] = useState<SettingsStatusPayload | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const refreshStatus = useCallback(async () => {
+    try {
+      setStatus(await apiJson<SettingsStatusPayload>("/api/settings/status"));
+    } catch {
+      setStatus(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshStatus();
+    const timer = setInterval(refreshStatus, 30_000);
+    return () => clearInterval(timer);
+  }, [refreshStatus]);
+
+  const runAction = useCallback(async (key: string, action: () => Promise<void>) => {
+    setBusy(key);
+    try {
+      await action();
+      await refreshStatus();
+    } catch (err) {
+      alert((err as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  }, [refreshStatus]);
+
+  const clearScreenerCache = useCallback(() => runAction("screener", async () => {
+    const response = await fetch("/api/screener/flush", { method: "POST" });
+    if (!response.ok) throw new Error(await response.text());
+    queryClient.invalidateQueries({ queryKey: ["screener-stats"] });
+  }), [queryClient, runAction]);
+
+  const clearWatchlistCache = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["watchlist"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/watchlist"] });
+    alert("Watchlist cache cleared. The next watchlist view will refetch from the server.");
+  }, [queryClient]);
+
+  const clearWatchlist = useCallback(() => runAction("watchlist", async () => {
+    const response = await fetch("/api/watchlist", { method: "DELETE" });
+    if (!response.ok) throw new Error(await response.text());
+    queryClient.invalidateQueries();
+  }), [queryClient, runAction]);
+
+  const clearCachedData = useCallback(() => runAction("cache", async () => {
+    const response = await fetch("/api/screener/flush", { method: "POST" });
+    if (!response.ok) throw new Error(await response.text());
+    queryClient.clear();
+  }), [queryClient, runAction]);
+
+  const exportSettings = useCallback(async () => {
+    await runAction("export", async () => {
+      const response = await fetch("/api/settings/export", { method: "POST" });
+      if (!response.ok) throw new Error(await response.text());
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+      a.href = url;
+      a.download = `optionsos-settings-${stamp}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+  }, [runAction]);
+
+  const importSettings = useCallback(() => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "application/json,.json";
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      try {
+        const parsed = JSON.parse(await file.text());
+        const payload = parsed && typeof parsed === "object" && !Array.isArray(parsed) && "settings" in parsed ? parsed : { settings: parsed };
+        if (!payload.settings || typeof payload.settings !== "object" || Array.isArray(payload.settings)) {
+          throw new Error("Settings import must be a JSON object.");
+        }
+        await runAction("import", async () => {
+          const response = await fetch("/api/settings/import", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          if (!response.ok) throw new Error(await response.text());
+          await queryClient.invalidateQueries({ queryKey: ["settings"] });
+        });
+      } catch (err) {
+        alert(`Import failed: ${(err as Error).message}`);
+      }
+    };
+    input.click();
+  }, [queryClient, runAction]);
+
+  return (
+    <div style={{ paddingTop: 8, display: "grid", gap: 24 }}>
+      <div style={{ border: "1px solid rgba(255,255,255,0.07)", borderRadius: 8, background: "rgba(255,255,255,0.02)", padding: 14 }}>
+        <div style={{ fontSize: 14, fontWeight: 700 }}>Security Snapshot</div>
+        <div style={{ fontSize: 11.5, color: "hsl(var(--muted-foreground))", marginTop: 3 }}>Sensitive display mode, session behavior, and live account health.</div>
+        <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
+          <RiskSummaryItem label="Hide Mode" value={settings.hideSensitiveData ? "Active" : "Off"} tone={settings.hideSensitiveData ? "warning" : "default"} />
+          <RiskSummaryItem label="Auto Logout" value={settings.autoLogoutTimer === "never" ? "Never" : settings.autoLogoutTimer} />
+          <RiskSummaryItem label="Uptime" value={status ? formatDuration(status.serverUptimeMs) : "Loading"} />
+          <RiskSummaryItem label="Settings Stored" value={status ? String(status.storage.settingsSize) : "Loading"} />
+        </div>
+      </div>
+
+      {SECURITY_SECTION_SLICES.map(section => (
+        <div key={section.label}>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: "hsl(var(--muted-foreground))", textTransform: "uppercase" }}>{section.label}</div>
+          {securitySettings.slice(section.start, section.end).map(setting => (
+            <SettingRow key={setting.key} setting={setting} value={settings[setting.key as keyof AppSettings]} onChange={onChange} />
+          ))}
+        </div>
+      ))}
+
+      <div>
+        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: "hsl(var(--muted-foreground))", textTransform: "uppercase" }}>Cache & Data</div>
+        <ActionRow label={busy === "screener" ? "Clearing..." : "Clear screener cache"} description="Flush server screener rows through POST /api/screener/flush" icon={<RotateCcw size={13} />} onClick={clearScreenerCache} />
+        <ActionRow label="Clear watchlist cache" description="Drop the frontend watchlist cache and refetch on next view" icon={<RotateCcw size={13} />} onClick={clearWatchlistCache} />
+        <ActionRow label={busy === "export" ? "Exporting..." : "Export all settings as JSON"} description="Download a timestamped backup file" icon={<Download size={13} />} onClick={exportSettings} />
+        <ActionRow label={busy === "import" ? "Importing..." : "Import settings from JSON"} description="Validate a backup file before applying it" icon={<Upload size={13} />} onClick={importSettings} />
+        <ConfirmActionRow label="Clear all user settings and reset to defaults" description="Erase every user_settings row and reload defaults" icon={<Trash2 size={13} />} onConfirm={onResetAll} />
+        {status && (
+          <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
+            <RiskSummaryItem label="Screener Cache" value={`${status.storage.screenerCacheSize} rows`} />
+            <RiskSummaryItem label="Screener Bytes" value={formatBytes(status.storage.screenerCacheBytes)} />
+            <RiskSummaryItem label="Watchlist Size" value={`${status.storage.watchlistSize} symbols`} />
+            <RiskSummaryItem label="Settings Size" value={formatBytes(status.storage.settingsBytes)} />
+          </div>
+        )}
+      </div>
+
+      <div>
+        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: "hsl(var(--muted-foreground))", textTransform: "uppercase" }}>Account Info</div>
+        <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
+          {[
+            ["Database", status?.database.status ?? "loading", status?.database.latencyMs != null ? `${status.database.latencyMs}ms` : ""],
+            ["Polygon API", status?.polygon.status ?? "loading", ""],
+            ["Tastytrade", status?.tastytrade.status ?? "loading", status?.tastytrade.tokenExpiresAt ? `expires ${new Date(status.tastytrade.tokenExpiresAt).toLocaleString()}` : ""],
+            ["Server uptime", status ? formatDuration(status.serverUptimeMs) : "loading", ""],
+            ["Last screener refresh", status ? formatStatusDate(status.lastScreenerRefresh) : "loading", ""],
+            ["App version", status?.appVersion ?? "loading", ""],
+            ["Node.js version", status?.nodeVersion ?? "loading", ""],
+          ].map(([label, value, detail]) => (
+            <div key={label} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "11px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.02)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <StatusDot status={String(value)} />
+                <span style={{ fontSize: 12.5, fontWeight: 600 }}>{label}</span>
+              </div>
+              <div style={{ textAlign: "right" }}>
+                <div style={{ fontSize: 12, fontWeight: 700, textTransform: "capitalize" }}>{String(value).replace(/_/g, " ")}</div>
+                {detail && <div style={{ fontSize: 10.5, color: "hsl(var(--muted-foreground))", marginTop: 2 }}>{detail}</div>}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ border: "1px solid rgba(239,68,68,0.32)", borderRadius: 8, background: "rgba(239,68,68,0.05)", padding: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, color: "hsl(var(--destructive))", fontSize: 13, fontWeight: 800, marginBottom: 10 }}>
+          <AlertTriangle size={15} />
+          Danger Zone
+        </div>
+        <ConfirmActionRow label="Reset all settings to defaults" description="Delete all user settings after double confirmation" icon={<RotateCcw size={13} />} onConfirm={onResetAll} />
+        <ConfirmActionRow label="Clear all cached data" description="Flush screener cache and clear client-side query cache" icon={<HardDrive size={13} />} onConfirm={clearCachedData} />
+        <ConfirmActionRow label="Clear watchlist" description="Delete every saved watchlist symbol" icon={<Trash2 size={13} />} onConfirm={clearWatchlist} />
+      </div>
+
+      <ActionRow label="Reset to Defaults" description="Restore every Security & Account option to its default value" icon={<RotateCcw size={13} />} onClick={onReset} />
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const isMobile = useIsMobile();
   const [activeCategory, setActiveCategory] = useState("general");
@@ -1705,7 +1974,6 @@ export default function SettingsPage() {
   }, [updateSetting]);
 
   const handleResetToDefaults = useCallback(() => {
-    if (!confirm("Reset all settings to their defaults? This cannot be undone.")) return;
     resetSettings();
   }, [resetSettings]);
 
@@ -1886,35 +2154,12 @@ export default function SettingsPage() {
             )}
 
             {activeCategory === "security" && (
-              <div style={{ paddingTop: 8 }}>
-                {activeCategoryDef.settings.map(s => (
-                  <SettingRow key={s.key} setting={s} value={settings[s.key as keyof AppSettings]} onChange={handleChange} />
-                ))}
-
-                <div style={{ marginTop: 28, display: "flex", flexDirection: "column", gap: 10 }}>
-                  <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.06em", color: "hsl(var(--muted-foreground))", marginBottom: 4 }}>MAINTENANCE</div>
-
-                  <ActionRow
-                    label="Clear query cache"
-                    description="Force all data to reload on next page visit"
-                    icon={<RotateCcw size={13} />}
-                    onClick={handleClearQueryCache}
-                  />
-                  <ActionRow
-                    label="Export settings"
-                    description="Download your settings as a JSON file"
-                    icon={<Download size={13} />}
-                    onClick={handleExportSettings}
-                  />
-                  <ActionRow
-                    label="Reset to defaults"
-                    description="Erase all saved settings and restore factory defaults"
-                    icon={<RotateCcw size={13} />}
-                    onClick={handleResetToDefaults}
-                    variant="danger"
-                  />
-                </div>
-              </div>
+              <SecuritySettingsPanel
+                settings={settings}
+                onChange={handleChange}
+                onReset={() => handleResetCategory(activeCategoryDef)}
+                onResetAll={handleResetToDefaults}
+              />
             )}
 
             {/* All other categories */}

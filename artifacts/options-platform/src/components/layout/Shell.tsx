@@ -3,6 +3,7 @@ import { Activity, LayoutDashboard, Filter, LineChart, Briefcase, Bookmark, Sett
 import { useState, useEffect } from "react";
 import { GlobalSearch } from "./GlobalSearch";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useSettings } from "@/contexts/SettingsContext";
 import {
   useGetTastytradeAuthStatus,
   useGetTastytradeStreamerStatus,
@@ -49,6 +50,7 @@ export function Shell({ children }: ShellProps) {
   const search     = useSearch();
   const marketOpen = useMarketOpen();
   const isMobile   = useIsMobile();
+  const { settings, sensitiveDataHidden } = useSettings();
   const { data: authStatus } = useGetTastytradeAuthStatus();
   const { data: streamerStatus } = useGetTastytradeStreamerStatus({
     query: { enabled: Boolean(authStatus?.enabled && authStatus?.connected) },
@@ -61,8 +63,15 @@ export function Shell({ children }: ShellProps) {
   const ttBorder = streamerLive ? "hsl(var(--success)/0.22)" : "hsl(43 96% 56% / 0.24)";
   const ttBg = streamerLive ? "hsl(var(--success)/0.1)" : "hsl(43 96% 56% / 0.12)";
 
+  const lastLogin = new Date().toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+
   return (
     <div className="flex h-[100dvh] w-full flex-col overflow-hidden bg-background text-foreground font-sans">
+      {sensitiveDataHidden && settings.showSensitiveDataHiddenBanner && (
+        <div style={{ height: 28, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, background: "rgba(239,68,68,0.16)", borderBottom: "1px solid rgba(239,68,68,0.28)", color: "hsl(var(--destructive))", fontSize: 12, fontWeight: 700 }}>
+          Sensitive Data Hidden
+        </div>
+      )}
       <header
         style={{
           display: "flex",
@@ -118,6 +127,11 @@ export function Shell({ children }: ShellProps) {
 
         {/* Right */}
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          {!isMobile && settings.showLastLoginTimestamp && (
+            <span style={{ fontSize: 11, color: "hsl(var(--muted-foreground))", fontVariantNumeric: "tabular-nums" }}>
+              Last login {lastLogin}
+            </span>
+          )}
           {showTastytradeBadge && (
             <div
               style={{

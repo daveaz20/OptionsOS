@@ -25,6 +25,7 @@ import { cn } from "@/lib/utils";
 import { Link } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { useSettings } from "@/contexts/SettingsContext";
 
 // ── Module Registry ───────────────────────────────────────────────────────
 export interface ModuleDef {
@@ -170,6 +171,7 @@ function AccountSummaryModule() {
   const { data, isLoading, error } = useGetAccountSummary();
   const isMobile = useIsMobile();
   const { data: authStatus } = useGetTastytradeAuthStatus();
+  const { settings, maskSensitiveValue } = useSettings();
 
   if (error) {
     const status = (error as any)?.status;
@@ -191,18 +193,19 @@ function AccountSummaryModule() {
   const stats = [
     {
       label: "NET LIQUIDATING VALUE",
-      value: isLoading ? null : `$${(data?.netLiquidatingValue ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      value: isLoading ? null : maskSensitiveValue(`$${(data?.netLiquidatingValue ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, "balance"),
       color: undefined,
     },
     {
       label: "OPTION BUYING POWER",
-      value: isLoading ? null : `$${(data?.optionBuyingPower ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      value: isLoading ? null : maskSensitiveValue(`$${(data?.optionBuyingPower ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, "buyingPower"),
       color: undefined,
+      hide: settings.hideBuyingPowerDisplay,
     },
     {
       label: "TODAY'S P&L",
       value: isLoading ? null : (data?.dayPnl !== undefined
-        ? `${data.dayPnl >= 0 ? "+" : ""}$${Math.abs(data.dayPnl).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+        ? maskSensitiveValue(`${data.dayPnl >= 0 ? "+" : ""}$${Math.abs(data.dayPnl).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, "pnl")
         : "—"),
       color: data?.dayPnl !== undefined
         ? (data.dayPnl >= 0 ? "hsl(var(--success))" : "hsl(var(--destructive))")
@@ -217,7 +220,7 @@ function AccountSummaryModule() {
     {
       label: "PORTFOLIO THETA",
       value: isLoading ? null : (data?.portfolioTheta !== undefined
-        ? `${data.portfolioTheta >= 0 ? "+" : ""}$${Math.abs(data.portfolioTheta).toFixed(2)}/d`
+        ? maskSensitiveValue(`${data.portfolioTheta >= 0 ? "+" : ""}$${Math.abs(data.portfolioTheta).toFixed(2)}/d`, "pnl")
         : "—"),
       color: data?.portfolioTheta !== undefined
         ? (data.portfolioTheta < 0 ? "hsl(var(--destructive))" : "hsl(var(--success))")
@@ -227,7 +230,7 @@ function AccountSummaryModule() {
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2,1fr)" : "repeat(5,1fr)", gap: 10 }}>
-      {stats.map((s, i) => (
+      {stats.filter((s) => !s.hide).map((s, i) => (
         <div key={i} style={{ padding: "13px 14px", borderRadius: 9, border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.02)" }}>
           <div style={{ fontSize: 9.5, letterSpacing: "0.05em", color: "hsl(var(--muted-foreground))", marginBottom: 7, fontWeight: 500 }}>{s.label}</div>
           {isLoading

@@ -9,6 +9,8 @@ interface SettingsContextValue {
   settings: AppSettings;
   isLoading: boolean;
   saveStatus: SaveStatus;
+  sensitiveDataHidden: boolean;
+  maskSensitiveValue: (value: ReactNode, kind?: "account" | "balance" | "buyingPower" | "pnl" | "positionSize") => ReactNode;
   updateSetting: <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => void;
   resetSettings: () => void;
 }
@@ -119,8 +121,19 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     });
   }, [deleteMutation]);
 
+  const sensitiveDataHidden = Boolean(settings.hideSensitiveData);
+
+  const maskSensitiveValue = useCallback((value: ReactNode, kind: "account" | "balance" | "buyingPower" | "pnl" | "positionSize" = "balance") => {
+    const shouldMask =
+      settings.hideSensitiveData ||
+      (kind === "buyingPower" && settings.hideBuyingPowerDisplay) ||
+      (kind === "pnl" && settings.hidePnlValues) ||
+      (kind === "positionSize" && settings.hidePositionSizes);
+    return shouldMask ? "••••••" : value;
+  }, [settings.hideBuyingPowerDisplay, settings.hidePnlValues, settings.hidePositionSizes, settings.hideSensitiveData]);
+
   return (
-    <SettingsContext.Provider value={{ settings, isLoading, saveStatus, updateSetting, resetSettings }}>
+    <SettingsContext.Provider value={{ settings, isLoading, saveStatus, sensitiveDataHidden, maskSensitiveValue, updateSetting, resetSettings }}>
       {children}
     </SettingsContext.Provider>
   );

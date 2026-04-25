@@ -696,6 +696,10 @@ export function getScreenerData(): ScreenerRow[] {
   return cache.data;
 }
 
+export function getScreenerCacheInfo(): { count: number; cachedAt: number } {
+  return { count: cache.data.length, cachedAt: cache.at };
+}
+
 /** Returns a single cached row by symbol, or undefined if not found */
 export function getScreenerRow(symbol: string): ScreenerRow | undefined {
   return cache.data.find(r => r.symbol === symbol.toUpperCase());

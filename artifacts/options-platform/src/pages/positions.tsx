@@ -167,7 +167,7 @@ function AlertBadge({ alert }: { alert: PositionAlert }) {
   );
 }
 
-function renderPnl(position: ExtendedPosition, format: string, scheme: string) {
+function renderPnl(position: ExtendedPosition, format: string, scheme: string, maskValue: (value: React.ReactNode, kind?: "account" | "balance" | "buyingPower" | "pnl" | "positionSize") => React.ReactNode) {
   const positive = pnlTone(position);
   const color = pnlColor(positive, scheme);
   const amount = `${position.totalPnl >= 0 ? "+" : ""}${formatCurrency(position.totalPnl)}`;
@@ -181,13 +181,13 @@ function renderPnl(position: ExtendedPosition, format: string, scheme: string) {
             : <ArrowDownRight style={{ width: 12, height: 12, color }} />
           }
           <span style={{ fontSize: 14, fontWeight: 700, letterSpacing: "-0.02em", color, fontVariantNumeric: "tabular-nums" }}>
-            {amount}
+            {maskValue(amount, "pnl")}
           </span>
         </div>
       )}
       {format !== "amount" && (
         <div style={{ fontSize: 10, color, fontVariantNumeric: "tabular-nums", fontWeight: format === "percent" ? 700 : 500 }}>
-          {pct}
+          {maskValue(pct, "pnl")}
         </div>
       )}
     </div>
@@ -197,7 +197,7 @@ function renderPnl(position: ExtendedPosition, format: string, scheme: string) {
 function PositionRow({ position }: { position: ExtendedPosition }) {
   const [expanded, setExpanded] = useState(false);
   const isMobile = useIsMobile();
-  const { settings } = useSettings();
+  const { settings, maskSensitiveValue } = useSettings();
   const thetaColor = position.greeks.theta < 0 ? "hsl(var(--destructive))" : "hsl(var(--success))";
   const dteColor = position.dte <= 7 ? "hsl(var(--destructive))" : position.dte <= 21 ? "hsl(30 95% 60%)" : "hsl(var(--foreground))";
   const alerts = position.alerts ?? [];
@@ -238,7 +238,7 @@ function PositionRow({ position }: { position: ExtendedPosition }) {
           </div>
         </div>
 
-        {renderPnl(position, settings.positionsPnlDisplayFormat, settings.pnlColorScheme)}
+        {renderPnl(position, settings.positionsPnlDisplayFormat, settings.pnlColorScheme, maskSensitiveValue)}
 
         {!isMobile && (
           <div>
@@ -272,9 +272,9 @@ function PositionRow({ position }: { position: ExtendedPosition }) {
         <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)", padding: isMobile ? "10px 14px 12px" : "12px 18px 14px" }}>
           <div style={{ display: "flex", gap: 16, marginBottom: 10, flexWrap: "wrap" }}>
             <GreekPill label="OPENED" value={formatDate(position.openedAt)} />
-            {settings.showUnrealizedPnl && <GreekPill label="UNREALIZED" value={formatCurrency(position.unrealizedPnl ?? position.totalPnl)} color={pnlColor((position.unrealizedPnl ?? position.totalPnl) >= 0, settings.pnlColorScheme)} />}
-            {settings.showRealizedPnl && <GreekPill label="REALIZED" value={formatCurrency(position.realizedPnl ?? 0)} />}
-            {settings.showPnlAsPctOfMaxProfit && <GreekPill label="% MAX PROFIT" value={`${(position.maxProfitPnlPercent ?? position.totalPnlPercent).toFixed(2)}%`} />}
+            {settings.showUnrealizedPnl && <GreekPill label="UNREALIZED" value={String(maskSensitiveValue(formatCurrency(position.unrealizedPnl ?? position.totalPnl), "pnl"))} color={pnlColor((position.unrealizedPnl ?? position.totalPnl) >= 0, settings.pnlColorScheme)} />}
+            {settings.showRealizedPnl && <GreekPill label="REALIZED" value={String(maskSensitiveValue(formatCurrency(position.realizedPnl ?? 0), "pnl"))} />}
+            {settings.showPnlAsPctOfMaxProfit && <GreekPill label="% MAX PROFIT" value={String(maskSensitiveValue(`${(position.maxProfitPnlPercent ?? position.totalPnlPercent).toFixed(2)}%`, "pnl"))} />}
             {isMobile && <GreekPill label="DTE" value={String(position.dte)} color={dteColor} />}
             {isMobile && settings.showPositionThetaDecayPerDay && <GreekPill label="THETA" value={`${position.greeks.theta >= 0 ? "+" : ""}${formatCurrency(position.greeks.theta)}/d`} color={thetaColor} />}
           </div>
@@ -315,7 +315,7 @@ function PositionRow({ position }: { position: ExtendedPosition }) {
                   <GreekPill label="ENTRY" value={formatCurrency(leg.openPrice)} />
                   <GreekPill label="CURRENT" value={formatCurrency(leg.livePrice ?? leg.currentPrice)} />
                   <div style={{ textAlign: isMobile ? "left" : "right" }}>
-                    <GreekPill label="P&L" value={`${leg.pnl >= 0 ? "+" : ""}${formatCurrency(leg.pnl)}`} color={legPnlColor} />
+                    <GreekPill label="P&L" value={String(maskSensitiveValue(`${leg.pnl >= 0 ? "+" : ""}${formatCurrency(leg.pnl)}`, "pnl"))} color={legPnlColor} />
                   </div>
                 </div>
               );
@@ -345,16 +345,16 @@ function StatCard({ label, value, color }: { label: string; value: string; color
 
 function PortfolioSummary({ positions, buyingPowerUsedPct, closedPnl }: { positions: ExtendedPosition[]; buyingPowerUsedPct: number; closedPnl: number }) {
   const isMobile = useIsMobile();
-  const { settings } = useSettings();
+  const { settings, maskSensitiveValue } = useSettings();
   const totalPnl = positions.reduce((s, p) => s + p.totalPnl, 0) + (settings.includeClosedPositionsInPnlTotals ? closedPnl : 0);
   const totalTheta = positions.reduce((s, p) => s + p.greeks.theta, 0);
   const totalDelta = positions.reduce((s, p) => s + p.greeks.delta, 0);
   const cards = [
-    { label: "TOTAL P&L", value: formatCurrency(totalPnl), color: pnlColor(totalPnl >= 0, settings.pnlColorScheme), show: true },
-    { label: "DAILY P&L", value: formatCurrency(positions.reduce((s, p) => s + p.totalPnl, 0)), color: pnlColor(totalPnl >= 0, settings.pnlColorScheme), show: settings.showDailyPnlChange },
+    { label: "TOTAL P&L", value: String(maskSensitiveValue(formatCurrency(totalPnl), "pnl")), color: pnlColor(totalPnl >= 0, settings.pnlColorScheme), show: true },
+    { label: "DAILY P&L", value: String(maskSensitiveValue(formatCurrency(positions.reduce((s, p) => s + p.totalPnl, 0)), "pnl")), color: pnlColor(totalPnl >= 0, settings.pnlColorScheme), show: settings.showDailyPnlChange },
     { label: "PORTFOLIO THETA", value: `${formatCurrency(totalTheta)}/d`, color: totalTheta < 0 ? "hsl(var(--destructive))" : "hsl(var(--success))", show: settings.showPositionsPortfolioGreeksSummary },
     { label: "DELTA EXPOSURE", value: (totalDelta >= 0 ? "+" : "") + totalDelta.toFixed(3), color: undefined, show: settings.showPortfolioDeltaExposure },
-    { label: "BUYING POWER USED", value: `${buyingPowerUsedPct.toFixed(1)}%`, color: undefined, show: settings.showBuyingPowerUsedPct },
+    { label: "BUYING POWER USED", value: String(maskSensitiveValue(`${buyingPowerUsedPct.toFixed(1)}%`, "buyingPower")), color: undefined, show: settings.showBuyingPowerUsedPct && !settings.hideBuyingPowerDisplay },
     { label: "OPEN POSITIONS", value: String(positions.length), color: undefined, show: true },
   ].filter(card => card.show);
 
@@ -389,7 +389,7 @@ function AllocationChart({ title, data }: { title: string; data: Array<{ label: 
 }
 
 function PositionGroup({ label, positions }: { label: string; positions: ExtendedPosition[] }) {
-  const { settings } = useSettings();
+  const { settings, maskSensitiveValue } = useSettings();
   const [collapsed, setCollapsed] = useState(settings.collapsePositionGroupsByDefault);
   const totalPnl = positions.reduce((sum, position) => sum + position.totalPnl, 0);
   const totalDelta = positions.reduce((sum, position) => sum + position.greeks.delta, 0);
@@ -417,7 +417,7 @@ function PositionGroup({ label, positions }: { label: string; positions: Extende
           </div>
           {settings.showPositionGroupSubtotals && (
             <div style={{ display: "flex", alignItems: "center", gap: 12, fontSize: 11, fontWeight: 700 }}>
-              <span style={{ color: pnlColor(totalPnl >= 0, settings.pnlColorScheme) }}>{formatCurrency(totalPnl)}</span>
+              <span style={{ color: pnlColor(totalPnl >= 0, settings.pnlColorScheme) }}>{maskSensitiveValue(formatCurrency(totalPnl), "pnl")}</span>
               {settings.showPortfolioGreeksPerGroup && <span>Δ {(totalDelta >= 0 ? "+" : "") + totalDelta.toFixed(2)}</span>}
               {settings.showPortfolioGreeksPerGroup && <span>Θ {formatCurrency(totalTheta)}/d</span>}
             </div>
@@ -431,7 +431,7 @@ function PositionGroup({ label, positions }: { label: string; positions: Extende
 }
 
 function ClosedPositions({ stats }: { stats?: PositionStats }) {
-  const { settings } = useSettings();
+  const { settings, maskSensitiveValue } = useSettings();
   if (!settings.showClosedPositions || !stats) return null;
   return (
     <div style={{ marginTop: 24, borderTop: "1px solid rgba(255,255,255,0.07)", paddingTop: 18 }}>
@@ -455,7 +455,7 @@ function ClosedPositions({ stats }: { stats?: PositionStats }) {
           }}>
             <div style={{ fontWeight: 700 }}>{position.symbol || "N/A"}</div>
             <div style={{ color: "hsl(var(--muted-foreground))", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{position.description}</div>
-            <div style={{ textAlign: "right", color: pnlColor(position.pnl >= 0, settings.pnlColorScheme), fontWeight: 700 }}>{formatCurrency(position.pnl)}</div>
+            <div style={{ textAlign: "right", color: pnlColor(position.pnl >= 0, settings.pnlColorScheme), fontWeight: 700 }}>{maskSensitiveValue(formatCurrency(position.pnl), "pnl")}</div>
           </div>
         ))}
         {stats.closedPositions.length === 0 && (
@@ -489,7 +489,7 @@ export default function PositionsPage() {
       refetchInterval,
     },
   });
-  const { data: balances } = useGetAccountBalances({ query: { enabled: settings.showBuyingPowerUsedPct } });
+  const { data: balances } = useGetAccountBalances({ query: { enabled: settings.showBuyingPowerUsedPct && !settings.hideBuyingPowerDisplay } });
   const { data: stats } = useQuery<PositionStats>({
     queryKey: ["position-stats", settings.winRateCalculationPeriod, settings.closedPositionHistoryDays],
     queryFn: async () => {

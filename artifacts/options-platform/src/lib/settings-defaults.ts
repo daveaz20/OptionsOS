@@ -214,6 +214,15 @@ export interface AppSettings {
   enableAfterHours: boolean;
   cacheStrategy: string;
   // Advanced / Security
+  hideSensitiveData: boolean;
+  hideBuyingPowerDisplay: boolean;
+  hidePositionSizes: boolean;
+  hidePnlValues: boolean;
+  showSensitiveDataHiddenBanner: boolean;
+  autoLogoutTimer: string;
+  requirePasswordForCredentialChanges: boolean;
+  showLastLoginTimestamp: boolean;
+  lockSettingsPageWithPassword: boolean;
   debugMode: boolean;
   apiTimeout: number;
   logLevel: string;
@@ -542,6 +551,15 @@ export const SETTING_DEFAULTS: AppSettings = {
   enableAfterHours: false,
   cacheStrategy: "moderate",
   // Advanced / Security
+  hideSensitiveData: false,
+  hideBuyingPowerDisplay: false,
+  hidePositionSizes: false,
+  hidePnlValues: false,
+  showSensitiveDataHiddenBanner: true,
+  autoLogoutTimer: "never",
+  requirePasswordForCredentialChanges: true,
+  showLastLoginTimestamp: false,
+  lockSettingsPageWithPassword: false,
   debugMode: false,
   apiTimeout: 15000,
   logLevel: "warn",
