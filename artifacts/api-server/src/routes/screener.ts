@@ -102,11 +102,7 @@ async function getScreenerSettings(): Promise<ScreenerSettings> {
     entryScore: typeof values.highConvictionEntryScore === "number" ? values.highConvictionEntryScore : DEFAULT_HIGH_CONVICTION_THRESHOLDS.entryScore,
     momentumScore: typeof values.highConvictionMomentumScore === "number" ? values.highConvictionMomentumScore : DEFAULT_HIGH_CONVICTION_THRESHOLDS.momentumScore,
   };
-  const enabledStrategyIds = values.enabledStrategyIds && typeof values.enabledStrategyIds === "object" && !Array.isArray(values.enabledStrategyIds)
-    ? values.enabledStrategyIds as Record<string, boolean>
-    : {};
   const strategyPreferences: StrategyPreferences = {
-    enabledStrategyIds,
     preferredIvEnvironment: values.preferredIvEnvironment === "high" || values.preferredIvEnvironment === "low" ? values.preferredIvEnvironment : DEFAULT_STRATEGY_PREFERENCES.preferredIvEnvironment,
     ivRankLowThreshold: typeof values.ivRankLowThreshold === "number" ? values.ivRankLowThreshold : DEFAULT_STRATEGY_PREFERENCES.ivRankLowThreshold,
     ivRankHighThreshold: typeof values.ivRankHighThreshold === "number" ? values.ivRankHighThreshold : DEFAULT_STRATEGY_PREFERENCES.ivRankHighThreshold,
@@ -167,14 +163,6 @@ export interface ScreenerRow {
   priceSource?: "tastytrade-live" | "polygon";
   isETF?: boolean;
   etfCategory?: "leveraged-bull" | "leveraged-bear" | "leveraged-single" | "sector";
-  topStrategies?: Array<{
-    id: string;
-    name: string;
-    fitScore: number;
-    fitReason: string;
-    tier: string;
-    url: string;
-  }>;
 }
 
 interface Cache { data: ScreenerRow[]; at: number; promise: Promise<void> | null }
@@ -258,10 +246,9 @@ async function buildYahooData(strategyPreferences: StrategyPreferences, riskPref
           entryScore: scan?.entryScore ?? 0,
           momentumScore: scan?.momentumScore ?? 0,
           vwapScore: scan?.vwapScore ?? 0,
-          setupType: scan?.setupType ?? "long_call",
+          setupType: scan?.setupType ?? "Neutral",
           recommendedOutlook: scan?.recommendedOutlook ?? "neutral",
           supportPrice: sig.support, resistancePrice: sig.resistance,
-          topStrategies: scan?.topStrategies ?? [],
           ...(etfCat ? { isETF: true, etfCategory: etfCat } : {}),
         } satisfies ScreenerRow;
       } catch (err) {
@@ -270,9 +257,8 @@ async function buildYahooData(strategyPreferences: StrategyPreferences, riskPref
           ...base,
           technicalStrength: 5, rsi14: 50, macdHistogram: 0, ivRank: 30,
           opportunityScore: 25, technicalScore: 0, ivScore: 0, entryScore: 0, momentumScore: 0, vwapScore: 0,
-          setupType: "long_call", recommendedOutlook: "neutral",
+          setupType: "Neutral", recommendedOutlook: "neutral",
           supportPrice: r2(q.price * 0.94), resistancePrice: r2(q.price * 1.06),
-          topStrategies: [],
         } satisfies ScreenerRow;
       }
     }));
@@ -407,7 +393,6 @@ async function buildPolygonData(strategyPreferences: StrategyPreferences, riskPr
           setupType: scan.setupType,
           recommendedOutlook: scan.recommendedOutlook,
           supportPrice: sig.support, resistancePrice: sig.resistance,
-          topStrategies: scan.topStrategies,
           ...(etfRef ? { isETF: true, etfCategory: etfRef.etfCategory } : {}),
         } satisfies ScreenerRow;
       } catch (err) {
@@ -416,9 +401,8 @@ async function buildPolygonData(strategyPreferences: StrategyPreferences, riskPr
           ...base,
           technicalStrength: 5, rsi14: 50, macdHistogram: 0, ivRank: 30,
           opportunityScore: 25, technicalScore: 0, ivScore: 0, entryScore: 0, momentumScore: 0, vwapScore: 0,
-          setupType: "long_call", recommendedOutlook: "neutral",
+          setupType: "Neutral", recommendedOutlook: "neutral",
           supportPrice: r2(price * 0.94), resistancePrice: r2(price * 1.06),
-          topStrategies: [],
         } satisfies ScreenerRow;
       }
     }));
@@ -496,8 +480,7 @@ async function doRefresh(): Promise<void> {
 function matchesPreferredStrategy(row: ScreenerRow, preferredStrategies: string[]): boolean {
   if (preferredStrategies.length === 0) return true;
   const preferred = new Set(preferredStrategies.map((strategy) => strategy.toLowerCase()));
-  if (preferred.has(row.setupType.toLowerCase())) return true;
-  return (row.topStrategies ?? []).some((strategy) => preferred.has(strategy.name.toLowerCase()));
+  return preferred.has(row.setupType.toLowerCase());
 }
 
 async function applyWatchlistAutomation(rows: ScreenerRow[], settings: WatchlistRefreshSettings): Promise<void> {

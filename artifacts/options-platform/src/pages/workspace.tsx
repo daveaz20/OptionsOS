@@ -4,8 +4,7 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/componen
 import { StockListPanel } from "@/components/workspace/StockListPanel";
 import { StockDetailPanel } from "@/components/workspace/StockDetailPanel";
 import { StrategyPanel } from "@/components/workspace/StrategyPanel";
-import { useGetStock, useListStocks } from "@workspace/api-client-react";
-import type { Stock } from "@workspace/api-client-react";
+import { useGetStock } from "@workspace/api-client-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 
 type MobileTab = "list" | "detail" | "strategy";
@@ -33,7 +32,6 @@ export default function ScannerPage() {
   })() as "ideas" | "watchlist";
 
   const [selectedSymbol, setSelectedSymbol] = useState<string>(initialSymbol);
-  const [selectedStock, setSelectedStock] = useState<Stock | null>(null);
   const [stockListTab, setStockListTab] = useState<"ideas" | "watchlist">(initialStockListTab);
 
   // Reactive to both path and search changes (handles same-path navigation with different ?tab=)
@@ -42,24 +40,13 @@ export default function ScannerPage() {
       const params = new URLSearchParams(search || window.location.search);
       const sym = params.get("symbol");
       const tab = params.get("tab");
-      if (sym && sym !== selectedSymbol) { setSelectedSymbol(sym); setSelectedStock(null); }
+      if (sym && sym !== selectedSymbol) { setSelectedSymbol(sym); }
       if (tab === "watchlist") setStockListTab("watchlist");
       else if (!tab) setStockListTab("ideas");
     } catch { /* ignore */ }
   }, [location, search]);
 
   const { data: stock } = useGetStock(selectedSymbol, { query: { enabled: !!selectedSymbol } });
-
-  // Sync selectedStock from screener data (handles URL-based navigation / initial load)
-  const { data: screenerResults = [] } = useListStocks(
-    { search: selectedSymbol, limit: 5 },
-    { query: { enabled: !!selectedSymbol && !selectedStock } as any },
-  );
-  useEffect(() => {
-    if (selectedStock?.symbol === selectedSymbol) return;
-    const found = screenerResults.find(s => s.symbol === selectedSymbol);
-    if (found) setSelectedStock(found);
-  }, [screenerResults, selectedSymbol]);
 
   // Mobile: single-panel tab layout
   if (isMobile) {
@@ -70,7 +57,7 @@ export default function ScannerPage() {
           {mobileTab === "list" && (
             <StockListPanel
               selectedSymbol={selectedSymbol}
-              onSelect={(sym, s) => { setSelectedSymbol(sym); if (s) setSelectedStock(s); setMobileTab("detail"); }}
+              onSelect={(sym) => { setSelectedSymbol(sym); setMobileTab("detail"); }}
               initialTab={stockListTab}
             />
           )}
@@ -82,7 +69,6 @@ export default function ScannerPage() {
               symbol={selectedSymbol}
               currentPrice={stock?.price}
               recommendedOutlook={stock?.recommendedOutlook}
-              topStrategies={selectedStock?.topStrategies}
             />
           )}
         </div>
@@ -123,7 +109,7 @@ export default function ScannerPage() {
         <ResizablePanel defaultSize={20} minSize={15} maxSize={30} className="h-full">
           <StockListPanel
             selectedSymbol={selectedSymbol}
-            onSelect={(sym, s) => { setSelectedSymbol(sym); if (s) setSelectedStock(s); }}
+            onSelect={(sym) => { setSelectedSymbol(sym); }}
             initialTab={stockListTab}
           />
         </ResizablePanel>
@@ -141,7 +127,6 @@ export default function ScannerPage() {
             symbol={selectedSymbol}
             currentPrice={stock?.price}
             recommendedOutlook={stock?.recommendedOutlook}
-            topStrategies={selectedStock?.topStrategies}
           />
         </ResizablePanel>
       </ResizablePanelGroup>

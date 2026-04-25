@@ -1,20 +1,15 @@
 import { useDeferredValue, useMemo, useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useListStocks, useGetWatchlist } from "@workspace/api-client-react";
-import { ArrowDownRight, ArrowUpRight, ChevronDown, Search, SlidersHorizontal, Star, Zap } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, Search, SlidersHorizontal, Star, Zap } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { formatCurrency, formatPercent } from "@/lib/format";
-import type { Stock, WatchlistItem } from "@workspace/api-client-react";
-import { StrategyFilterDropdown } from "@/components/strategy/StrategyFilterDropdown";
+import type { WatchlistItem, Stock } from "@workspace/api-client-react";
 import { useSettings } from "@/contexts/SettingsContext";
-import {
-  getMatchedStrategy,
-  useStrategyRegistry,
-} from "@/lib/strategy-catalog";
 
 interface StockListPanelProps {
   selectedSymbol: string;
-  onSelect: (symbol: string, stock?: Stock) => void;
+  onSelect: (symbol: string) => void;
   initialTab?: MainTab;
 }
 
@@ -73,7 +68,6 @@ function setupTone(outlook?: string): "bull" | "bear" | "neutral" {
   return "neutral";
 }
 
-// Compact label for the setup badge — handles registry IDs (snake_case) and legacy names
 function daysUntilEarnings(earningsDate?: string): number | null {
   if (!earningsDate || earningsDate === "TBD") return null;
   const date = new Date(earningsDate);
@@ -91,52 +85,7 @@ function formatEarningsBadge(days: number): string {
 
 function shortLabel(setupType?: string): string {
   if (!setupType) return "Neutral";
-  // Registry ID → display name (truncated for badge width)
-  const registryMap: Record<string, string> = {
-    covered_call: "Cov. Call",
-    protective_put: "Prot. Put",
-    collar: "Collar",
-    cash_secured_put: "CSP",
-    long_call: "Long Call",
-    long_put: "Long Put",
-    fig_leaf: "Fig Leaf",
-    long_call_spread: "Call Spd",
-    long_put_spread: "Put Spd",
-    short_call_spread: "Short Call Spd",
-    short_put_spread: "Short Put Spd",
-    long_straddle: "Straddle",
-    long_strangle: "Strangle",
-    back_spread_calls: "Back Spd C",
-    back_spread_puts: "Back Spd P",
-    long_calendar_calls: "Cal Spd C",
-    long_calendar_puts: "Cal Spd P",
-    diagonal_spread_calls: "Diag C",
-    diagonal_spread_puts: "Diag P",
-    long_butterfly_calls: "Bfly C",
-    long_butterfly_puts: "Bfly P",
-    iron_butterfly: "Iron Bfly",
-    skip_strike_butterfly_calls: "Skip Bfly C",
-    skip_strike_butterfly_puts: "Skip Bfly P",
-    inverse_skip_strike_butterfly_calls: "Inv Skip C",
-    inverse_skip_strike_butterfly_puts: "Inv Skip P",
-    christmas_tree_butterfly_calls: "Xmas Tree C",
-    christmas_tree_butterfly_puts: "Xmas Tree P",
-    long_condor_calls: "Condor C",
-    long_condor_puts: "Condor P",
-    iron_condor: "Iron Condor",
-    short_call: "Short Call",
-    short_put: "Short Put",
-    short_straddle: "Sh. Straddle",
-    short_strangle: "Sh. Strangle",
-    long_combination: "Long Combo",
-    short_combination: "Short Combo",
-    front_spread_calls: "Front Spd C",
-    front_spread_puts: "Front Spd P",
-    double_diagonal: "Dbl Diag",
-  };
-  if (registryMap[setupType]) return registryMap[setupType]!;
-  // Legacy fallback
-  const legacyMap: Record<string, string> = {
+  const map: Record<string, string> = {
     "Bull Put Spread":  "Bull Put Spd",
     "Call Spread":      "Call Spd",
     "Long Call":        "Long Call",
@@ -149,46 +98,15 @@ function shortLabel(setupType?: string): string {
     "Calendar":         "Calendar",
     "Neutral":          "Neutral",
   };
-  return legacyMap[setupType] ?? setupType;
-}
-
-const TIER_BADGE_COLOR: Record<string, string> = {
-  "rookie":           "hsl(142 71% 45%)",
-  "veteran":          "hsl(217 91% 60%)",
-  "seasoned-veteran": "hsl(45 93% 47%)",
-  "all-star":         "hsl(var(--destructive))",
-};
-
-function strategyTierFromId(setupType?: string): string | null {
-  if (!setupType) return null;
-  const REGISTRY_TIERS: Record<string, string> = {
-    covered_call: "rookie", protective_put: "rookie", collar: "rookie", cash_secured_put: "rookie",
-    long_call: "veteran", long_put: "veteran", fig_leaf: "veteran", long_call_spread: "veteran", long_put_spread: "veteran",
-    short_call_spread: "seasoned-veteran", short_put_spread: "seasoned-veteran",
-    long_straddle: "seasoned-veteran", long_strangle: "seasoned-veteran",
-    back_spread_calls: "seasoned-veteran", back_spread_puts: "seasoned-veteran",
-    long_calendar_calls: "seasoned-veteran", long_calendar_puts: "seasoned-veteran",
-    diagonal_spread_calls: "seasoned-veteran", diagonal_spread_puts: "seasoned-veteran",
-    long_butterfly_calls: "seasoned-veteran", long_butterfly_puts: "seasoned-veteran",
-    iron_butterfly: "seasoned-veteran", skip_strike_butterfly_calls: "seasoned-veteran",
-    skip_strike_butterfly_puts: "seasoned-veteran", inverse_skip_strike_butterfly_calls: "seasoned-veteran",
-    inverse_skip_strike_butterfly_puts: "seasoned-veteran", christmas_tree_butterfly_calls: "seasoned-veteran",
-    christmas_tree_butterfly_puts: "seasoned-veteran", long_condor_calls: "seasoned-veteran",
-    long_condor_puts: "seasoned-veteran", iron_condor: "seasoned-veteran",
-    short_call: "all-star", short_put: "all-star", short_straddle: "all-star", short_strangle: "all-star",
-    long_combination: "all-star", short_combination: "all-star",
-    front_spread_calls: "all-star", front_spread_puts: "all-star", double_diagonal: "all-star",
-  };
-  return REGISTRY_TIERS[setupType] ?? null;
+  return map[setupType] ?? setupType;
 }
 
 export function StockListPanel({ selectedSymbol, onSelect, initialTab = "ideas" }: StockListPanelProps) {
   const { settings } = useSettings();
-  const [search, setSearch]           = useState("");
-  const [tab, setTab]                 = useState<MainTab>(initialTab);
-  const [filter, setFilter]           = useState<IdeaFilter>("all");
-  const [sortKey, setSortKey]         = useState<SortKey>("opportunity");
-  const [strategyFilter, setStrategyFilter] = useState<string>("");
+  const [search, setSearch]   = useState("");
+  const [tab, setTab]         = useState<MainTab>(initialTab);
+  const [filter, setFilter]   = useState<IdeaFilter>("all");
+  const [sortKey, setSortKey] = useState<SortKey>("opportunity");
   const deferredSearch = useDeferredValue(search);
 
   // Sync initialTab if it changes (e.g. navigating to /scanner?tab=watchlist)
@@ -199,8 +117,6 @@ export function StockListPanel({ selectedSymbol, onSelect, initialTab = "ideas" 
     { query: { enabled: tab === "ideas" } as any },
   );
   const { data: watchlist = [], isLoading: loadingWatchlist } = useGetWatchlist();
-
-  const { data: registry = [] } = useStrategyRegistry();
 
   // Fetch full-universe stats for accurate Setups and High Conviction counts
   const { data: screenerStats } = useQuery<{ total: number; highConviction: number; bull: number; bear: number; highIv: number }>({
@@ -234,18 +150,10 @@ export function StockListPanel({ selectedSymbol, onSelect, initialTab = "ideas" 
       if (filter === "bearish" && outlook !== "bearish") return false;
       if (filter === "highIv"  && ivRank < 50)           return false;
       if (filter === "etfs"    && !(item.isETF || item.etfCategory)) return false;
-      if (strategyFilter) {
-        if (!getMatchedStrategy(item, strategyFilter)) return false;
-      }
       return true;
     });
 
     filtered = [...filtered].sort((a, b) => {
-      // When a strategy is active and sort is by score, rank by that strategy's fitScore
-      if (strategyFilter && sortKey === "opportunity") {
-        const getScore = (s: Stock) => getMatchedStrategy(s, strategyFilter)?.fitScore ?? 0;
-        return getScore(b) - getScore(a);
-      }
       if (sortKey === "opportunity") return (b.opportunityScore ?? 0) - (a.opportunityScore ?? 0);
       if (sortKey === "ivRank")      return (b.ivRank ?? 0) - (a.ivRank ?? 0);
       if (sortKey === "move")        return Math.abs(b.changePercent) - Math.abs(a.changePercent);
@@ -253,7 +161,7 @@ export function StockListPanel({ selectedSymbol, onSelect, initialTab = "ideas" 
     });
 
     return filtered;
-  }, [deferredSearch, filter, sortKey, stocks, tab, watchlist, strategyFilter]);
+  }, [deferredSearch, filter, sortKey, stocks, tab, watchlist]);
 
   const isLoading = tab === "watchlist" ? loadingWatchlist : loadingStocks;
 
@@ -325,26 +233,13 @@ export function StockListPanel({ selectedSymbol, onSelect, initialTab = "ideas" 
           </div>
         )}
 
-        {/* Strategy filter — browse all 40 strategies, filter stocks by match */}
-        {tab === "ideas" && registry.length > 0 && (
-          <div style={{ marginBottom: 8 }}>
-            <StrategyFilterDropdown
-              registry={registry}
-              value={strategyFilter}
-              onChange={setStrategyFilter}
-              placeholder="Browse all 40 strategies"
-              width={296}
-            />
-          </div>
-        )}
-
         {/* Scanner summary */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: 8, paddingTop: 2 }}>
           <span style={{ fontSize: 11, color: "hsl(var(--muted-foreground))" }}>
             {tab === "ideas" ? "Setups" : "Watchlist"}
             {" · "}
             <span style={{ fontVariantNumeric: "tabular-nums" }}>
-              {tab === "ideas" && filter === "all" && !search && !strategyFilter
+              {tab === "ideas" && filter === "all" && !search
                 ? (screenerStats?.total ?? items.length)
                 : items.length}
             </span>
@@ -382,9 +277,6 @@ export function StockListPanel({ selectedSymbol, onSelect, initialTab = "ideas" 
               const sColor     = scoreColor(score);
               const etfCat     = item.etfCategory;
               const isEod      = (item as any).source === "polygon-eod";
-              const tier       = strategyTierFromId(item.setupType);
-              const tierColor  = tier ? (TIER_BADGE_COLOR[tier] ?? "hsl(var(--muted-foreground))") : null;
-              const stratDesc  = (item as any).topStrategies?.[0]?.fitReason ?? "";
               const earningsDays = daysUntilEarnings((item as any).earningsDate);
               const showEarningsWarning = settings.showEarningsWarningBadge
                 && earningsDays !== null
@@ -395,7 +287,7 @@ export function StockListPanel({ selectedSymbol, onSelect, initialTab = "ideas" 
               return (
                 <button
                   key={item.symbol}
-                  onClick={() => onSelect(item.symbol, item as Stock)}
+                  onClick={() => onSelect(item.symbol)}
                   style={{
                     width: "100%", display: "flex", flexDirection: "column", gap: rowGap,
                     padding: rowPadding, borderRadius: 8,
@@ -421,15 +313,12 @@ export function StockListPanel({ selectedSymbol, onSelect, initialTab = "ideas" 
                         {isWatched && <Star style={{ width: 10, height: 10, fill: "hsl(var(--primary))", color: "hsl(var(--primary))", flexShrink: 0 }} />}
                         {settings.showConvictionBadges && (
                           <span
-                            title={stratDesc || label}
+                            title={label}
                             style={{
                               fontSize: 9, fontWeight: 600, letterSpacing: "0.04em",
                               textTransform: "uppercase", padding: "1.5px 5px", borderRadius: 3,
-                              color: tierColor ?? (tone === "bull" ? "hsl(var(--success))" : tone === "bear" ? "hsl(var(--destructive))" : "hsl(var(--muted-foreground))"),
-                              background: tierColor
-                                ? `color-mix(in srgb, ${tierColor} 12%, transparent)`
-                                : tone === "bull" ? "hsl(var(--success) / 0.10)" : tone === "bear" ? "hsl(var(--destructive) / 0.10)" : "rgba(255,255,255,0.05)",
-                              border: tierColor ? `1px solid color-mix(in srgb, ${tierColor} 25%, transparent)` : "none",
+                              color: tone === "bull" ? "hsl(var(--success))" : tone === "bear" ? "hsl(var(--destructive))" : "hsl(var(--muted-foreground))",
+                              background: tone === "bull" ? "hsl(var(--success) / 0.10)" : tone === "bear" ? "hsl(var(--destructive) / 0.10)" : "rgba(255,255,255,0.05)",
                               flexShrink: 0,
                             }}
                           >

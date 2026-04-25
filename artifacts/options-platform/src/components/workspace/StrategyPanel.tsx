@@ -5,26 +5,16 @@ import { formatCurrency, formatPercent } from "@/lib/format";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Slider } from "@/components/ui/slider";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AlertCircle, BarChart2, ChevronDown, ChevronRight, ExternalLink, Minus, Pencil, Plus, X, TrendingUp } from "lucide-react";
+import { AlertCircle, BarChart2, Minus, Pencil, Plus, X, TrendingUp } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useSettings } from "@/contexts/SettingsContext";
 import type { AppSettings } from "@/lib/settings-defaults";
 import type { OptionsStrategy, StrategyLeg, GetStrategiesOutlook, AccountPosition } from "@workspace/api-client-react";
 
-interface TopStrategyItem {
-  id: string;
-  name: string;
-  fitScore: number;
-  fitReason: string;
-  tier: string;
-  url: string;
-}
-
 interface StrategyPanelProps {
   symbol: string;
   currentPrice?: number;
   recommendedOutlook?: string;
-  topStrategies?: TopStrategyItem[];
 }
 
 const OUTLOOK_TABS: { id: GetStrategiesOutlook; label: string; color: string }[] = [
@@ -69,7 +59,7 @@ function getRiskBadges(strategy: OptionsStrategy, contracts: number, dte: number
   return badges;
 }
 
-// ── Black-Scholes (frontend copy for modify recalc) ──────────────────────
+// â”€â”€ Black-Scholes (frontend copy for modify recalc) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function normalCDF(x: number): number {
   const a = 0.2316419;
   const k = 1 / (1 + a * Math.abs(x));
@@ -88,7 +78,7 @@ function bsPrice(S: number, K: number, T: number, sigma: number, type: "call" | 
   return K * Math.exp(-r * T) * normalCDF(-d2) - S * normalCDF(-d1);
 }
 
-// ── Payoff at expiration ─────────────────────────────────────────────────
+// â”€â”€ Payoff at expiration â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function computePayoffs(legs: StrategyLeg[], prices: number[]): number[] {
   return prices.map(S =>
     legs.reduce((total, leg) => {
@@ -141,7 +131,7 @@ function computeMetrics(legs: StrategyLeg[], currentPrice: number) {
   return { maxProfit, maxLoss, cost: Math.round(cost * 100) / 100, breakeven };
 }
 
-// ── PayoffDiagram ────────────────────────────────────────────────────────
+// â”€â”€ PayoffDiagram â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function PayoffDiagram({ legs, currentPrice }: { legs: StrategyLeg[]; currentPrice: number }) {
   if (!currentPrice || currentPrice <= 0) return null;
   const W = 300, H = 130;
@@ -207,7 +197,7 @@ function PayoffDiagram({ legs, currentPrice }: { legs: StrategyLeg[]; currentPri
   );
 }
 
-// ── Strategy Detail (OptionsPlay-style card) ─────────────────────────────
+// â”€â”€ Strategy Detail (OptionsPlay-style card) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function ThetaDecayChart({ dte, closeDte, profitTarget }: { dte: number; closeDte: number; profitTarget: number }) {
   const W = 300, H = 58;
   const maxDte = Math.max(dte, closeDte, 60);
@@ -255,7 +245,7 @@ function StrategyDetail({
   const hasStockLeg = strategy.legs.some(l => l.optionType === "stock");
   const isCredit = strategy.type === "income" && strategy.tradeCost > 0 && !hasStockLeg;
 
-  // POP approximation — credit spreads: credit / width; debit: 1 - debit/width
+  // POP approximation â€” credit spreads: credit / width; debit: 1 - debit/width
   const pop = strategy.type === "income"
     ? Math.min(85, Math.max(20, Math.round((Math.abs(strategy.tradeCost) / Math.max(1, Math.abs(strategy.tradeCost) + Math.abs(strategy.maxLoss))) * 100)))
     : Math.min(75, Math.max(25, Math.round(42 + (strategy.score - 100) * 0.15)));
@@ -274,7 +264,7 @@ function StrategyDetail({
           {strategy.name}
         </div>
         <div style={{ fontSize: 10, color: "hsl(var(--muted-foreground))", marginTop: 2 }}>
-          {strategy.type === "income" ? "Income" : "Trade"} · Exp {exp}
+          {strategy.type === "income" ? "Income" : "Trade"} Â· Exp {exp}
         </div>
         {(riskBadges.length > 0 || settings.showPositionSizingSuggestion) && (
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
@@ -324,7 +314,7 @@ function StrategyDetail({
                 borderRight: i % 2 === 0 ? "1px solid rgba(255,255,255,0.05)" : undefined,
                 borderBottom: i < lastRowStart ? "1px solid rgba(255,255,255,0.05)" : undefined,
                 display: "flex", flexDirection: "column", gap: 3,
-              }>
+              }}>
                 <span style={{ fontSize: 10, color: "hsl(var(--muted-foreground))", fontWeight: 400 }}>{m.label}</span>
                 <span style={{ fontSize: 13, fontWeight: 600, letterSpacing: "-0.02em", color: m.color, fontVariantNumeric: "tabular-nums" }}>{m.value}</span>
               </div>
@@ -336,7 +326,7 @@ function StrategyDetail({
       {/* Action buttons */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, padding: "10px 12px", borderTop: "1px solid rgba(255,255,255,0.05)" }}>
         <button
-          onClick={() => toast({ title: "Trade order", description: "Broker connection needed — add Schwab credentials to execute." })}
+          onClick={() => toast({ title: "Trade order", description: "Broker connection needed â€” add Schwab credentials to execute." })}
           style={{
             padding: "8px 0", borderRadius: 7, border: "none", fontWeight: 600, fontSize: 12,
             background: "hsl(var(--primary))", color: "#fff", cursor: "pointer", letterSpacing: "-0.01em",
@@ -367,7 +357,7 @@ function StrategyDetail({
   );
 }
 
-// ── Modify Panel ─────────────────────────────────────────────────────────
+// â”€â”€ Modify Panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 interface ModifiedLeg extends StrategyLeg {
   premium: number;
 }
@@ -421,7 +411,7 @@ function ModifyPanel({
     return { ...leg, premium: Math.max(0.01, premium) };
   };
 
-  // Re-price all legs whenever the expiry date changes (new T → new option values)
+  // Re-price all legs whenever the expiry date changes (new T â†’ new option values)
   useEffect(() => {
     setLegs(prev => prev.map(l => {
       if (l.optionType === "stock") return l;
@@ -446,7 +436,7 @@ function ModifyPanel({
   const newExpLabel = new Date(expStr + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
   const apply = () => {
-    // Replace the leading date label in the name (e.g. "Jun 5 265/285…" → "Jun 18 265/285…")
+    // Replace the leading date label in the name (e.g. "Jun 5 265/285â€¦" â†’ "Jun 18 265/285â€¦")
     const newName = strategy.name.replace(/^[A-Z][a-z]+ \d+\s/, `${newExpLabel} `);
     const updated: OptionsStrategy = {
       ...strategy,
@@ -508,7 +498,7 @@ function ModifyPanel({
       {/* Expiry + Contracts */}
       <div style={{ padding: "10px 12px", borderTop: "1px solid rgba(255,255,255,0.05)", display: "flex", gap: 12, alignItems: "flex-start" }}>
         <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 10, color: "hsl(var(--muted-foreground))", marginBottom: 5 }}>Expiry · {dte}d</div>
+          <div style={{ fontSize: 10, color: "hsl(var(--muted-foreground))", marginBottom: 5 }}>Expiry Â· {dte}d</div>
           {/* Quick-select buttons */}
           <div style={{ display: "flex", gap: 4, marginBottom: 6 }}>
             {[30, 45, 60].map(d => (
@@ -594,7 +584,7 @@ const stepBtn: React.CSSProperties = {
   cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
 };
 
-// ── Existing Position Banner ─────────────────────────────────────────────
+// â”€â”€ Existing Position Banner â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function ExistingPositionBanner({
   position, onUseEntryPrice,
 }: {
@@ -676,291 +666,8 @@ function ExistingPositionBanner({
   );
 }
 
-// ── Tier badge colors ─────────────────────────────────────────────────────
-const TIER_COLORS: Record<string, { bg: string; text: string; border: string }> = {
-  "rookie":           { bg: "hsl(142 71% 45% / 0.12)", text: "hsl(142 71% 55%)",   border: "hsl(142 71% 45% / 0.25)" },
-  "veteran":          { bg: "hsl(217 91% 60% / 0.12)", text: "hsl(217 91% 70%)",   border: "hsl(217 91% 60% / 0.25)" },
-  "seasoned-veteran": { bg: "hsl(45 93% 47% / 0.12)",  text: "hsl(45 93% 57%)",    border: "hsl(45 93% 47% / 0.25)" },
-  "all-star":         { bg: "hsl(var(--destructive) / 0.12)", text: "hsl(var(--destructive))", border: "hsl(var(--destructive) / 0.25)" },
-};
 
-function TierBadge({ tier }: { tier: string }) {
-  const c = TIER_COLORS[tier] ?? { bg: "rgba(255,255,255,0.06)", text: "hsl(var(--muted-foreground))", border: "transparent" };
-  const label = tier === "seasoned-veteran" ? "SV" : tier.charAt(0).toUpperCase() + tier.slice(1);
-  return (
-    <span style={{
-      fontSize: 8, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase",
-      padding: "1.5px 5px", borderRadius: 3, flexShrink: 0,
-      background: c.bg, color: c.text, border: `1px solid ${c.border}`,
-    }}>
-      {label}
-    </span>
-  );
-}
-
-// ── Strategy Match List ────────────────────────────────────────────────────
-function StrategyMatchList({ symbol, topStrategies }: { symbol: string; topStrategies: TopStrategyItem[] }) {
-  const [tierFilter, setTierFilter] = useState<string>("all");
-  const [definedRiskOnly, setDefinedRiskOnly] = useState(false);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-
-  // Full registry fetched once to get description/riskProfile for expanded view
-  const [registry, setRegistry] = useState<Record<string, { description: string; riskProfile: string; outlook: string[]; ivPreference: string; timeDecay: string; legs: number }>>({});
-  useEffect(() => {
-    fetch("/api/strategies")
-      .then(r => r.json())
-      .then((data: Array<{ id: string; description: string; riskProfile: string; outlook: string[]; ivPreference: string; timeDecay: string; legs: number }>) => {
-        const map: typeof registry = {};
-        for (const s of data) map[s.id] = s;
-        setRegistry(map);
-      })
-      .catch(() => {});
-  }, []);
-
-  const DEFINED_RISK_IDS = new Set<string>();
-  for (const [id, s] of Object.entries(registry)) {
-    if (s.riskProfile === "defined") DEFINED_RISK_IDS.add(id);
-  }
-
-  const tiers = ["all", "rookie", "veteran", "seasoned-veteran", "all-star"];
-
-  const filtered = topStrategies.filter(s => {
-    if (tierFilter !== "all" && s.tier !== tierFilter) return false;
-    if (definedRiskOnly && DEFINED_RISK_IDS.size > 0 && !DEFINED_RISK_IDS.has(s.id)) return false;
-    return true;
-  });
-
-  if (topStrategies.length === 0) return null;
-
-  return (
-    <div style={{ marginTop: 16 }}>
-      {/* Section header */}
-      <div style={{ fontSize: 11, fontWeight: 600, color: "hsl(var(--muted-foreground))", letterSpacing: "0.04em", textTransform: "uppercase", marginBottom: 10 }}>
-        Strategy Matches · {symbol}
-      </div>
-
-      {/* Tier filter pills */}
-      <div style={{ display: "flex", gap: 3, flexWrap: "wrap", marginBottom: 8 }}>
-        {tiers.map(t => (
-          <button key={t} onClick={() => setTierFilter(t)} style={{
-            padding: "2px 7px", borderRadius: 4, fontSize: 9, fontWeight: 600,
-            letterSpacing: "0.02em", textTransform: "uppercase", cursor: "pointer",
-            border: tierFilter === t ? "1px solid hsl(var(--primary) / 0.4)" : "1px solid rgba(255,255,255,0.07)",
-            background: tierFilter === t ? "hsl(var(--primary) / 0.10)" : "transparent",
-            color: tierFilter === t ? "hsl(var(--primary))" : "hsl(var(--muted-foreground))",
-            transition: "all 0.12s",
-          }}>
-            {t === "all" ? "All" : t === "seasoned-veteran" ? "SV" : t}
-          </button>
-        ))}
-        <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 9, fontWeight: 500, color: "hsl(var(--muted-foreground))", cursor: "pointer", marginLeft: 4 }}>
-          <input
-            type="checkbox"
-            checked={definedRiskOnly}
-            onChange={e => setDefinedRiskOnly(e.target.checked)}
-            style={{ width: 10, height: 10, accentColor: "hsl(var(--primary))" }}
-          />
-          Defined risk only
-        </label>
-      </div>
-
-      {/* Strategy cards */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        {filtered.map(s => {
-          const expanded = expandedId === s.id;
-          const detail = registry[s.id];
-          return (
-            <div
-              key={s.id}
-              style={{
-                border: expanded ? "1px solid hsl(var(--primary) / 0.25)" : "1px solid rgba(255,255,255,0.07)",
-                borderRadius: 8,
-                background: expanded ? "hsl(var(--primary) / 0.04)" : "rgba(255,255,255,0.02)",
-                overflow: "hidden", transition: "all 0.12s",
-              }}
-            >
-              <button
-                onClick={() => setExpandedId(expanded ? null : s.id)}
-                style={{
-                  width: "100%", textAlign: "left", padding: "9px 11px",
-                  background: "transparent", border: "none", cursor: "pointer",
-                }}
-              >
-                {/* Card header row */}
-                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 5 }}>
-                  {expanded
-                    ? <ChevronDown style={{ width: 10, height: 10, color: "hsl(var(--muted-foreground))", flexShrink: 0 }} />
-                    : <ChevronRight style={{ width: 10, height: 10, color: "hsl(var(--muted-foreground))", flexShrink: 0 }} />
-                  }
-                  <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: "-0.01em", flex: 1, textAlign: "left" }}>{s.name}</span>
-                  <TierBadge tier={s.tier} />
-                  <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums",
-                    color: s.fitScore >= 70 ? "hsl(var(--success))" : s.fitScore >= 45 ? "hsl(var(--primary))" : "hsl(var(--muted-foreground))",
-                    flexShrink: 0 }}>
-                    {s.fitScore}
-                  </span>
-                </div>
-                {/* Fit score bar */}
-                <div style={{ height: 2, borderRadius: 99, background: "rgba(255,255,255,0.07)", overflow: "hidden", marginBottom: 5, marginLeft: 16 }}>
-                  <div style={{
-                    height: "100%", borderRadius: 99, transition: "width 0.4s",
-                    width: `${s.fitScore}%`,
-                    background: s.fitScore >= 70 ? "hsl(var(--success))" : s.fitScore >= 45 ? "hsl(var(--primary))" : "hsl(var(--muted-foreground))",
-                  }} />
-                </div>
-                {/* Fit reason */}
-                <div style={{ fontSize: 9.5, color: "hsl(var(--muted-foreground))", lineHeight: 1.4, marginLeft: 16, textAlign: "left" }}>
-                  {s.fitReason}
-                </div>
-              </button>
-
-              {/* Expanded detail */}
-              {expanded && detail && (
-                <div style={{ padding: "0 11px 10px 11px", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
-                  <p style={{ fontSize: 10, color: "hsl(var(--muted-foreground))", lineHeight: 1.5, margin: "8px 0 8px" }}>
-                    {detail.description}
-                  </p>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 8 }}>
-                    {[
-                      { label: "IV preference", value: detail.ivPreference },
-                      { label: "Time decay",    value: detail.timeDecay },
-                      { label: "Risk profile",  value: detail.riskProfile },
-                      { label: "Legs",          value: String(detail.legs) },
-                    ].map((m, i) => (
-                      <div key={i}>
-                        <div style={{ fontSize: 9, color: "hsl(var(--muted-foreground))", marginBottom: 1 }}>{m.label}</div>
-                        <div style={{ fontSize: 10.5, fontWeight: 600, textTransform: "capitalize" }}>{m.value}</div>
-                      </div>
-                    ))}
-                  </div>
-                  <a
-                    href={s.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={e => e.stopPropagation()}
-                    style={{
-                      display: "inline-flex", alignItems: "center", gap: 4,
-                      fontSize: 9.5, fontWeight: 600, color: "hsl(var(--primary))",
-                      textDecoration: "none",
-                    }}
-                  >
-                    Learn More on Options Playbook
-                    <ExternalLink style={{ width: 9, height: 9 }} />
-                  </a>
-                </div>
-              )}
-            </div>
-          );
-        })}
-        {filtered.length === 0 && (
-          <div style={{ fontSize: 11, color: "hsl(var(--muted-foreground))", padding: "12px 0", textAlign: "center" }}>
-            No strategies match this filter
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ── Main StrategyPanel ───────────────────────────────────────────────────
-function OptionsChainPreview({
-  chain,
-  currentPrice,
-}: {
-  chain: any;
-  currentPrice: number;
-}) {
-  const { settings } = useSettings();
-  if (!chain?.expirations?.length || currentPrice <= 0) return null;
-
-  const precision = settings.greeksPrecision;
-  const formatIv = (iv: number) => settings.ivDisplayFormat === "decimal" ? (iv / 100).toFixed(2) : `${Math.round(iv)}%`;
-  const formatDelta = (delta: number) => {
-    const value = Math.abs(delta);
-    if (settings.showDeltaAsProbabilityItm) return `${Math.round(value * 100)}% ITM`;
-    return delta.toFixed(precision);
-  };
-  const getTargetRange = (contract: any): [number, number] => {
-    if (contract.optionType === "put" && contract.delta < 0) return [settings.shortPutDeltaMin, settings.shortPutDeltaMax];
-    if (contract.optionType === "call" && contract.delta > 0) return [settings.shortCallDeltaMin, settings.shortCallDeltaMax];
-    return [settings.longOptionDeltaMin, settings.longOptionDeltaMax];
-  };
-
-  const expirations = chain.expirations.slice(0, Math.max(1, settings.defaultExpirationCount));
-  const rows = expirations.flatMap((expiry: any) => {
-    const contracts = [...(expiry.contracts ?? [])];
-    const strikes = [...new Set(contracts.map((contract: any) => Number(contract.strikePrice)))]
-      .filter(Number.isFinite)
-      .sort((a, b) => a - b);
-    const atmIndex = strikes.reduce((bestIndex, strike, index) =>
-      Math.abs(strike - currentPrice) < Math.abs(strikes[bestIndex]! - currentPrice) ? index : bestIndex,
-    0);
-    const allowedStrikes = new Set(strikes.slice(
-      Math.max(0, atmIndex - settings.chainStrikeRange),
-      Math.min(strikes.length, atmIndex + settings.chainStrikeRange + 1),
-    ));
-    return contracts
-      .filter((contract: any) => allowedStrikes.has(Number(contract.strikePrice)))
-      .sort((a: any, b: any) => a.strikePrice === b.strikePrice ? String(a.optionType).localeCompare(String(b.optionType)) : a.strikePrice - b.strikePrice)
-      .map((contract: any) => ({ ...contract, expiration: expiry.expiration, daysToExpiration: expiry.daysToExpiration }));
-  }).slice(0, Math.max(8, settings.defaultExpirationCount * (settings.chainStrikeRange * 2 + 1) * 2));
-
-  if (rows.length === 0) return null;
-
-  return (
-    <div style={{ marginTop: 12, border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8, overflow: "hidden", background: "rgba(255,255,255,0.02)" }}>
-      <div style={{ padding: "8px 10px", borderBottom: "1px solid rgba(255,255,255,0.06)", display: "flex", justifyContent: "space-between", gap: 8 }}>
-        <div style={{ fontSize: 11, fontWeight: 700 }}>Options Chain</div>
-        {settings.showIvRankAlongsideIv && <div style={{ fontSize: 10, color: "hsl(var(--muted-foreground))" }}>IV rank period {settings.ivRankCalculationPeriod}</div>}
-      </div>
-      <div style={{ overflowX: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 10.5 }}>
-          <thead>
-            <tr style={{ color: "hsl(var(--muted-foreground))", textAlign: "right" }}>
-              {["Exp", "Type", "Strike", "Mid", settings.showDelta ? "Delta" : null, settings.showTheta ? "Theta" : null, settings.showGamma ? "Gamma" : null, settings.showVega ? "Vega" : null, settings.showRho ? "Rho" : null, "IV", settings.showOpenInterestColumn ? "OI" : null, settings.showVolumeColumn ? "Vol" : null, settings.showBidAskSpreadColumn ? "Spr" : null, settings.showTheoreticalValueColumn ? "Theo" : null].filter(Boolean).map((label) => (
-                <th key={String(label)} style={{ padding: "7px 6px", fontWeight: 600 }}>{label}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((contract: any) => {
-              const isItm = contract.optionType === "call" ? contract.strikePrice < currentPrice : contract.strikePrice > currentPrice;
-              const absDelta = Math.abs(Number(contract.delta ?? 0));
-              const [deltaMin, deltaMax] = getTargetRange(contract);
-              const inDeltaZone = absDelta >= deltaMin && absDelta <= deltaMax;
-              const outsideDelta = settings.highlightOutsideTargetDelta && !inDeltaZone;
-              const spread = Math.max(0, Number(contract.ask ?? 0) - Number(contract.bid ?? 0));
-              return (
-                <tr key={`${contract.symbol}-${contract.expiration}`} style={{
-                  background: settings.highlightITM && isItm ? "hsl(var(--primary) / 0.07)" : outsideDelta ? "hsl(38 92% 50% / 0.06)" : "transparent",
-                  boxShadow: inDeltaZone ? "inset 3px 0 0 hsl(var(--success) / 0.75)" : undefined,
-                  borderTop: "1px solid rgba(255,255,255,0.04)",
-                }}>
-                  <td style={{ padding: "6px", color: "hsl(var(--muted-foreground))", textAlign: "left" }}>{contract.daysToExpiration}d</td>
-                  <td style={{ padding: "6px", textTransform: "uppercase", color: contract.optionType === "call" ? "hsl(var(--success))" : "hsl(var(--destructive))", textAlign: "left", fontWeight: 700 }}>{contract.optionType}</td>
-                  <td style={{ padding: "6px", fontVariantNumeric: "tabular-nums", fontWeight: isItm ? 700 : 500 }}>{formatCurrency(contract.strikePrice)}</td>
-                  <td style={{ padding: "6px", fontVariantNumeric: "tabular-nums" }}>{formatCurrency(contract.mid)}</td>
-                  {settings.showDelta && <td style={{ padding: "6px", fontVariantNumeric: "tabular-nums", color: inDeltaZone ? "hsl(var(--success))" : undefined }}>{formatDelta(Number(contract.delta ?? 0))}</td>}
-                  {settings.showTheta && <td style={{ padding: "6px", fontVariantNumeric: "tabular-nums", color: contract.daysToExpiration <= settings.thetaDecayWarningThresholdDte ? "hsl(38 92% 50%)" : undefined }}>{Number(contract.theta ?? 0).toFixed(precision)}</td>}
-                  {settings.showGamma && <td style={{ padding: "6px", fontVariantNumeric: "tabular-nums" }}>{Number(contract.gamma ?? 0).toFixed(precision)}</td>}
-                  {settings.showVega && <td style={{ padding: "6px", fontVariantNumeric: "tabular-nums" }}>{Number(contract.vega ?? 0).toFixed(precision)}</td>}
-                  {settings.showRho && <td style={{ padding: "6px", fontVariantNumeric: "tabular-nums" }}>{Number(contract.rho ?? 0).toFixed(precision)}</td>}
-                  <td style={{ padding: "6px", fontVariantNumeric: "tabular-nums" }}>{formatIv(Number(contract.impliedVolatility ?? 0))}</td>
-                  {settings.showOpenInterestColumn && <td style={{ padding: "6px", fontVariantNumeric: "tabular-nums" }}>{Number(contract.openInterest ?? 0)}</td>}
-                  {settings.showVolumeColumn && <td style={{ padding: "6px", fontVariantNumeric: "tabular-nums" }}>{Number(contract.volume ?? 0)}</td>}
-                  {settings.showBidAskSpreadColumn && <td style={{ padding: "6px", fontVariantNumeric: "tabular-nums" }}>{formatCurrency(spread)}</td>}
-                  {settings.showTheoreticalValueColumn && <td style={{ padding: "6px", fontVariantNumeric: "tabular-nums" }}>{formatCurrency(contract.mid)}</td>}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-export function StrategyPanel({ symbol, currentPrice = 0, recommendedOutlook, topStrategies }: StrategyPanelProps) {
+export function StrategyPanel({ symbol, currentPrice = 0, recommendedOutlook }: StrategyPanelProps) {
   const initialOutlook: GetStrategiesOutlook =
     recommendedOutlook === "bearish" ? "bearish" :
     recommendedOutlook === "neutral" ? "neutral" : "bullish";
@@ -1132,21 +839,13 @@ export function StrategyPanel({ symbol, currentPrice = 0, recommendedOutlook, to
             </div>
           )}
 
-          {!isLoading && chainData && (
-            <OptionsChainPreview chain={chainData} currentPrice={currentPrice} />
-          )}
-
-          {/* Strategy Match List from screener scoring */}
-          {topStrategies && topStrategies.length > 0 && !isLoading && (
-            <StrategyMatchList symbol={symbol} topStrategies={topStrategies} />
-          )}
         </div>
       </ScrollArea>
     </div>
   );
 }
 
-// ── Strategy Card (compact list item) ────────────────────────────────────
+// â”€â”€ Strategy Card (compact list item) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function StrategyCard({ strategy, isSelected, isModified, isTopPick, onClick }: {
   strategy: OptionsStrategy; isSelected: boolean; isModified: boolean; isTopPick: boolean; onClick: () => void;
 }) {
@@ -1183,7 +882,7 @@ function StrategyCard({ strategy, isSelected, isModified, isTopPick, onClick }: 
           </div>
           <div style={{ fontSize: 10, color: "hsl(var(--muted-foreground))", display: "flex", gap: 5, alignItems: "center" }}>
             <span>{strategy.type === "income" ? "Income" : "Trade"}</span>
-            <span style={{ opacity: 0.3 }}>·</span>
+            <span style={{ opacity: 0.3 }}>Â·</span>
             <span>Exp {strategy.expirationDate}</span>
           </div>
         </div>
@@ -1214,7 +913,7 @@ function MetricCell({ label, value, valueColor }: { label: string; value: string
   );
 }
 
-// ── Client-side P&L curve (uses actual modified legs + bsPrice) ───────────
+// â”€â”€ Client-side P&L curve (uses actual modified legs + bsPrice) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function computePnlClient(
   legs: StrategyLeg[],
   strategyExpirationDate: string,
@@ -1248,7 +947,7 @@ function computePnlClient(
       return total + (optVal - openVal) * (leg.action === "buy" ? 1 : -1) * leg.quantity;
     }, 0) - totalFeeImpact;
 
-  // Curve spanning ±30 % around current price, 80 points
+  // Curve spanning Â±30 % around current price, 80 points
   const lo = currentPrice * 0.7;
   const hi = currentPrice * 1.3;
   const POINTS = Number(settings.pnlCurveResolution || 100);
@@ -1279,7 +978,7 @@ function computePnlClient(
   return { profitLoss, profitLossPercent, breakeven, pnlCurve, commissionImpact: totalFeeImpact };
 }
 
-// ── P&L Simulator ────────────────────────────────────────────────────────
+// â”€â”€ P&L Simulator â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function PnlSimulator({
   strategy, currentPrice, symbol: _symbol, initialIv = 30,
   contracts, onContractsChange,
@@ -1293,13 +992,13 @@ function PnlSimulator({
   const [iv, setIv] = useState(settings.useHistoricalVolatilityForSimulation ? Math.max(10, initialIv * 0.8) : initialIv);
   const [dollarDraft, setDollarDraft] = useState<string | null>(null);
 
-  // Sync when strategy expiry changes (e.g. after Modify → Apply)
+  // Sync when strategy expiry changes (e.g. after Modify â†’ Apply)
   useEffect(() => { setTargetDate(strategy.expirationDate); }, [strategy.expirationDate]);
   // Sync IV when strategy changes (different strategies may have different estimated IVs)
   useEffect(() => { setIv(settings.useHistoricalVolatilityForSimulation ? Math.max(10, initialIv * 0.8) : initialIv); }, [initialIv, settings.useHistoricalVolatilityForSimulation]);
   useEffect(() => { if (currentPrice > 0 && targetPrice === 0) setTargetPrice(currentPrice); }, [currentPrice]);
 
-  // Net cost per contract (absolute value of net debit/credit × 100)
+  // Net cost per contract (absolute value of net debit/credit Ã— 100)
   const costPerContract = Math.abs(
     strategy.legs
       .filter(l => l.optionType !== "stock")
@@ -1324,7 +1023,7 @@ function PnlSimulator({
     [pnlData.pnlCurve, contracts],
   );
 
-  // Date slider: position 0→1 across today…strategy expiry
+  // Date slider: position 0â†’1 across todayâ€¦strategy expiry
   const todayMs = Date.now();
   const stratExpiryMs = new Date(strategy.expirationDate).getTime();
   const targetMs = new Date(targetDate).getTime();
@@ -1359,7 +1058,7 @@ function PnlSimulator({
           <button type="button" onClick={() => setTargetPrice(Math.round(currentPrice * (1 - settings.scenarioUnderlyingMovePct / 100) * 100) / 100)} style={{ padding: "5px 8px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.04)", color: "hsl(var(--destructive))", fontSize: 10, fontWeight: 700 }}>-{settings.scenarioUnderlyingMovePct}% scenario</button>
         </div>
 
-        {/* Date row — date input + Today→Expiry slider */}
+        {/* Date row â€” date input + Todayâ†’Expiry slider */}
         <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <span style={{ fontSize: 10, color: "hsl(var(--muted-foreground))", fontWeight: 500 }}>By this date</span>
@@ -1377,7 +1076,7 @@ function PnlSimulator({
               }}
             />
           </div>
-          {/* Today → Expiry scrubber */}
+          {/* Today â†’ Expiry scrubber */}
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <span style={{ fontSize: 9, color: "hsl(var(--muted-foreground))", flexShrink: 0 }}>Today</span>
             <input
@@ -1386,7 +1085,7 @@ function PnlSimulator({
               onChange={e => setDateFromSlider(Number(e.target.value) / 1000)}
               style={{ flex: 1, accentColor: "hsl(var(--primary))", cursor: "pointer", height: 4 }}
             />
-            <span style={{ fontSize: 9, color: "hsl(var(--muted-foreground))", flexShrink: 0 }}>Expiry · {totalDays}d</span>
+            <span style={{ fontSize: 9, color: "hsl(var(--muted-foreground))", flexShrink: 0 }}>Expiry Â· {totalDays}d</span>
           </div>
           <div style={{ fontSize: 9, color: "hsl(var(--muted-foreground))", textAlign: "center" }}>{dte}d to target</div>
         </div>
@@ -1398,7 +1097,7 @@ function PnlSimulator({
         </div>
         {settings.showGreeksImpactInScenario && (
           <div style={{ fontSize: 10, color: "hsl(var(--muted-foreground))" }}>
-            Scenario step: {settings.scenarioDteStepDays}d · Risk-free {settings.riskFreeRatePct}% · Dividend {settings.dividendYieldAssumptionPct}%
+            Scenario step: {settings.scenarioDteStepDays}d Â· Risk-free {settings.riskFreeRatePct}% Â· Dividend {settings.dividendYieldAssumptionPct}%
           </div>
         )}
       </div>
@@ -1412,7 +1111,7 @@ function PnlSimulator({
             <input
               type="text"
               inputMode="decimal"
-              value={dollarDraft !== null ? dollarDraft : (dollarAmount > 0 ? `$${dollarAmount.toFixed(0)}` : "—")}
+              value={dollarDraft !== null ? dollarDraft : (dollarAmount > 0 ? `$${dollarAmount.toFixed(0)}` : "â€”")}
               onFocus={() => setDollarDraft(dollarAmount > 0 ? dollarAmount.toFixed(0) : "")}
               onChange={e => setDollarDraft(e.target.value)}
               onBlur={e => commitDollar(e.target.value)}

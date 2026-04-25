@@ -21,10 +21,8 @@
  */
 
 import type { TechnicalSignals } from "./technical-analysis.js";
-import { STRATEGY_REGISTRY, getStrategiesForConditions } from "./strategy-registry.js";
 
-// Internal type used only within this file for legacy scoring functions
-type LegacySetup =
+export type SetupType =
   | "Bull Put Spread"
   | "Call Spread"
   | "Long Call"
@@ -37,18 +35,7 @@ type LegacySetup =
   | "Calendar"
   | "Neutral";
 
-export type SetupType = typeof STRATEGY_REGISTRY[number]['id'];
-
 export type ScanOutlook = "bullish" | "bearish" | "neutral";
-
-export interface TopStrategy {
-  id: string;
-  name: string;
-  fitScore: number;
-  fitReason: string;
-  tier: string;
-  url: string;
-}
 
 export interface ScanResult {
   opportunityScore: number;     // 0–100 (clamped from 0–110)
@@ -60,7 +47,6 @@ export interface ScanResult {
   entryScore: number;           // 0–25
   momentumScore: number;        // 0–15
   vwapScore: number;            // 0–10
-  topStrategies: TopStrategy[];
 }
 
 export interface HighConvictionThresholds {
@@ -96,7 +82,6 @@ export interface StrategyScoreWeights {
 }
 
 export interface StrategyPreferences {
-  enabledStrategyIds?: Record<string, boolean>;
   preferredIvEnvironment: "high" | "low" | "any";
   ivRankLowThreshold: number;
   ivRankHighThreshold: number;
@@ -182,8 +167,6 @@ export function scanOpportunity(
     ...DEFAULT_RISK_PREFERENCES,
     ...(opts?.riskPreferences ?? {}),
   };
-  // Capture ivRank for registry matching later
-  const ivRankValue = ivRank;
 
   // ── 1. Determine directional outlook ────────────────────────────────────
   let outlook = determineOutlook(signals, ivRank);
@@ -193,7 +176,7 @@ export function scanOpportunity(
   // leveraged-single: don't force outlook — let technicals decide direction
 
   // ── 2. Choose the best setup for this outlook + IV environment ───────────
-  let setup: LegacySetup = chooseSetup(outlook, ivRank, signals, strategyPreferences);
+  let setup: SetupType = chooseSetup(outlook, ivRank, signals, strategyPreferences);
 
   // Restrict leveraged/single-stock ETF setups to directional strategies only.
   // Covered Calls require owning shares (not applicable to ETF options).
@@ -242,7 +225,7 @@ export function scanOpportunity(
   // A setup with a great score in two areas but weak in others isn't actionable.
   // These gates prevent marginal multi-dimension stacks from appearing as setups.
   let cappedScore = total;
-  let cappedSetup: LegacySetup = setup;
+  let cappedSetup: SetupType = setup;
   let cappedOutlook: ScanOutlook = outlook;
 
   const dimensionsFailing =
@@ -263,44 +246,16 @@ export function scanOpportunity(
 
   const opportunityScore = Math.max(0, Math.min(100, cappedScore));
 
-  // Use the registry to find the best-fit strategies for this stock's conditions
-  const enabledStrategyIds = strategyPreferences.enabledStrategyIds ?? {};
-  const registryMatches = getStrategiesForConditions({
-    outlook: cappedOutlook,
-    ivRank: ivRankValue,
-    rsi14: signals.rsi14 ?? 50,
-    technicalScore: Math.round(technicalScore),
-    momentumScore: Math.round(momentumScore),
-    hasEarnings: daysToEarnings !== undefined && daysToEarnings <= 14,
-    enabledStrategyIds,
-    preferredIvEnvironment: strategyPreferences.preferredIvEnvironment,
-    ivRankLowThreshold: strategyPreferences.ivRankLowThreshold,
-    ivRankHighThreshold: strategyPreferences.ivRankHighThreshold,
-    strategyAutoSelectByIv: strategyPreferences.strategyAutoSelectByIv,
-  });
-
-  const topStrategies: TopStrategy[] = registryMatches.slice(0, 5).map(s => ({
-    id: s.id,
-    name: s.name,
-    fitScore: s.fitScore,
-    fitReason: s.fitReason,
-    tier: s.tier,
-    url: s.url,
-  }));
-
-  const setupType: SetupType = registryMatches[0]?.id ?? 'long_call';
-
   return {
     opportunityScore,
-    setupType,
+    setupType: cappedSetup,
     recommendedOutlook: cappedOutlook,
-    setupDescription: buildDescription(cappedSetup, cappedOutlook, ivRankValue, signals, effectiveDte),
+    setupDescription: buildDescription(cappedSetup, cappedOutlook, ivRank, signals, effectiveDte),
     technicalScore: Math.round(technicalScore),
     ivScore: Math.round(ivScore),
     entryScore: Math.round(entryScore),
     momentumScore: Math.round(momentumScore),
     vwapScore: Math.round(vwapScore),
-    topStrategies,
   };
 }
 
@@ -343,16 +298,16 @@ function determineOutlook(signals: TechnicalSignals, ivRank: number): ScanOutloo
 
 // ─── ETF setup restriction ────────────────────────────────────────────────────
 
-const BULL_SETUPS: LegacySetup[] = ["Long Call", "Call Spread", "Bull Put Spread"];
-const BEAR_SETUPS: LegacySetup[] = ["Long Put", "Bear Put Spread", "Bear Call Spread"];
+const BULL_SETUPS: SetupType[] = ["Long Call", "Call Spread", "Bull Put Spread"];
+const BEAR_SETUPS: SetupType[] = ["Long Put", "Bear Put Spread", "Bear Call Spread"];
 
 function restrictETFSetup(
-  setup: LegacySetup,
+  setup: SetupType,
   etfCat: ScanOpts["etfCategory"],
   outlook: ScanOutlook,
   ivRank: number,
   strategyPreferences: StrategyPreferences,
-): LegacySetup {
+): SetupType {
   const highIv = strategyPreferences.ivRankHighThreshold;
   const lowIv = strategyPreferences.ivRankLowThreshold;
   // Covered Calls require owning the underlying — not applicable to ETF options
@@ -388,7 +343,7 @@ function chooseSetup(
   ivRank: number,
   signals: TechnicalSignals,
   strategyPreferences: StrategyPreferences,
-): LegacySetup {
+): SetupType {
   const highIv = strategyPreferences.ivRankHighThreshold;
   const lowIv = strategyPreferences.ivRankLowThreshold;
   const useIv = strategyPreferences.strategyAutoSelectByIv;
@@ -475,7 +430,7 @@ function scoreTechnical(signals: TechnicalSignals, outlook: ScanOutlook): number
   return Math.min(35, score);
 }
 
-function scoreIvAlignment(ivRank: number, setup: LegacySetup, daysToEarnings?: number): number {
+function scoreIvAlignment(ivRank: number, setup: SetupType, daysToEarnings?: number): number {
   // Max 25 pts — does the IV rank environment suit the strategy?
   const creditSelling = ["Bull Put Spread", "Bear Call Spread", "Iron Condor", "Covered Call"].includes(setup);
   const debitBuying   = ["Call Spread", "Long Call", "Bear Put Spread", "Long Put", "Straddle"].includes(setup);
@@ -620,7 +575,7 @@ function scoreVwap(price: number, dayVwap: number, prevDayVwap: number, outlook:
 // ─── Human-readable setup description ────────────────────────────────────────
 
 function buildDescription(
-  setup: LegacySetup,
+  setup: SetupType,
   outlook: ScanOutlook,
   ivRank: number,
   signals: TechnicalSignals,
@@ -629,7 +584,7 @@ function buildDescription(
   const ivLevel = ivRank >= 60 ? "high" : ivRank >= 35 ? "moderate" : "low";
   const trendStr = signals.trend === "bullish" ? "uptrend" : signals.trend === "bearish" ? "downtrend" : "sideways";
 
-  const map: Record<LegacySetup, string> = {
+  const map: Record<SetupType, string> = {
     "Bull Put Spread":  `IV rank ${ivRank}% (${ivLevel}) — sell put credit below the ${trendStr}. Profit if price holds above short strike.`,
     "Call Spread":      `Defined-risk bullish play with IV at ${ivRank}%. Buy lower strike, sell upper strike to cap cost.`,
     "Long Call":        `Low IV (${ivRank}%) makes options cheap. Strong ${trendStr} justifies buying premium outright.`,
@@ -647,7 +602,7 @@ function buildDescription(
 
   // Append earnings risk / opportunity note when relevant
   if (daysToEarnings !== undefined && daysToEarnings >= 0 && daysToEarnings <= 21) {
-    const creditSelling = (["Bull Put Spread", "Bear Call Spread", "Iron Condor", "Covered Call"] as LegacySetup[]).includes(setup);
+    const creditSelling = (["Bull Put Spread", "Bear Call Spread", "Iron Condor", "Covered Call"] as SetupType[]).includes(setup);
     if (daysToEarnings <= 7) {
       desc += creditSelling
         ? ` ⚠ Earnings in ≤${daysToEarnings}d — IV elevated; manage risk before the event.`

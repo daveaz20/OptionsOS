@@ -1,5 +1,4 @@
 import { Router, type IRouter } from "express";
-import { STRATEGY_REGISTRY, getStrategiesForConditions } from "../lib/strategy-registry.js";
 import {
   GetStrategiesParams,
   GetStrategiesQueryParams,
@@ -76,29 +75,6 @@ async function getGreeksPreferences(): Promise<{
     filterIlliquid: booleanSetting(values, "filterIlliquidOptionsAutomatically", true),
   };
 }
-
-// GET /strategies — returns all 40 strategy definitions
-router.get("/strategies", (_req, res) => {
-  res.json(STRATEGY_REGISTRY);
-});
-
-// GET /strategies/match — match strategies to current market conditions
-// Query params: outlook, ivRank, rsi14, technicalScore, momentumScore, hasEarnings
-router.get("/strategies/match", (req, res) => {
-  const { outlook, ivRank, rsi14, technicalScore, momentumScore, hasEarnings } = req.query;
-  const validOutlook = ["bullish", "bearish", "neutral"].includes(outlook as string)
-    ? (outlook as "bullish" | "bearish" | "neutral")
-    : "neutral";
-  const results = getStrategiesForConditions({
-    outlook: validOutlook,
-    ivRank: Number(ivRank) || 50,
-    rsi14: Number(rsi14) || 50,
-    technicalScore: Number(technicalScore) || 0,
-    momentumScore: Number(momentumScore) || 0,
-    hasEarnings: hasEarnings === "true",
-  });
-  res.json(results);
-});
 
 // GET /stocks/:symbol/strategies
 router.get("/stocks/:symbol/strategies", async (req, res): Promise<void> => {

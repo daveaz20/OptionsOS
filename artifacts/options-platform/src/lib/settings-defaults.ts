@@ -133,10 +133,6 @@ export interface AppSettings {
   rsiOverbought: number;
   rsiOversold: number;
   // Strategy
-  enabledStrategyIds: Record<string, boolean>;
-  strategyDefaultOutlook: string;
-  strategyDefaultTier: string;
-  strategyDefaultStrategyId: string;
   preferredIvEnvironment: string;
   ivRankLowThreshold: number;
   ivRankHighThreshold: number;
@@ -469,10 +465,6 @@ export const SETTING_DEFAULTS: AppSettings = {
   rsiOverbought: 70,
   rsiOversold: 30,
   // Strategy
-  enabledStrategyIds: {},
-  strategyDefaultOutlook: "all",
-  strategyDefaultTier: "all",
-  strategyDefaultStrategyId: "",
   preferredIvEnvironment: "any",
   ivRankLowThreshold: 30,
   ivRankHighThreshold: 60,

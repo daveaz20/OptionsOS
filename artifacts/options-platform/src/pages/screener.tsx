@@ -5,11 +5,6 @@ import { useSettings } from "@/contexts/SettingsContext";
 import type { AppSettings } from "@/lib/settings-defaults";
 import { useGetWatchlist, useAddToWatchlist, useRemoveFromWatchlist, getGetWatchlistQueryKey } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
-import { StrategyFilterDropdown } from "@/components/strategy/StrategyFilterDropdown";
-import {
-  getMatchedStrategy,
-  useStrategyRegistry,
-} from "@/lib/strategy-catalog";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -26,14 +21,6 @@ interface ScreenerRow {
   setupType: string; recommendedOutlook: string;
   supportPrice: number; resistancePrice: number; liquidity: string;
   source?: "polygon" | "yahoo" | "polygon-eod";
-  topStrategies?: Array<{
-    id: string;
-    name: string;
-    fitScore: number;
-    fitReason: string;
-    tier: string;
-    url: string;
-  }>;
 }
 
 interface FactoredRow extends ScreenerRow {
@@ -432,9 +419,7 @@ export default function Screener() {
   const [sortDir,         setSortDir]         = useState<"asc"|"desc">(settings.screenerDefaultSortDirection || "desc");
   const [tab,             setTab]             = useState<TabKey>(() => (settings.screenerDefaultTab as TabKey) || "overview");
   const [showPicker,      setShowPicker]      = useState(false);
-  const [strategyFilter,  setStrategyFilter]  = useState<string>(settings.strategyDefaultStrategyId || "");
   const pickerRef = useRef<HTMLDivElement>(null);
-  const { data: strategyRegistry = [] } = useStrategyRegistry();
 
   useEffect(() => {
     function handler(e: MouseEvent) {
@@ -451,29 +436,21 @@ export default function Screener() {
     setSortDir(settings.screenerDefaultSortDirection || "desc");
     setActivePreset(settings.screenerDefaultPreset || "All");
     setActiveFilters(filtersFromScreenerDefaults(settings));
-    setStrategyFilter(settings.strategyDefaultStrategyId || "");
   }, [
     settings.screenerDefaultSortColumn,
     settings.screenerDefaultSortDirection,
     settings.screenerDefaultPreset,
     settings.screenerDefaultLiquidity,
     settings.screenerDefaultOutlook,
-    settings.strategyDefaultStrategyId,
   ]);
 
   const factored = useMemo(() => computeFactors(raw), [raw]);
   const filtered = useMemo(() => {
     const minScore = settings.minOpportunityScoreToShow ?? 0;
-    const base = applyFilters(factored, activeFilters).filter(row => row.opportunityScore >= minScore);
-    if (!strategyFilter) return base;
-    return base.filter((row) => Boolean(getMatchedStrategy(row, strategyFilter)));
-  }, [factored, activeFilters, strategyFilter, settings.minOpportunityScoreToShow]);
+    return applyFilters(factored, activeFilters).filter(row => row.opportunityScore >= minScore);
+  }, [factored, activeFilters, settings.minOpportunityScoreToShow]);
   const sorted   = useMemo(() => {
     return [...filtered].sort((a,b) => {
-      if (strategyFilter && sortKey === "marketCap") {
-        const strategyDelta = (getMatchedStrategy(b, strategyFilter)?.fitScore ?? 0) - (getMatchedStrategy(a, strategyFilter)?.fitScore ?? 0);
-        if (strategyDelta !== 0) return strategyDelta;
-      }
       const va = (a as unknown as Record<string, unknown>)[sortKey] ?? 0;
       const vb = (b as unknown as Record<string, unknown>)[sortKey] ?? 0;
       if (typeof va === "string" || typeof vb === "string") {
@@ -483,7 +460,7 @@ export default function Screener() {
       const delta = Number(va) - Number(vb);
       return sortDir === "desc" ? -delta : delta;
     });
-  }, [filtered, sortKey, sortDir, strategyFilter]);
+  }, [filtered, sortKey, sortDir]);
 
   const watchlistSymbolMap = useMemo(() => {
     const m = new Map<string, number>();
@@ -517,7 +494,6 @@ export default function Screener() {
   const applyPreset = (p: typeof PRESETS[0]) => {
     setActiveFilters(p.filters);
     setActivePreset(p.label);
-    setStrategyFilter("");
   };
 
   const onSort = (k: string) => {
@@ -526,12 +502,6 @@ export default function Screener() {
   };
 
   const existingKeys = activeFilters.map(f => f.key);
-  const strategyRegistryForDropdown = useMemo(() => {
-    const enabled = strategyRegistry.filter(strategy => settings.enabledStrategyIds?.[strategy.id] !== false);
-    return settings.strategyDefaultTier && settings.strategyDefaultTier !== "all"
-      ? enabled.filter(strategy => strategy.tier === settings.strategyDefaultTier)
-      : enabled;
-  }, [strategyRegistry, settings.enabledStrategyIds, settings.strategyDefaultTier]);
 
   return (
     <div style={{ display:"flex", flexDirection:"column", height:"100%", background:"#0a0a0a", color:"#fff", fontFamily:"Inter,system-ui,sans-serif", overflow:"hidden" }}>
@@ -542,8 +512,8 @@ export default function Screener() {
           <div style={{ fontSize:18, fontWeight:700, letterSpacing:"-0.03em" }}>
             {activePreset === "All" ? "All stocks" : activePreset}
           </div>
-          {(activeFilters.length > 0 || strategyFilter) && (
-            <button onClick={() => { setActiveFilters([]); setActivePreset("All"); setStrategyFilter(""); }}
+          {activeFilters.length > 0 && (
+            <button onClick={() => { setActiveFilters([]); setActivePreset("All"); }}
               style={{ fontSize:11, color:"rgba(255,69,58,0.8)", background:"none", border:"none", cursor:"pointer", padding:0 }}>
               Clear all
             </button>
@@ -589,17 +559,6 @@ export default function Screener() {
                 ? "#0a84ff" : "rgba(255,255,255,0.55)",
             }}>{p.label}</button>
           ))}
-          {strategyRegistryForDropdown.length > 0 && (
-            <div style={{ marginLeft:"auto" }}>
-              <StrategyFilterDropdown
-                registry={strategyRegistryForDropdown}
-                value={strategyFilter}
-                onChange={setStrategyFilter}
-                placeholder="Browse all 40 strategies"
-                width={296}
-              />
-            </div>
-          )}
         </div>
 
         {/* ── Filter chip bar ── */}
@@ -614,17 +573,6 @@ export default function Screener() {
               <button onClick={()=>removeFilter(f.key)} style={{ background:"none", border:"none", color:"rgba(10,132,255,0.7)", cursor:"pointer", padding:"0 0 0 2px", lineHeight:1, fontSize:12 }}>✕</button>
             </div>
           ))}
-          {strategyFilter && (
-            <div style={{
-              display:"flex", alignItems:"center", gap:4, padding:"4px 8px 4px 10px",
-              background:"rgba(10,132,255,0.12)", border:"1px solid rgba(10,132,255,0.28)",
-              borderRadius:6, fontSize:11, color:"#0a84ff", fontWeight:500, whiteSpace:"nowrap",
-            }}>
-              Strategy: {strategyRegistry.find((strategy) => strategy.id === strategyFilter)?.name ?? strategyFilter}
-              <button onClick={() => setStrategyFilter("")} style={{ background:"none", border:"none", color:"rgba(10,132,255,0.7)", cursor:"pointer", padding:"0 0 0 2px", lineHeight:1, fontSize:12 }}>✕</button>
-            </div>
-          )}
-
           {/* Add filter button */}
           <div ref={pickerRef} style={{ position:"relative" }}>
             <button onClick={()=>setShowPicker(s=>!s)} style={{
