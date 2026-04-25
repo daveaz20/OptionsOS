@@ -15,7 +15,7 @@ import {
   Target, BarChart2, Palette, Database, Check,
   Loader2, RotateCcw, Download, ChevronDown,
   Clock, TrendingUp, Bookmark, Briefcase, Lock,
-  Eye, EyeOff, PlugZap,
+  Eye, EyeOff, PlugZap, Trash2,
 } from "lucide-react";
 
 // ── Types ─────────────────────────────────────────────────────────────────
@@ -365,15 +365,35 @@ const CATEGORIES: CategoryDef[] = [
     id: "watchlist",
     label: "Watchlist",
     icon: <Bookmark size={14} />,
-    description: "Default sort order, display columns, and alert thresholds for the watchlist.",
+    description: "Control watchlist limits, display columns, auto-add rules, alerts, and management tools.",
     settings: [
-      { key: "watchlistDefaultSort", label: "Default sort", type: "select", default: "symbol", options: [{ label: "Symbol (A–Z)", value: "symbol" }, { label: "IV Rank (high–low)", value: "ivRankDesc" }, { label: "Daily change %", value: "changePctDesc" }, { label: "Added date", value: "addedDate" }] },
-      { key: "watchlistShowIVRank", label: "Show IV Rank column", type: "toggle", default: true },
+      { key: "maxWatchlistSize", label: "Max watchlist size", type: "slider", default: 50, min: 10, max: 200 },
+      { key: "showWatchlistSizeWarning", label: "Show warning when approaching max size", type: "toggle", default: true },
+      { key: "watchlistSizeWarningThresholdPct", label: "Warning threshold", type: "slider", default: 80, min: 10, max: 100, unit: "%" },
+      { key: "allowDuplicateWatchlistSymbols", label: "Allow duplicate symbols across watchlists", type: "toggle", default: false },
+      { key: "autoRemoveLowScoreWatchlistSymbols", label: "Auto-remove symbols below score threshold", type: "toggle", default: false },
+      { key: "autoRemoveWatchlistScoreThreshold", label: "Auto-remove score threshold", type: "slider", default: 40, min: 0, max: 100 },
+      { key: "watchlistDefaultSort", label: "Default sort column", type: "select", default: "symbol", options: [{ label: "Symbol", value: "symbol" }, { label: "Score", value: "score" }, { label: "Price", value: "price" }, { label: "Change %", value: "changePercent" }, { label: "Setup Type", value: "setupType" }] },
+      { key: "watchlistDefaultSortDirection", label: "Default sort direction", type: "select", default: "asc", options: [{ label: "Ascending", value: "asc" }, { label: "Descending", value: "desc" }] },
+      { key: "watchlistShowOpportunityScore", label: "Show opportunity score", type: "toggle", default: true },
+      { key: "watchlistShowSetupTypeBadge", label: "Show setup type badge", type: "toggle", default: true },
+      { key: "watchlistShowLastUpdated", label: "Show last updated timestamp", type: "toggle", default: true },
       { key: "watchlistShowEarnings", label: "Show earnings date", type: "toggle", default: true },
+      { key: "watchlistShowIVRank", label: "Show IV rank", type: "toggle", default: true },
       { key: "watchlistShowDailyChange", label: "Show daily change", type: "toggle", default: true },
-      { key: "ivRankAlertThreshold", label: "IV rank alert threshold", description: "Notify when a watchlist stock's IV rank crosses this level", type: "slider", default: 60, min: 0, max: 100, unit: "%" },
-      { key: "priceMoveAlertPct", label: "Price move alert", description: "Notify on intraday move beyond this percentage", type: "slider", default: 5, min: 1, max: 20, unit: "%" },
-      { key: "earningsAlertDays", label: "Earnings alert window", description: "Alert when a watchlist stock has earnings within this window", type: "number", default: 5, min: 1, max: 14, unit: "days" },
+      { key: "compactWatchlistView", label: "Compact watchlist view", type: "toggle", default: false },
+      { key: "autoAddHighConvictionToWatchlist", label: "Auto-add high conviction setups", type: "toggle", default: false },
+      { key: "autoAddWatchlistOpportunityThreshold", label: "Auto-add minimum opportunity score", type: "slider", default: 80, min: 0, max: 100 },
+      { key: "autoAddOnlyPreferredStrategies", label: "Auto-add only for preferred strategies", type: "toggle", default: true },
+      { key: "maxWatchlistAutoAddsPerDay", label: "Max auto-adds per day", type: "slider", default: 5, min: 1, max: 20 },
+      { key: "notifyOnWatchlistAutoAdd", label: "Notify when symbol is auto-added", type: "toggle", default: true },
+      { key: "alertWatchlistScoreDrop", label: "Alert when watched symbol score drops", type: "toggle", default: false },
+      { key: "watchlistScoreDropAlertThreshold", label: "Score drop alert threshold", type: "slider", default: 60, min: 0, max: 100 },
+      { key: "watchlistEarningsAlertDays", label: "Earnings alert window", type: "number", default: 5, min: 1, max: 30, unit: "days" },
+      { key: "watchlistIvSpikeAlertThreshold", label: "IV rank spike alert threshold", type: "slider", default: 70, min: 0, max: 100 },
+      { key: "showWatchlistAlertBadges", label: "Show alerts as badges on watchlist items", type: "toggle", default: true },
+      { key: "allowMultipleWatchlists", label: "Allow multiple watchlists", description: "Future feature; UI is ready now", type: "toggle", default: false },
+      { key: "defaultWatchlistName", label: "Default watchlist name", type: "select", default: "My Watchlist", options: [{ label: "My Watchlist", value: "My Watchlist" }, { label: "Trading Ideas", value: "Trading Ideas" }, { label: "High Conviction", value: "High Conviction" }] },
     ],
   },
   {
@@ -1482,6 +1502,99 @@ function GreeksOptionsPanel({
   );
 }
 
+const WATCHLIST_SECTION_SLICES = [
+  { label: "Watchlist Behavior", start: 0, end: 6 },
+  { label: "Watchlist Display", start: 6, end: 15 },
+  { label: "Auto-Add Rules", start: 15, end: 20 },
+  { label: "Watchlist Alerts", start: 20, end: 25 },
+  { label: "Watchlist Management", start: 25, end: 27 },
+] as const;
+
+function WatchlistSettingsPanel({
+  settings,
+  onChange,
+  onReset,
+}: {
+  settings: AppSettings;
+  onChange: (key: string, value: unknown) => void;
+  onReset: () => void;
+}) {
+  const watchlistSettings = CATEGORIES.find(category => category.id === "watchlist")!.settings;
+  const [watchlistCount, setWatchlistCount] = useState(0);
+  const [qualifyingCount, setQualifyingCount] = useState(0);
+  const [isClearing, setIsClearing] = useState(false);
+  const warningAt = Math.round(settings.maxWatchlistSize * settings.watchlistSizeWarningThresholdPct / 100);
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      fetch("/api/watchlist").then(r => r.ok ? r.json() : []),
+      fetch("/api/screener").then(r => r.ok ? r.json() : []),
+    ]).then(([watchlist, rows]) => {
+      if (cancelled) return;
+      const watched = new Set((Array.isArray(watchlist) ? watchlist : []).map((item: any) => String(item.symbol).toUpperCase()));
+      const preferred = new Set(settings.preferredStrategies.map(strategy => strategy.toLowerCase()));
+      const qualifies = (Array.isArray(rows) ? rows : []).filter((row: any) => {
+        if (watched.has(String(row.symbol).toUpperCase())) return false;
+        if (Number(row.opportunityScore ?? 0) < settings.autoAddWatchlistOpportunityThreshold) return false;
+        if (!settings.autoAddOnlyPreferredStrategies) return true;
+        const topStrategies = Array.isArray(row.topStrategies) ? row.topStrategies : [];
+        return topStrategies.some((strategy: any) => preferred.has(String(strategy.name ?? "").toLowerCase())) || preferred.has(String(row.setupType ?? "").toLowerCase());
+      });
+      setWatchlistCount(Array.isArray(watchlist) ? watchlist.length : 0);
+      setQualifyingCount(qualifies.length);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [settings.autoAddOnlyPreferredStrategies, settings.autoAddWatchlistOpportunityThreshold, settings.preferredStrategies]);
+
+  const exportCsv = useCallback(() => {
+    window.location.href = "/api/watchlist/export";
+  }, []);
+
+  const clearWatchlist = useCallback(async () => {
+    if (!confirm("Clear all watchlist items? This cannot be undone.")) return;
+    setIsClearing(true);
+    try {
+      const response = await fetch("/api/watchlist", { method: "DELETE" });
+      if (!response.ok) throw new Error(await response.text());
+      setWatchlistCount(0);
+    } finally {
+      setIsClearing(false);
+    }
+  }, []);
+
+  return (
+    <div style={{ paddingTop: 8, display: "grid", gap: 24 }}>
+      <div style={{ border: "1px solid rgba(255,255,255,0.07)", borderRadius: 8, background: "rgba(255,255,255,0.02)", padding: 14 }}>
+        <div style={{ fontSize: 14, fontWeight: 700 }}>{settings.defaultWatchlistName}</div>
+        <div style={{ fontSize: 11.5, color: "hsl(var(--muted-foreground))", marginTop: 3 }}>Current watchlist capacity and auto-add eligibility.</div>
+        <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
+          <RiskSummaryItem label="Current Size" value={`${watchlistCount}/${settings.maxWatchlistSize}`} tone={settings.showWatchlistSizeWarning && watchlistCount >= warningAt ? "warning" : "default"} />
+          <RiskSummaryItem label="Warning Starts" value={`${warningAt} symbols`} />
+          <RiskSummaryItem label="Auto-Add Qualifies" value={String(qualifyingCount)} tone={qualifyingCount > 0 ? "warning" : "default"} />
+          <RiskSummaryItem label="Daily Auto-Add Cap" value={String(settings.maxWatchlistAutoAddsPerDay)} />
+        </div>
+      </div>
+
+      {WATCHLIST_SECTION_SLICES.map(section => (
+        <div key={section.label}>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: "hsl(var(--muted-foreground))", textTransform: "uppercase" }}>{section.label}</div>
+          {watchlistSettings.slice(section.start, section.end).map(setting => (
+            <SettingRow key={setting.key} setting={setting} value={settings[setting.key as keyof AppSettings]} onChange={onChange} />
+          ))}
+        </div>
+      ))}
+
+      <div>
+        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: "hsl(var(--muted-foreground))", textTransform: "uppercase" }}>Actions</div>
+        <ActionRow label="Export watchlist to CSV" description="Download the current watchlist with alerts and market fields" icon={<Download size={13} />} onClick={exportCsv} />
+        <ActionRow label={isClearing ? "Clearing..." : "Clear all watchlist items"} description="Remove every symbol from the current watchlist" icon={<Trash2 size={13} />} onClick={clearWatchlist} variant="danger" />
+        <ActionRow label="Reset to Defaults" description="Restore every Watchlist option to its default value" icon={<RotateCcw size={13} />} onClick={onReset} />
+      </div>
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const isMobile = useIsMobile();
   const [activeCategory, setActiveCategory] = useState("general");
@@ -1658,6 +1771,14 @@ export default function SettingsPage() {
               />
             )}
 
+            {activeCategory === "watchlist" && (
+              <WatchlistSettingsPanel
+                settings={settings}
+                onChange={handleChange}
+                onReset={() => handleResetCategory(activeCategoryDef)}
+              />
+            )}
+
             {activeCategory === "security" && (
               <div style={{ paddingTop: 8 }}>
                 {activeCategoryDef.settings.map(s => (
@@ -1691,7 +1812,7 @@ export default function SettingsPage() {
             )}
 
             {/* All other categories */}
-            {activeCategory !== "security" && activeCategory !== "data" && activeCategory !== "strategy" && activeCategory !== "risk" && activeCategory !== "timeHorizon" && activeCategory !== "chartAnalysis" && activeCategory !== "pnl" && activeCategory !== "greeks" && (
+            {activeCategory !== "security" && activeCategory !== "data" && activeCategory !== "strategy" && activeCategory !== "risk" && activeCategory !== "timeHorizon" && activeCategory !== "chartAnalysis" && activeCategory !== "pnl" && activeCategory !== "greeks" && activeCategory !== "watchlist" && (
               <div style={{ paddingTop: 8 }}>
                 {activeCategoryDef.settings.map(s => (
                   <SettingRow key={s.key} setting={s} value={settings[s.key as keyof AppSettings]} onChange={handleChange} />

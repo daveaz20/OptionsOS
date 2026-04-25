@@ -49,7 +49,7 @@ import {
   subscribeQuotes,
 } from "../lib/tastytrade.js";
 import { db, screenerCacheTable, userSettingsTable, watchlistTable } from "@workspace/db";
-import { desc } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 
 const router: IRouter = Router();
 
@@ -65,6 +65,18 @@ interface ScreenerSettings {
   highConvictionThresholds: HighConvictionThresholds;
   strategyPreferences: StrategyPreferences;
   riskPreferences: RiskPreferences;
+  watchlistSettings: WatchlistRefreshSettings;
+}
+
+interface WatchlistRefreshSettings {
+  maxWatchlistSize: number;
+  autoAddHighConvictionToWatchlist: boolean;
+  autoAddWatchlistOpportunityThreshold: number;
+  autoAddOnlyPreferredStrategies: boolean;
+  maxWatchlistAutoAddsPerDay: number;
+  autoRemoveLowScoreWatchlistSymbols: boolean;
+  autoRemoveWatchlistScoreThreshold: number;
+  preferredStrategies: string[];
 }
 
 async function getScreenerSettings(): Promise<ScreenerSettings> {
@@ -117,8 +129,21 @@ async function getScreenerSettings(): Promise<ScreenerSettings> {
     minContractVolume: typeof values.minContractVolume === "number" ? values.minContractVolume : DEFAULT_RISK_PREFERENCES.minContractVolume,
     maxBidAskSpreadPct: typeof values.maxBidAskSpreadPct === "number" ? values.maxBidAskSpreadPct : DEFAULT_RISK_PREFERENCES.maxBidAskSpreadPct,
   };
+  const preferredStrategies = Array.isArray(values.preferredStrategies)
+    ? values.preferredStrategies.filter((value): value is string => typeof value === "string")
+    : ["Short Put", "Iron Condor"];
+  const watchlistSettings: WatchlistRefreshSettings = {
+    maxWatchlistSize: typeof values.maxWatchlistSize === "number" ? values.maxWatchlistSize : 50,
+    autoAddHighConvictionToWatchlist: typeof values.autoAddHighConvictionToWatchlist === "boolean" ? values.autoAddHighConvictionToWatchlist : false,
+    autoAddWatchlistOpportunityThreshold: typeof values.autoAddWatchlistOpportunityThreshold === "number" ? values.autoAddWatchlistOpportunityThreshold : 80,
+    autoAddOnlyPreferredStrategies: typeof values.autoAddOnlyPreferredStrategies === "boolean" ? values.autoAddOnlyPreferredStrategies : true,
+    maxWatchlistAutoAddsPerDay: typeof values.maxWatchlistAutoAddsPerDay === "number" ? values.maxWatchlistAutoAddsPerDay : 5,
+    autoRemoveLowScoreWatchlistSymbols: typeof values.autoRemoveLowScoreWatchlistSymbols === "boolean" ? values.autoRemoveLowScoreWatchlistSymbols : false,
+    autoRemoveWatchlistScoreThreshold: typeof values.autoRemoveWatchlistScoreThreshold === "number" ? values.autoRemoveWatchlistScoreThreshold : 40,
+    preferredStrategies,
+  };
 
-  return { universeMode, cacheRefreshInterval, minOpportunityScoreToShow, ivRankCalculationPeriod, highConvictionThresholds, strategyPreferences, riskPreferences };
+  return { universeMode, cacheRefreshInterval, minOpportunityScoreToShow, ivRankCalculationPeriod, highConvictionThresholds, strategyPreferences, riskPreferences, watchlistSettings };
 }
 
 async function getActiveScreenerSource(): Promise<"polygon" | "yahoo"> {
@@ -456,6 +481,7 @@ async function doRefresh(): Promise<void> {
     const rows   = source === "polygon"
       ? await buildPolygonData(settings.strategyPreferences, settings.riskPreferences)
       : await buildYahooData(settings.strategyPreferences, settings.riskPreferences, settings.ivRankCalculationPeriod);
+    await applyWatchlistAutomation(rows, settings.watchlistSettings);
     cache.data = await enrichWatchlistRows(rows);
     cache.at   = Date.now();
     console.log(`[screener] cache updated: ${cache.data.length} rows (${source})`);
@@ -464,6 +490,53 @@ async function doRefresh(): Promise<void> {
     console.error("[screener] refresh error", err);
   } finally {
     cache.promise = null;
+  }
+}
+
+function matchesPreferredStrategy(row: ScreenerRow, preferredStrategies: string[]): boolean {
+  if (preferredStrategies.length === 0) return true;
+  const preferred = new Set(preferredStrategies.map((strategy) => strategy.toLowerCase()));
+  if (preferred.has(row.setupType.toLowerCase())) return true;
+  return (row.topStrategies ?? []).some((strategy) => preferred.has(strategy.name.toLowerCase()));
+}
+
+async function applyWatchlistAutomation(rows: ScreenerRow[], settings: WatchlistRefreshSettings): Promise<void> {
+  const entries = await db.select().from(watchlistTable);
+  const watchedSymbols = new Set(entries.map((entry) => entry.symbol.toUpperCase()));
+  const rowBySymbol = new Map(rows.map((row) => [row.symbol.toUpperCase(), row]));
+
+  if (settings.autoRemoveLowScoreWatchlistSymbols) {
+    for (const entry of entries) {
+      const row = rowBySymbol.get(entry.symbol.toUpperCase());
+      if (row && row.opportunityScore < settings.autoRemoveWatchlistScoreThreshold) {
+        await db.delete(watchlistTable).where(eq(watchlistTable.id, entry.id));
+        watchedSymbols.delete(entry.symbol.toUpperCase());
+      }
+    }
+  }
+
+  if (!settings.autoAddHighConvictionToWatchlist) return;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const addedToday = entries.filter((entry) => new Date(entry.addedAt).getTime() >= today.getTime()).length;
+  let remaining = Math.max(0, Math.min(
+    settings.maxWatchlistAutoAddsPerDay - addedToday,
+    settings.maxWatchlistSize - watchedSymbols.size,
+  ));
+  if (remaining <= 0) return;
+
+  const candidates = rows
+    .filter((row) => !watchedSymbols.has(row.symbol.toUpperCase()))
+    .filter((row) => row.opportunityScore >= settings.autoAddWatchlistOpportunityThreshold)
+    .filter((row) => !settings.autoAddOnlyPreferredStrategies || matchesPreferredStrategy(row, settings.preferredStrategies))
+    .sort((a, b) => b.opportunityScore - a.opportunityScore);
+
+  for (const row of candidates) {
+    if (remaining <= 0) break;
+    await db.insert(watchlistTable).values({ symbol: row.symbol });
+    watchedSymbols.add(row.symbol.toUpperCase());
+    remaining -= 1;
   }
 }
 

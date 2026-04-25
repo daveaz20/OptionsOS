@@ -267,10 +267,33 @@ export interface AppSettings {
   showPositionPnlOverlay: boolean;
   showBreakevenLines: boolean;
   // Watchlist
+  maxWatchlistSize: number;
+  showWatchlistSizeWarning: boolean;
+  watchlistSizeWarningThresholdPct: number;
+  allowDuplicateWatchlistSymbols: boolean;
+  autoRemoveLowScoreWatchlistSymbols: boolean;
+  autoRemoveWatchlistScoreThreshold: number;
   watchlistDefaultSort: string;
+  watchlistDefaultSortDirection: "asc" | "desc";
+  watchlistShowOpportunityScore: boolean;
+  watchlistShowSetupTypeBadge: boolean;
+  watchlistShowLastUpdated: boolean;
   watchlistShowIVRank: boolean;
   watchlistShowEarnings: boolean;
   watchlistShowDailyChange: boolean;
+  compactWatchlistView: boolean;
+  autoAddHighConvictionToWatchlist: boolean;
+  autoAddWatchlistOpportunityThreshold: number;
+  autoAddOnlyPreferredStrategies: boolean;
+  maxWatchlistAutoAddsPerDay: number;
+  notifyOnWatchlistAutoAdd: boolean;
+  alertWatchlistScoreDrop: boolean;
+  watchlistScoreDropAlertThreshold: number;
+  watchlistEarningsAlertDays: number;
+  watchlistIvSpikeAlertThreshold: number;
+  showWatchlistAlertBadges: boolean;
+  allowMultipleWatchlists: boolean;
+  defaultWatchlistName: string;
   // Positions
   positionsGroupBy: string;
   positionsDefaultSort: string;
@@ -544,10 +567,33 @@ export const SETTING_DEFAULTS: AppSettings = {
   showPositionPnlOverlay: true,
   showBreakevenLines: true,
   // Watchlist
+  maxWatchlistSize: 50,
+  showWatchlistSizeWarning: true,
+  watchlistSizeWarningThresholdPct: 80,
+  allowDuplicateWatchlistSymbols: false,
+  autoRemoveLowScoreWatchlistSymbols: false,
+  autoRemoveWatchlistScoreThreshold: 40,
   watchlistDefaultSort: "symbol",
+  watchlistDefaultSortDirection: "asc",
+  watchlistShowOpportunityScore: true,
+  watchlistShowSetupTypeBadge: true,
+  watchlistShowLastUpdated: true,
   watchlistShowIVRank: true,
   watchlistShowEarnings: true,
   watchlistShowDailyChange: true,
+  compactWatchlistView: false,
+  autoAddHighConvictionToWatchlist: false,
+  autoAddWatchlistOpportunityThreshold: 80,
+  autoAddOnlyPreferredStrategies: true,
+  maxWatchlistAutoAddsPerDay: 5,
+  notifyOnWatchlistAutoAdd: true,
+  alertWatchlistScoreDrop: false,
+  watchlistScoreDropAlertThreshold: 60,
+  watchlistEarningsAlertDays: 5,
+  watchlistIvSpikeAlertThreshold: 70,
+  showWatchlistAlertBadges: true,
+  allowMultipleWatchlists: false,
+  defaultWatchlistName: "My Watchlist",
   // Positions
   positionsGroupBy: "none",
   positionsDefaultSort: "openDate",

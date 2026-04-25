@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -15,6 +15,7 @@ import {
   ChevronDown,
   ChevronUp,
   ChevronsUpDown,
+  Download,
   LineChart,
   Plus,
   Search,
@@ -24,9 +25,10 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useSettings } from "@/contexts/SettingsContext";
 import { formatCurrency, formatPercent } from "@/lib/format";
 
-type SortKey = "symbol" | "price" | "change" | "ivRank" | "techStrength" | "score" | "addedAt";
+type SortKey = "symbol" | "price" | "change" | "changePercent" | "ivRank" | "techStrength" | "score" | "setupType" | "addedAt";
 type SortDir = "asc" | "desc";
 
 function scoreColor(score: number): string {
@@ -67,16 +69,24 @@ export default function WatchlistPage() {
   const removeFromWatchlist = useRemoveFromWatchlist();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { settings } = useSettings();
   const [, setLocation] = useLocation();
   const isMobile = useIsMobile();
 
   const [search, setSearch] = useState("");
   const [addInput, setAddInput] = useState("");
   const [adding, setAdding] = useState(false);
-  const [sortKey, setSortKey] = useState<SortKey>("addedAt");
-  const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const [sortKey, setSortKey] = useState<SortKey>((settings.watchlistDefaultSort as SortKey) || "symbol");
+  const [sortDir, setSortDir] = useState<SortDir>(settings.watchlistDefaultSortDirection || "asc");
 
-  const desktopRowTemplate = "minmax(180px, 1.7fr) minmax(200px, 1.9fr) repeat(5, minmax(90px, 0.85fr)) minmax(170px, 1.15fr)";
+  useEffect(() => {
+    setSortKey((settings.watchlistDefaultSort as SortKey) || "symbol");
+    setSortDir(settings.watchlistDefaultSortDirection || "asc");
+  }, [settings.watchlistDefaultSort, settings.watchlistDefaultSortDirection]);
+
+  const desktopRowTemplate = settings.compactWatchlistView
+    ? "minmax(160px, 1.4fr) minmax(150px, 1.4fr) repeat(5, minmax(74px, 0.7fr)) minmax(140px, 1fr)"
+    : "minmax(180px, 1.7fr) minmax(200px, 1.9fr) repeat(5, minmax(90px, 0.85fr)) minmax(170px, 1.15fr)";
 
   function handleSort(col: SortKey) {
     if (sortKey === col) setSortDir((d) => d === "asc" ? "desc" : "asc");
@@ -132,6 +142,7 @@ export default function WatchlistPage() {
           bv = b.price ?? 0;
           break;
         case "change":
+        case "changePercent":
           av = (a as any).changePercent ?? 0;
           bv = (b as any).changePercent ?? 0;
           break;
@@ -146,6 +157,10 @@ export default function WatchlistPage() {
         case "score":
           av = (a as any).opportunityScore ?? 0;
           bv = (b as any).opportunityScore ?? 0;
+          break;
+        case "setupType":
+          av = (a as any).setupType ?? "";
+          bv = (b as any).setupType ?? "";
           break;
         case "addedAt":
           av = a.addedAt;
@@ -165,7 +180,8 @@ export default function WatchlistPage() {
 
   const gainers = watchlist.filter((w) => ((w as any).changePercent ?? 0) > 0).length;
   const losers = watchlist.filter((w) => ((w as any).changePercent ?? 0) < 0).length;
-  const highIv = watchlist.filter((w) => ((w as any).ivRank ?? 0) >= 60).length;
+  const highIv = watchlist.filter((w) => ((w as any).ivRank ?? 0) >= settings.watchlistIvSpikeAlertThreshold).length;
+  const alertCount = watchlist.reduce((sum, w) => sum + (((w as any).alerts ?? []).length > 0 ? 1 : 0), 0);
   const avgChange = watchlist.length
     ? watchlist.reduce((sum, w) => sum + ((w as any).changePercent ?? 0), 0) / watchlist.length
     : 0;
@@ -201,6 +217,21 @@ export default function WatchlistPage() {
     );
   };
 
+  const exportCsv = () => {
+    window.location.href = "/api/watchlist/export";
+  };
+
+  const clearAll = async () => {
+    if (!confirm("Clear all watchlist items? This cannot be undone.")) return;
+    const response = await fetch("/api/watchlist", { method: "DELETE" });
+    if (!response.ok) {
+      toast({ title: "Failed to clear watchlist", variant: "destructive" });
+      return;
+    }
+    queryClient.invalidateQueries({ queryKey: getGetWatchlistQueryKey() });
+    toast({ title: "Watchlist cleared" });
+  };
+
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", background: "hsl(0 0% 4%)" }}>
     <div style={{ flex: 1, overflowY: "auto" }}>
@@ -212,11 +243,36 @@ export default function WatchlistPage() {
               Watchlist
             </h1>
             <p style={{ fontSize: 12.5, color: "hsl(var(--muted-foreground))" }}>
-              {watchlist.length} {watchlist.length === 1 ? "stock" : "stocks"} tracked
+              {watchlist.length} {watchlist.length === 1 ? "stock" : "stocks"} tracked in {settings.defaultWatchlistName}
             </p>
+            {settings.showWatchlistSizeWarning && watchlist.length >= Math.round(settings.maxWatchlistSize * settings.watchlistSizeWarningThresholdPct / 100) && (
+              <p style={{ marginTop: 4, fontSize: 11, color: "hsl(38 92% 50%)" }}>
+                Approaching max watchlist size: {watchlist.length}/{settings.maxWatchlistSize}
+              </p>
+            )}
           </div>
 
           <form onSubmit={handleAdd} style={{ display: "flex", gap: 7, alignItems: "center", flexWrap: "wrap", justifyContent: isMobile ? "stretch" : "flex-end" }}>
+            <button
+              type="button"
+              onClick={exportCsv}
+              disabled={watchlist.length === 0}
+              title="Export CSV"
+              style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.04)", color: "hsl(var(--muted-foreground))", fontSize: 12, fontWeight: 600, cursor: "pointer", opacity: watchlist.length === 0 ? 0.45 : 1 }}
+            >
+              <Download style={{ width: 13, height: 13 }} />
+              Export
+            </button>
+            <button
+              type="button"
+              onClick={clearAll}
+              disabled={watchlist.length === 0}
+              title="Clear watchlist"
+              style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 12px", borderRadius: 8, border: "1px solid hsl(var(--destructive) / 0.24)", background: "hsl(var(--destructive) / 0.08)", color: "hsl(var(--destructive))", fontSize: 12, fontWeight: 600, cursor: "pointer", opacity: watchlist.length === 0 ? 0.45 : 1 }}
+            >
+              <Trash2 style={{ width: 13, height: 13 }} />
+              Clear
+            </button>
             <input
               value={addInput}
               onChange={(e) => setAddInput(e.target.value.toUpperCase())}
@@ -239,7 +295,7 @@ export default function WatchlistPage() {
             />
             <button
               type="submit"
-              disabled={!addInput.trim() || adding}
+              disabled={!addInput.trim() || adding || watchlist.length >= settings.maxWatchlistSize}
               style={{
                 display: "flex",
                 alignItems: "center",
@@ -252,7 +308,7 @@ export default function WatchlistPage() {
                 fontSize: 13,
                 fontWeight: 600,
                 cursor: "pointer",
-                opacity: (!addInput.trim() || adding) ? 0.5 : 1,
+                opacity: (!addInput.trim() || adding || watchlist.length >= settings.maxWatchlistSize) ? 0.5 : 1,
                 transition: "all 0.12s",
                 letterSpacing: "-0.01em",
               }}
@@ -264,12 +320,13 @@ export default function WatchlistPage() {
         </div>
 
         {watchlist.length > 0 && (
-          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, minmax(0, 1fr))", gap: isMobile ? 8 : 12, marginBottom: isMobile ? 16 : 22 }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(5, minmax(0, 1fr))", gap: isMobile ? 8 : 12, marginBottom: isMobile ? 16 : 22 }}>
             {[
               { label: "GAINERS", value: gainers, icon: <TrendingUp style={{ width: 14, height: 14 }} />, color: "hsl(var(--success))" },
               { label: "LOSERS", value: losers, icon: <TrendingDown style={{ width: 14, height: 14 }} />, color: "hsl(var(--destructive))" },
               { label: "AVG MOVE", value: `${avgChange >= 0 ? "+" : ""}${avgChange.toFixed(2)}%`, icon: <Activity style={{ width: 14, height: 14 }} />, color: avgChange >= 0 ? "hsl(var(--success))" : "hsl(var(--destructive))" },
               { label: "HIGH IV", value: highIv, icon: <Activity style={{ width: 14, height: 14 }} />, color: "hsl(38 92% 50%)" },
+              { label: "ALERTS", value: alertCount, icon: <Activity style={{ width: 14, height: 14 }} />, color: alertCount > 0 ? "hsl(38 92% 50%)" : "hsl(var(--muted-foreground))" },
             ].map((stat) => (
               <div
                 key={stat.label}
@@ -336,6 +393,7 @@ export default function WatchlistPage() {
               const iv = anyItem.ivRank ?? 0;
               const ts = anyItem.technicalStrength ?? 0;
               const sc = anyItem.opportunityScore ?? 0;
+              const alerts = (anyItem.alerts ?? []) as Array<{ label: string; severity: string }>;
 
               return (
                 <div
@@ -357,19 +415,29 @@ export default function WatchlistPage() {
                               {anyItem.recommendedOutlook}
                             </span>
                           )}
+                          {settings.watchlistShowSetupTypeBadge && anyItem.setupType && (
+                            <span style={{ fontSize: 10, fontWeight: 600, color: "hsl(var(--muted-foreground))", background: "rgba(255,255,255,0.06)", padding: "1px 5px", borderRadius: 3 }}>
+                              {anyItem.setupType}
+                            </span>
+                          )}
+                          {settings.showWatchlistAlertBadges && alerts.map((alert) => (
+                            <span key={alert.label} style={{ fontSize: 9.5, fontWeight: 700, color: alert.severity === "danger" ? "hsl(var(--destructive))" : "hsl(38 92% 50%)", background: alert.severity === "danger" ? "hsl(var(--destructive) / 0.10)" : "hsl(38 92% 50% / 0.12)", border: alert.severity === "danger" ? "1px solid hsl(var(--destructive) / 0.22)" : "1px solid hsl(38 92% 50% / 0.25)", borderRadius: 4, padding: "1px 5px" }}>
+                              {alert.label}
+                            </span>
+                          ))}
                         </div>
                         <div style={{ fontSize: 11, color: "hsl(var(--muted-foreground))", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.name}</div>
                       </div>
                       <div style={{ textAlign: "right", flexShrink: 0 }}>
                         <div style={{ fontSize: 15, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{formatCurrency(item.price)}</div>
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 3, fontSize: 12, fontWeight: 600, color: isUp ? "hsl(var(--success))" : "hsl(var(--destructive))" }}>
+                        {settings.watchlistShowDailyChange && <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 3, fontSize: 12, fontWeight: 600, color: isUp ? "hsl(var(--success))" : "hsl(var(--destructive))" }}>
                           {isUp ? <ArrowUpRight style={{ width: 12, height: 12 }} /> : <ArrowDownRight style={{ width: 12, height: 12 }} />}
                           {formatPercent(Math.abs(anyItem.changePercent ?? 0))}
-                        </div>
+                        </div>}
                       </div>
                     </div>
                     <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-                      {iv > 0 && (
+                      {settings.watchlistShowIVRank && iv > 0 && (
                         <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 4, color: iv >= 60 ? "hsl(38 92% 50%)" : "hsl(var(--muted-foreground))", background: iv >= 60 ? "hsl(38 92% 50% / 0.12)" : "rgba(255,255,255,0.05)" }}>
                           IV {Math.round(iv)}%
                         </span>
@@ -377,10 +445,16 @@ export default function WatchlistPage() {
                       <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 4, color: techColor(ts), background: `color-mix(in srgb, ${techColor(ts)} 12%, transparent)` }}>
                         TS {ts}
                       </span>
-                      {sc > 0 && (
+                      {settings.watchlistShowOpportunityScore && sc > 0 && (
                         <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 4, color: scoreColor(sc), background: `color-mix(in srgb, ${scoreColor(sc)} 12%, transparent)` }}>
                           Score {sc}
                         </span>
+                      )}
+                      {settings.watchlistShowEarnings && anyItem.earningsDate && (
+                        <span style={{ fontSize: 10, color: "hsl(var(--muted-foreground))" }}>Earn {anyItem.earningsDate}</span>
+                      )}
+                      {settings.watchlistShowLastUpdated && anyItem.lastUpdated && (
+                        <span style={{ fontSize: 10, color: "hsl(var(--muted-foreground))" }}>Updated {new Date(anyItem.lastUpdated).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>
                       )}
                       <div style={{ display: "flex", gap: 6, marginLeft: "auto" }}>
                         <button
@@ -411,10 +485,10 @@ export default function WatchlistPage() {
               {renderHeaderCell("Symbol", "symbol")}
               {renderHeaderCell("Name")}
               {renderHeaderCell("Price", "price", "right")}
-              {renderHeaderCell("Change", "change", "right")}
-              {renderHeaderCell("IV Rank", "ivRank", "right")}
+              {renderHeaderCell(settings.watchlistShowDailyChange ? "Change" : "", settings.watchlistShowDailyChange ? "change" : undefined, "right")}
+              {renderHeaderCell(settings.watchlistShowIVRank ? "IV Rank" : "", settings.watchlistShowIVRank ? "ivRank" : undefined, "right")}
               {renderHeaderCell("Tech Str.", "techStrength", "right")}
-              {renderHeaderCell("Score", "score", "right")}
+              {renderHeaderCell(settings.watchlistShowOpportunityScore ? "Score" : "", settings.watchlistShowOpportunityScore ? "score" : undefined, "right")}
               {renderHeaderCell("Actions", undefined, "right")}
             </div>
 
@@ -425,6 +499,7 @@ export default function WatchlistPage() {
                 const iv = anyItem.ivRank ?? 0;
                 const ts = anyItem.technicalStrength ?? 0;
                 const sc = anyItem.opportunityScore ?? 0;
+                const alerts = (anyItem.alerts ?? []) as Array<{ label: string; severity: string }>;
 
                 return (
                   <div
@@ -452,16 +527,28 @@ export default function WatchlistPage() {
                             {anyItem.recommendedOutlook}
                           </span>
                         )}
-                        {anyItem.setupType && (
+                        {settings.watchlistShowSetupTypeBadge && anyItem.setupType && (
                           <span style={{ fontSize: 9, fontWeight: 600, padding: "1.5px 5px", borderRadius: 3, color: "hsl(var(--muted-foreground))", background: "rgba(255,255,255,0.06)" }}>
                             {anyItem.setupType}
                           </span>
                         )}
+                        {settings.showWatchlistAlertBadges && alerts.map((alert) => (
+                          <span key={alert.label} style={{ fontSize: 9, fontWeight: 700, padding: "1.5px 5px", borderRadius: 3, color: alert.severity === "danger" ? "hsl(var(--destructive))" : "hsl(38 92% 50%)", background: alert.severity === "danger" ? "hsl(var(--destructive) / 0.10)" : "hsl(38 92% 50% / 0.12)", border: alert.severity === "danger" ? "1px solid hsl(var(--destructive) / 0.22)" : "1px solid hsl(38 92% 50% / 0.25)" }}>
+                            {alert.label}
+                          </span>
+                        ))}
                       </div>
                     </div>
 
                     <div style={{ minWidth: 0, fontSize: 12, color: "hsl(var(--muted-foreground))" }}>
                       <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{item.name}</span>
+                      {(settings.watchlistShowEarnings || settings.watchlistShowLastUpdated) && (
+                        <span style={{ display: "block", marginTop: 2, fontSize: 10, color: "hsl(var(--muted-foreground) / 0.75)" }}>
+                          {settings.watchlistShowEarnings && anyItem.earningsDate ? `Earn ${anyItem.earningsDate}` : ""}
+                          {settings.watchlistShowEarnings && anyItem.earningsDate && settings.watchlistShowLastUpdated && anyItem.lastUpdated ? " · " : ""}
+                          {settings.watchlistShowLastUpdated && anyItem.lastUpdated ? `Updated ${new Date(anyItem.lastUpdated).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : ""}
+                        </span>
+                      )}
                     </div>
 
                     <div style={{ textAlign: "right", fontSize: 13, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
@@ -469,18 +556,18 @@ export default function WatchlistPage() {
                     </div>
 
                     <div style={{ textAlign: "right" }}>
-                      <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 12, fontWeight: 600, color: isUp ? "hsl(var(--success))" : "hsl(var(--destructive))", fontVariantNumeric: "tabular-nums" }}>
+                      {settings.watchlistShowDailyChange && <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 12, fontWeight: 600, color: isUp ? "hsl(var(--success))" : "hsl(var(--destructive))", fontVariantNumeric: "tabular-nums" }}>
                         {isUp ? <ArrowUpRight style={{ width: 12, height: 12 }} /> : <ArrowDownRight style={{ width: 12, height: 12 }} />}
                         {formatPercent(Math.abs(anyItem.changePercent ?? 0))}
-                      </span>
+                      </span>}
                     </div>
 
                     <div style={{ textAlign: "right" }}>
-                      {iv > 0 ? (
+                      {settings.watchlistShowIVRank && iv > 0 ? (
                         <span style={{ fontSize: 12, fontWeight: 600, fontVariantNumeric: "tabular-nums", color: iv >= 60 ? "hsl(38 92% 50%)" : iv >= 40 ? "hsl(var(--primary))" : "hsl(var(--muted-foreground))" }}>
                           {Math.round(iv)}%
                         </span>
-                      ) : <span style={{ color: "hsl(var(--muted-foreground))", fontSize: 12 }}>—</span>}
+                      ) : null}
                     </div>
 
                     <div style={{ textAlign: "right" }}>
@@ -493,9 +580,9 @@ export default function WatchlistPage() {
                     </div>
 
                     <div style={{ textAlign: "right" }}>
-                      {sc > 0 ? (
+                      {settings.watchlistShowOpportunityScore && sc > 0 ? (
                         <span style={{ fontSize: 13, fontWeight: 700, fontVariantNumeric: "tabular-nums", color: scoreColor(sc) }}>{sc}</span>
-                      ) : <span style={{ color: "hsl(var(--muted-foreground))", fontSize: 12 }}>—</span>}
+                      ) : null}
                     </div>
 
                     <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }} onClick={(e) => e.stopPropagation()}>
