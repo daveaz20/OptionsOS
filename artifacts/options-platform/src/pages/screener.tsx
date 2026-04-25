@@ -149,10 +149,6 @@ function filtersFromScreenerDefaults(settings: AppSettings): ActiveFilter[] {
     filters.push({ key: "outlook", value: settings.screenerDefaultOutlook });
   }
 
-  if (settings.strategyDefaultOutlook && settings.strategyDefaultOutlook !== "all") {
-    filters.push({ key: "outlook", value: settings.strategyDefaultOutlook });
-  }
-
   return filters;
 }
 
@@ -462,7 +458,6 @@ export default function Screener() {
     settings.screenerDefaultPreset,
     settings.screenerDefaultLiquidity,
     settings.screenerDefaultOutlook,
-    settings.strategyDefaultOutlook,
     settings.strategyDefaultStrategyId,
   ]);
 

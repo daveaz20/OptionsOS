@@ -1,9 +1,9 @@
 import { Link, useLocation, useSearch } from "wouter";
 import { Activity, LayoutDashboard, Filter, LineChart, Briefcase, Bookmark, Settings } from "lucide-react";
-import { useState, useEffect } from "react";
 import { GlobalSearch } from "./GlobalSearch";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useSettings } from "@/contexts/SettingsContext";
+import { useMarketOpen } from "@/hooks/use-market-open";
 import {
   useGetTastytradeAuthStatus,
   useGetTastytradeStreamerStatus,
@@ -14,36 +14,12 @@ interface ShellProps {
 }
 
 const NAV_ITEMS = [
-  { href: "/",                    label: "Dashboard", icon: <LayoutDashboard size={18} /> },
-  { href: "/screener",            label: "Screener",  icon: <Filter size={18} /> },
-  { href: "/scanner",             label: "Analysis",  icon: <LineChart size={18} /> },
-  { href: "/watchlist",             label: "Watchlist", icon: <Bookmark size={18} /> },
-  { href: "/positions",           label: "Positions", icon: <Briefcase size={18} /> },
+  { href: "/",          label: "Dashboard", icon: <LayoutDashboard size={18} /> },
+  { href: "/screener",  label: "Screener",  icon: <Filter size={18} /> },
+  { href: "/scanner",   label: "Analysis",  icon: <LineChart size={18} /> },
+  { href: "/watchlist", label: "Watchlist", icon: <Bookmark size={18} /> },
+  { href: "/positions", label: "Positions", icon: <Briefcase size={18} /> },
 ];
-
-function useMarketOpen() {
-  const [open, setOpen] = useState(false);
-
-  useEffect(() => {
-    function check() {
-      try {
-        const etStr = new Date().toLocaleString("en-US", { timeZone: "America/New_York" });
-        const et = new Date(etStr);
-        const day = et.getDay();
-        if (day === 0 || day === 6) { setOpen(false); return; }
-        const totalMin = et.getHours() * 60 + et.getMinutes();
-        setOpen(totalMin >= 9 * 60 + 30 && totalMin < 16 * 60);
-      } catch {
-        setOpen(false);
-      }
-    }
-    check();
-    const t = setInterval(check, 60_000);
-    return () => clearInterval(t);
-  }, []);
-
-  return open;
-}
 
 export function Shell({ children }: ShellProps) {
   const [location] = useLocation();
@@ -62,8 +38,6 @@ export function Shell({ children }: ShellProps) {
   const ttTone = streamerLive ? "hsl(var(--success))" : "hsl(43 96% 56%)";
   const ttBorder = streamerLive ? "hsl(var(--success)/0.22)" : "hsl(43 96% 56% / 0.24)";
   const ttBg = streamerLive ? "hsl(var(--success)/0.1)" : "hsl(43 96% 56% / 0.12)";
-
-  const lastLogin = new Date().toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
   return (
     <div className="flex h-[100dvh] w-full flex-col overflow-hidden bg-background text-foreground font-sans">
@@ -127,11 +101,6 @@ export function Shell({ children }: ShellProps) {
 
         {/* Right */}
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          {!isMobile && settings.showLastLoginTimestamp && (
-            <span style={{ fontSize: 11, color: "hsl(var(--muted-foreground))", fontVariantNumeric: "tabular-nums" }}>
-              Last login {lastLogin}
-            </span>
-          )}
           {showTastytradeBadge && (
             <div
               style={{
@@ -200,7 +169,7 @@ export function Shell({ children }: ShellProps) {
         >
           {NAV_ITEMS.map((item) => {
             const itemPath2 = item.href.split("?")[0]!;
-            const active = location === itemPath2 && (item.href === itemPath2 || item.href === location);
+            const active = location === itemPath2;
             return (
               <Link
                 key={item.href}

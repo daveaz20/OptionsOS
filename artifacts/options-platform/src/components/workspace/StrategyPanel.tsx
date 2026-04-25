@@ -301,8 +301,8 @@ function StrategyDetail({
       )}
 
       {/* Metrics grid */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 0, borderTop: "1px solid rgba(255,255,255,0.05)" }}>
-        {[
+      {(() => {
+        const metrics = [
           {
             label: isCredit ? "Credit Received" : hasStockLeg ? "Net Cost" : "Cost",
             value: formatCurrency(Math.abs(strategy.tradeCost) * contracts),
@@ -314,18 +314,24 @@ function StrategyDetail({
           ...(settings.showProbabilityOfProfit ? [{ label: "POP", value: `${pop}%`, color: pop >= 60 ? "hsl(var(--success))" : "hsl(var(--foreground))" }] : []),
           { label: "Breakeven",   value: formatCurrency(strategy.breakeven), color: "hsl(var(--foreground))" },
           { label: "Days to exp", value: `${dte}`, color: "hsl(var(--foreground))" },
-        ].map((m, i) => (
-          <div key={i} style={{
-            padding: "9px 12px",
-            borderRight: i % 2 === 0 ? "1px solid rgba(255,255,255,0.05)" : undefined,
-            borderBottom: i < 4 ? "1px solid rgba(255,255,255,0.05)" : undefined,
-            display: "flex", flexDirection: "column", gap: 3,
-          }}>
-            <span style={{ fontSize: 10, color: "hsl(var(--muted-foreground))", fontWeight: 400 }}>{m.label}</span>
-            <span style={{ fontSize: 13, fontWeight: 600, letterSpacing: "-0.02em", color: m.color, fontVariantNumeric: "tabular-nums" }}>{m.value}</span>
+        ];
+        const lastRowStart = Math.floor((metrics.length - 1) / 2) * 2;
+        return (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 0, borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+            {metrics.map((m, i) => (
+              <div key={i} style={{
+                padding: "9px 12px",
+                borderRight: i % 2 === 0 ? "1px solid rgba(255,255,255,0.05)" : undefined,
+                borderBottom: i < lastRowStart ? "1px solid rgba(255,255,255,0.05)" : undefined,
+                display: "flex", flexDirection: "column", gap: 3,
+              }>
+                <span style={{ fontSize: 10, color: "hsl(var(--muted-foreground))", fontWeight: 400 }}>{m.label}</span>
+                <span style={{ fontSize: 13, fontWeight: 600, letterSpacing: "-0.02em", color: m.color, fontVariantNumeric: "tabular-nums" }}>{m.value}</span>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
+        );
+      })()}
 
       {/* Action buttons */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, padding: "10px 12px", borderTop: "1px solid rgba(255,255,255,0.05)" }}>

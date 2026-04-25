@@ -221,7 +221,6 @@ export interface AppSettings {
   showSensitiveDataHiddenBanner: boolean;
   autoLogoutTimer: string;
   requirePasswordForCredentialChanges: boolean;
-  showLastLoginTimestamp: boolean;
   lockSettingsPageWithPassword: boolean;
   debugMode: boolean;
   apiTimeout: number;
@@ -558,7 +557,6 @@ export const SETTING_DEFAULTS: AppSettings = {
   showSensitiveDataHiddenBanner: true,
   autoLogoutTimer: "never",
   requirePasswordForCredentialChanges: true,
-  showLastLoginTimestamp: false,
   lockSettingsPageWithPassword: false,
   debugMode: false,
   apiTimeout: 15000,

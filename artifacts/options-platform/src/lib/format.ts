@@ -28,10 +28,6 @@ export function formatNumber(value: number) {
   return value.toString();
 }
 
-export function cn(...classes: (string | undefined | null | false)[]) {
-  return classes.filter(Boolean).join(" ");
-}
-
 export function useFormats() {
   const { settings } = useSettings();
   const locale = settings.numberFormat === "EU" ? "de-DE" : "en-US";

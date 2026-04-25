@@ -78,7 +78,9 @@ function daysUntilEarnings(earningsDate?: string): number | null {
   if (!earningsDate || earningsDate === "TBD") return null;
   const date = new Date(earningsDate);
   if (Number.isNaN(date.getTime())) return null;
-  return Math.floor((date.getTime() - Date.now()) / 86_400_000);
+  const nowEt = new Date(new Date().toLocaleString("en-US", { timeZone: "America/New_York" }));
+  nowEt.setHours(0, 0, 0, 0);
+  return Math.ceil((date.getTime() - nowEt.getTime()) / 86_400_000);
 }
 
 function formatEarningsBadge(days: number): string {

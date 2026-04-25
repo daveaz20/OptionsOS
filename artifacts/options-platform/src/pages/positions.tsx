@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useSettings } from "@/contexts/SettingsContext";
-import { useGetAccountBalances, useGetAccountPositions } from "@workspace/api-client-react";
+import { useGetAccountBalances, useGetAccountPositions, useGetTastytradeAuthStatus } from "@workspace/api-client-react";
 import type { AccountPosition } from "@workspace/api-client-react";
 import { formatCurrency } from "@/lib/format";
 import {
@@ -501,15 +501,7 @@ export default function PositionsPage() {
     staleTime: 60 * 1000,
     refetchInterval: settings.autoSyncTastytradePositions ? 60 * 1000 : false,
   });
-  const { data: authStatus } = useQuery<{ enabled: boolean; connected: boolean; oauthReady: boolean }>({
-    queryKey: ["tt-auth-status"],
-    queryFn: async () => {
-      const res = await fetch("/api/auth/status");
-      if (!res.ok) throw new Error("Failed to load Tastytrade auth status");
-      return res.json();
-    },
-    staleTime: 60 * 1000,
-  });
+  const { data: authStatus } = useGetTastytradeAuthStatus();
 
   const positions = (data?.positions ?? []) as ExtendedPosition[];
   const buyingPowerUsedPct =
@@ -560,9 +552,7 @@ export default function PositionsPage() {
               {(error as any)?.status === 401
                 ? "Tastytrade is not connected yet. Connect your account to load live positions."
                 : (error as any)?.status === 503
-                  ? authStatus?.oauthReady
-                    ? "Tastytrade is ready to connect, but no account is linked yet."
-                    : "Tastytrade OAuth credentials are not configured on the server."
+                  ? "Tastytrade OAuth credentials are not configured on the server."
                   : `Failed to load positions: ${(error as Error).message}`
               }
             </div>

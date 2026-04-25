@@ -1,6 +1,7 @@
-import { useMemo, useState, useCallback, useEffect } from "react";
+import { useMemo, useState, useCallback } from "react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useQuery } from "@tanstack/react-query";
+import { useMarketOpen } from "@/hooks/use-market-open";
 import {
   useGetDashboardSummary, useGetTopMovers, useGetWatchlist,
   useListStocks, getGetWatchlistQueryKey, useRemoveFromWatchlist,
@@ -93,7 +94,10 @@ function daysUntil(dateStr: string | undefined): number | null {
   if (!dateStr) return null;
   const d = new Date(dateStr);
   if (isNaN(d.getTime())) return null;
-  return Math.ceil((d.getTime() - Date.now()) / 86_400_000);
+  // Compare against ET midnight to avoid timezone off-by-one
+  const nowEt = new Date(new Date().toLocaleString("en-US", { timeZone: "America/New_York" }));
+  nowEt.setHours(0, 0, 0, 0);
+  return Math.ceil((d.getTime() - nowEt.getTime()) / 86_400_000);
 }
 
 // ── Shared sub-components ─────────────────────────────────────────────────
@@ -131,26 +135,6 @@ function Skeleton({ h = 44, cols = 1 }: { h?: number; cols?: number }) {
 }
 
 // ── Market status pill ────────────────────────────────────────────────────
-
-function useMarketOpen() {
-  const [open, setOpen] = useState(false);
-  useEffect(() => {
-    function check() {
-      try {
-        const etStr = new Date().toLocaleString("en-US", { timeZone: "America/New_York" });
-        const et = new Date(etStr);
-        const day = et.getDay();
-        if (day === 0 || day === 6) { setOpen(false); return; }
-        const totalMin = et.getHours() * 60 + et.getMinutes();
-        setOpen(totalMin >= 9 * 60 + 30 && totalMin < 16 * 60);
-      } catch { setOpen(false); }
-    }
-    check();
-    const t = setInterval(check, 60_000);
-    return () => clearInterval(t);
-  }, []);
-  return open;
-}
 
 function MarketStatusPill() {
   const open = useMarketOpen();

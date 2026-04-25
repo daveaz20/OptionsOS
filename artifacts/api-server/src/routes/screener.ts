@@ -567,13 +567,13 @@ async function enrichWatchlistRows(rows: ScreenerRow[]): Promise<ScreenerRow[]> 
         return { ...row, priceSource: row.priceSource ?? "polygon" };
       }
 
-      const change = previousClose > 0 ? round2(livePrice - previousClose) : row.change;
+      const change = previousClose > 0 ? r2(livePrice - previousClose) : row.change;
       const changePercent =
-        previousClose > 0 ? round2((change / previousClose) * 100) : row.changePercent;
+        previousClose > 0 ? r2((change / previousClose) * 100) : row.changePercent;
 
       return {
         ...row,
-        price: round2(livePrice),
+        price: r2(livePrice),
         change,
         changePercent,
         volume: liveQuote.volume > 0 ? liveQuote.volume : row.volume,
@@ -687,7 +687,6 @@ function isUSMarketOpen(): boolean {
 }
 
 function r2(n: number) { return Math.round(n * 100) / 100; }
-function round2(n: number) { return Math.round(n * 100) / 100; }
 
 // ─── Cache access for other routes ────────────────────────────────────────────
 
