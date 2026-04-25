@@ -3,6 +3,7 @@ import path from "node:path";
 import { EventEmitter } from "node:events";
 import WebSocket from "ws";
 import type { RawData } from "ws";
+import { db, userSettingsTable } from "@workspace/db";
 import { loadServerEnvIntoProcess } from "./server-env.js";
 
 loadServerEnvIntoProcess();
@@ -254,6 +255,7 @@ const streamedGreeks = new Map<string, StreamedGreeks>();
 
 const chainCache = new Map<string, { data: OptionsChain; exp: number }>();
 const metricsCache = new Map<string, { data: TtMarketMetrics; exp: number }>();
+let positionsCache: { data: TtRawPosition[]; exp: number } | null = null;
 
 const num = (value: unknown): number => {
   if (typeof value === "number") return Number.isFinite(value) ? value : 0;
@@ -266,6 +268,26 @@ const num = (value: unknown): number => {
 
 const round2 = (value: number) => Math.round(value * 100) / 100;
 const round3 = (value: number) => Math.round(value * 1000) / 1000;
+
+function syncIntervalToMs(value: unknown): number {
+  if (value === "5m") return 5 * 60 * 1000;
+  if (value === "15m") return 15 * 60 * 1000;
+  if (value === "manual") return 0;
+  return 60 * 1000;
+}
+
+async function getPositionPollingSettings(): Promise<{ autoSync: boolean; intervalMs: number }> {
+  try {
+    const rows = await db.select().from(userSettingsTable);
+    const settings = Object.fromEntries(rows.map((row) => [row.key, row.value])) as Record<string, unknown>;
+    return {
+      autoSync: settings.autoSyncTastytradePositions !== false,
+      intervalMs: syncIntervalToMs(settings.tastytradePositionSyncInterval),
+    };
+  } catch {
+    return { autoSync: true, intervalMs: 60 * 1000 };
+  }
+}
 
 function normalizeSymbol(symbol: string): string {
   return symbol.trim().toUpperCase();
@@ -1284,7 +1306,20 @@ export async function getRawPositions(): Promise<TtRawPosition[]> {
 }
 
 export async function getPositions(): Promise<TtLivePosition[]> {
-  return getRawPositions();
+  const polling = await getPositionPollingSettings();
+  const now = Date.now();
+
+  if (polling.autoSync && polling.intervalMs > 0 && positionsCache && now < positionsCache.exp) {
+    return positionsCache.data;
+  }
+
+  const positions = await getRawPositions();
+  if (polling.autoSync && polling.intervalMs > 0) {
+    positionsCache = { data: positions, exp: now + polling.intervalMs };
+  } else {
+    positionsCache = null;
+  }
+  return positions;
 }
 
 export interface TtBalances {

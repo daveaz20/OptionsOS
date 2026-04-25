@@ -295,8 +295,36 @@ export interface AppSettings {
   allowMultipleWatchlists: boolean;
   defaultWatchlistName: string;
   // Positions
+  positionsPnlDisplayFormat: string;
+  showDailyPnlChange: boolean;
+  pnlColorScheme: string;
+  showPnlAsPctOfMaxProfit: boolean;
   positionsGroupBy: string;
   positionsDefaultSort: string;
+  showPositionGroupSubtotals: boolean;
+  collapsePositionGroupsByDefault: boolean;
+  showPortfolioGreeksPerGroup: boolean;
+  showClosedPositions: boolean;
+  closedPositionHistoryDays: number;
+  showClosedPositionsSeparateSection: boolean;
+  includeClosedPositionsInPnlTotals: boolean;
+  showProfitTargetMarker: boolean;
+  showStopLossMarker: boolean;
+  alertPositionProfitTarget: boolean;
+  alertPositionStopLoss: boolean;
+  autoCalculateDaysInTrade: boolean;
+  showPositionThetaDecayPerDay: boolean;
+  showPositionsPortfolioGreeksSummary: boolean;
+  showBuyingPowerUsedPct: boolean;
+  showPortfolioDeltaExposure: boolean;
+  showSectorAllocationChart: boolean;
+  showStrategyAllocationChart: boolean;
+  showWinRateStatistics: boolean;
+  winRateCalculationPeriod: string;
+  autoSyncTastytradePositions: boolean;
+  tastytradePositionSyncInterval: string;
+  showManualPositions: boolean;
+  matchTastytradePositionDisplay: boolean;
   autoCloseAtExpiry: boolean;
 }
 
@@ -595,7 +623,35 @@ export const SETTING_DEFAULTS: AppSettings = {
   allowMultipleWatchlists: false,
   defaultWatchlistName: "My Watchlist",
   // Positions
+  positionsPnlDisplayFormat: "both",
+  showDailyPnlChange: true,
+  pnlColorScheme: "greenRed",
+  showPnlAsPctOfMaxProfit: true,
   positionsGroupBy: "none",
   positionsDefaultSort: "openDate",
+  showPositionGroupSubtotals: true,
+  collapsePositionGroupsByDefault: false,
+  showPortfolioGreeksPerGroup: true,
+  showClosedPositions: true,
+  closedPositionHistoryDays: 30,
+  showClosedPositionsSeparateSection: true,
+  includeClosedPositionsInPnlTotals: true,
+  showProfitTargetMarker: true,
+  showStopLossMarker: true,
+  alertPositionProfitTarget: true,
+  alertPositionStopLoss: true,
+  autoCalculateDaysInTrade: true,
+  showPositionThetaDecayPerDay: true,
+  showPositionsPortfolioGreeksSummary: true,
+  showBuyingPowerUsedPct: true,
+  showPortfolioDeltaExposure: true,
+  showSectorAllocationChart: true,
+  showStrategyAllocationChart: true,
+  showWinRateStatistics: true,
+  winRateCalculationPeriod: "90D",
+  autoSyncTastytradePositions: true,
+  tastytradePositionSyncInterval: "1m",
+  showManualPositions: true,
+  matchTastytradePositionDisplay: false,
   autoCloseAtExpiry: false,
 };

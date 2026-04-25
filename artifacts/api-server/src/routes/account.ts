@@ -1,15 +1,70 @@
 import { Router, type IRouter } from "express";
+import { eq } from "drizzle-orm";
+import { db, stocksTable, userSettingsTable } from "@workspace/db";
 import {
   isTastytradeEnabled,
   isTastytradeAuthorized,
   getOptionsChain,
   getPositions,
   getAccountBalances,
+  getTransactions,
   type OptionsChain,
   type StreamedGreeks,
 } from "../lib/tastytrade.js";
 
 const router: IRouter = Router();
+
+interface PositionDisplaySettings {
+  defaultProfitTargetPct: number;
+  defaultStopLossPct: number;
+  alertPositionProfitTarget: boolean;
+  alertPositionStopLoss: boolean;
+  closedPositionHistoryDays: number;
+  winRateCalculationPeriod: string;
+}
+
+async function getPositionDisplaySettings(): Promise<PositionDisplaySettings> {
+  const rows = await db.select().from(userSettingsTable);
+  const settings = Object.fromEntries(rows.map((row) => [row.key, row.value])) as Record<string, unknown>;
+  return {
+    defaultProfitTargetPct: Number(settings.defaultProfitTargetPct ?? 50),
+    defaultStopLossPct: Number(settings.defaultStopLossPct ?? 100),
+    alertPositionProfitTarget: settings.alertPositionProfitTarget !== false,
+    alertPositionStopLoss: settings.alertPositionStopLoss !== false,
+    closedPositionHistoryDays: Number(settings.closedPositionHistoryDays ?? 30),
+    winRateCalculationPeriod: String(settings.winRateCalculationPeriod ?? "90D"),
+  };
+}
+
+function buildPositionAlerts(totalPnlPercent: number, settings: PositionDisplaySettings) {
+  const alerts: Array<{ type: string; label: string; severity: "success" | "danger" | "warning" }> = [];
+  if (settings.alertPositionProfitTarget && totalPnlPercent >= settings.defaultProfitTargetPct) {
+    alerts.push({ type: "profitTarget", label: "Profit target", severity: "success" });
+  }
+  if (settings.alertPositionStopLoss && totalPnlPercent <= -Math.abs(settings.defaultStopLossPct)) {
+    alerts.push({ type: "stopLoss", label: "Stop loss", severity: "danger" });
+  }
+  return alerts;
+}
+
+function daysSince(dateText: string): number | null {
+  const time = Date.parse(dateText);
+  if (!Number.isFinite(time)) return null;
+  return Math.max(0, Math.floor((Date.now() - time) / 86_400_000));
+}
+
+function winRateWindowStart(period: string): number {
+  const now = Date.now();
+  if (period === "30D") return now - 30 * 86_400_000;
+  if (period === "90D") return now - 90 * 86_400_000;
+  if (period === "1Y") return now - 365 * 86_400_000;
+  return 0;
+}
+
+function isClosingTransaction(action: string, description: string): boolean {
+  const text = `${action} ${description}`.toLowerCase();
+  return text.includes("close") || text.includes("expiration") || text.includes("assignment") || text.includes("exercise");
+}
 
 // ─── OCC symbol parser ─────────────────────────────────────────────────────
 // OCC format: "AAPL  250321C00175000"
@@ -43,6 +98,7 @@ interface ParsedLeg {
   liveGreeks: StreamedGreeks | null;
   unrealizedPnl: number | null;
   multiplier: number;
+  createdAt: string;
 }
 
 function inferStrategyType(legs: ParsedLeg[]): string {
@@ -115,7 +171,11 @@ router.get("/account/positions", async (_req, res): Promise<void> => {
   if (!isTastytradeEnabled()) { res.status(503).json({ error: "Tastytrade OAuth credentials not configured" }); return; }
   if (!isTastytradeAuthorized()) { res.status(401).json({ error: "Tastytrade not authorized", authUrl: "/api/auth/tastytrade" }); return; }
   try {
-    const rawAll = await getPositions();
+    const [rawAll, settings, balances] = await Promise.all([
+      getPositions(),
+      getPositionDisplaySettings(),
+      getAccountBalances().catch(() => null),
+    ]);
     const rawOpts = rawAll.filter(p =>
       p.instrumentType === "Equity Option" || p.instrumentType === "Future Option",
     );
@@ -138,6 +198,7 @@ router.get("/account/positions", async (_req, res): Promise<void> => {
         liveGreeks: pos.liveGreeks,
         unrealizedPnl: pos.unrealizedPnl,
         multiplier: pos.multiplier,
+        createdAt: pos.createdAt,
       });
     }
 
@@ -155,6 +216,12 @@ router.get("/account/positions", async (_req, res): Promise<void> => {
     await Promise.allSettled(underlyings.map(async (sym) => {
       try { chains.set(sym, await getOptionsChain(sym)); } catch { /* greeks unavailable */ }
     }));
+
+    const sectorRows = await Promise.all(underlyings.map(async (sym) => {
+      const rows = await db.select({ sector: stocksTable.sector }).from(stocksTable).where(eq(stocksTable.symbol, sym)).limit(1);
+      return [sym, rows[0]?.sector ?? "Unclassified"] as const;
+    }));
+    const sectors = new Map(sectorRows);
 
     const today = Date.now();
 
@@ -217,12 +284,20 @@ router.get("/account/positions", async (_req, res): Promise<void> => {
         }
       }
 
+      const totalPnlRounded = Math.round(totalPnl * 100) / 100;
+      const totalPnlPercent = totalCostBasis !== 0 ? Math.round((totalPnl / totalCostBasis) * 10000) / 100 : 0;
+      const openedAt = legs.map(leg => leg.createdAt).filter(Boolean).sort()[0] ?? "";
+      const daysInTrade = openedAt ? daysSince(openedAt) : null;
+
       return {
         id: key,
         underlying,
+        sector: sectors.get(underlying!) ?? "Unclassified",
         strategyType,
         expiration,
         dte,
+        openedAt,
+        daysInTrade,
         strikesLabel: sortedStrikes.join("/"),
         legs: legs.map(leg => ({
           symbol: leg.symbol,
@@ -238,8 +313,10 @@ router.get("/account/positions", async (_req, res): Promise<void> => {
           unrealizedPnl: leg.unrealizedPnl,
           pnl: Math.round(((leg.livePrice ?? leg.currentPrice) - leg.openPrice) * (leg.direction === "Long" ? 1 : -1) * leg.quantity * leg.multiplier * 100) / 100,
         })),
-        totalPnl:        Math.round(totalPnl * 100) / 100,
-        totalPnlPercent: totalCostBasis !== 0 ? Math.round((totalPnl / totalCostBasis) * 10000) / 100 : 0,
+        totalPnl:        totalPnlRounded,
+        totalPnlPercent,
+        maxProfitPnlPercent: totalPnlPercent,
+        realizedPnl: 0,
         livePrice: livePriceWeight > 0 ? Math.round((livePriceAccumulator / livePriceWeight) * 100) / 100 : null,
         liveGreeks: liveGreeksCount > 0 ? {
           delta: Math.round(delta * 1000) / 1000,
@@ -256,16 +333,62 @@ router.get("/account/positions", async (_req, res): Promise<void> => {
           theta: Math.round(theta * 100) / 100,
           vega:  Math.round(vega  * 100) / 100,
         },
+        alerts: buildPositionAlerts(totalPnlPercent, settings),
       };
     });
 
-    res.json({ positions });
+    const buyingPowerUsedPct =
+      balances && balances.netLiquidatingValue > 0
+        ? Math.round(((balances.netLiquidatingValue - balances.optionBuyingPower) / balances.netLiquidatingValue) * 10000) / 100
+        : 0;
+
+    res.json({ positions, buyingPowerUsedPct });
   } catch (err: any) {
     res.status(500).json({ error: `Failed to fetch positions: ${err.message}` });
   }
 });
 
 // ─── GET /account/summary ─────────────────────────────────────────────────
+
+router.get("/account/position-stats", async (_req, res): Promise<void> => {
+  if (!isTastytradeEnabled()) { res.status(503).json({ error: "Tastytrade OAuth credentials not configured" }); return; }
+  if (!isTastytradeAuthorized()) { res.status(401).json({ error: "Tastytrade not authorized", authUrl: "/api/auth/tastytrade" }); return; }
+  try {
+    const settings = await getPositionDisplaySettings();
+    const winRateStart = winRateWindowStart(settings.winRateCalculationPeriod);
+    const historyStart = Date.now() - settings.closedPositionHistoryDays * 86_400_000;
+    const transactions = (await getTransactions(250)).filter((tx) => {
+      const executedAt = Date.parse(tx.executedAt);
+      if (!Number.isFinite(executedAt) || executedAt < Math.min(winRateStart, historyStart)) return false;
+      return isClosingTransaction(tx.action, tx.description);
+    });
+
+    const winRateTransactions = transactions.filter((tx) => Date.parse(tx.executedAt) >= winRateStart);
+    const closedPositions = transactions.filter((tx) => Date.parse(tx.executedAt) >= historyStart).map((tx) => ({
+      id: tx.id,
+      symbol: tx.symbol,
+      closedAt: tx.executedAt,
+      description: tx.description,
+      pnl: Math.round(tx.price * tx.quantity * 100) / 100,
+    }));
+    const winRatePositions = winRateTransactions.map((tx) => Math.round(tx.price * tx.quantity * 100) / 100);
+    const wins = winRatePositions.filter((pnl) => pnl > 0).length;
+    const losses = winRatePositions.filter((pnl) => pnl < 0).length;
+    const totalPnl = closedPositions.reduce((sum, position) => sum + position.pnl, 0);
+
+    res.json({
+      period: settings.winRateCalculationPeriod,
+      closedPositions,
+      totalClosed: winRatePositions.length,
+      wins,
+      losses,
+      winRate: winRatePositions.length > 0 ? Math.round((wins / winRatePositions.length) * 10000) / 100 : 0,
+      totalPnl: Math.round(totalPnl * 100) / 100,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: `Failed to calculate position stats: ${err.message}` });
+  }
+});
 
 router.get("/account/summary", async (_req, res): Promise<void> => {
   if (!isTastytradeEnabled()) { res.status(503).json({ error: "Tastytrade OAuth credentials not configured" }); return; }

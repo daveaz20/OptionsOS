@@ -400,12 +400,42 @@ const CATEGORIES: CategoryDef[] = [
     id: "positions",
     label: "Positions",
     icon: <Briefcase size={14} />,
-    description: "How your open positions are grouped, sorted, and displayed.",
+    description: "Control P&L display, grouping, management alerts, analytics, and Tastytrade sync behavior.",
     settings: [
-      { key: "positionsGroupBy", label: "Group positions by", type: "select", default: "none", options: [{ label: "None (flat list)", value: "none" }, { label: "Symbol", value: "symbol" }, { label: "Strategy", value: "strategy" }, { label: "Expiry", value: "expiry" }] },
+      { key: "positionsPnlDisplayFormat", label: "Default P&L display format", type: "select", default: "both", options: [{ label: "$ amount", value: "amount" }, { label: "% return", value: "percent" }, { label: "Both", value: "both" }] },
+      { key: "showUnrealizedPnl", label: "Show unrealized P&L", type: "toggle", default: true },
+      { key: "showRealizedPnl", label: "Show realized P&L", type: "toggle", default: true },
+      { key: "showDailyPnlChange", label: "Show daily P&L change", type: "toggle", default: true },
+      { key: "pnlColorScheme", label: "P&L color scheme", type: "select", default: "greenRed", options: [{ label: "Green/red default", value: "greenRed" }, { label: "Blue/orange alternative", value: "blueOrange" }] },
+      { key: "showPnlAsPctOfMaxProfit", label: "Show P&L as % of max profit for defined-risk trades", type: "toggle", default: true },
+      { key: "positionsGroupBy", label: "Group positions by", type: "select", default: "underlying", options: [{ label: "Underlying", value: "underlying" }, { label: "Strategy", value: "strategy" }, { label: "Sector", value: "sector" }, { label: "Expiration", value: "expiration" }, { label: "None", value: "none" }] },
+      { key: "showPositionGroupSubtotals", label: "Show group subtotals", type: "toggle", default: true },
+      { key: "collapsePositionGroupsByDefault", label: "Collapse groups by default", type: "toggle", default: false },
+      { key: "showPortfolioGreeksPerGroup", label: "Show portfolio Greeks per group", type: "toggle", default: true },
+      { key: "showClosedPositions", label: "Show closed positions", type: "toggle", default: true },
+      { key: "closedPositionHistoryDays", label: "Days of closed position history to show", type: "slider", default: 30, min: 7, max: 365, unit: "days" },
+      { key: "showClosedPositionsSeparateSection", label: "Show closed positions in separate section", type: "toggle", default: true },
+      { key: "includeClosedPositionsInPnlTotals", label: "Include closed positions in P&L totals", type: "toggle", default: true },
+      { key: "defaultProfitTargetPct", label: "Default profit target for new positions", description: "Percent of max profit", type: "slider", default: 50, min: 1, max: 100, unit: "%" },
+      { key: "defaultStopLossPct", label: "Default stop loss for new positions", description: "Percent of max loss", type: "slider", default: 100, min: 1, max: 300, unit: "%" },
+      { key: "showProfitTargetMarker", label: "Show profit target marker in positions table", type: "toggle", default: true },
+      { key: "showStopLossMarker", label: "Show stop loss marker in positions table", type: "toggle", default: true },
+      { key: "alertPositionProfitTarget", label: "Alert when position hits profit target", type: "toggle", default: true },
+      { key: "alertPositionStopLoss", label: "Alert when position hits stop loss", type: "toggle", default: true },
+      { key: "autoCalculateDaysInTrade", label: "Auto-calculate days in trade", type: "toggle", default: true },
+      { key: "showPositionThetaDecayPerDay", label: "Show theta decay per day for each position", type: "toggle", default: true },
+      { key: "showPositionsPortfolioGreeksSummary", label: "Show portfolio Greeks summary at top of positions page", type: "toggle", default: true },
+      { key: "showBuyingPowerUsedPct", label: "Show buying power used %", type: "toggle", default: true },
+      { key: "showPortfolioDeltaExposure", label: "Show portfolio delta exposure", type: "toggle", default: true },
+      { key: "showSectorAllocationChart", label: "Show sector allocation chart", type: "toggle", default: true },
+      { key: "showStrategyAllocationChart", label: "Show strategy allocation chart", type: "toggle", default: true },
+      { key: "showWinRateStatistics", label: "Show win rate statistics", type: "toggle", default: true },
+      { key: "winRateCalculationPeriod", label: "Win rate calculation period", type: "select", default: "90D", options: [{ label: "30-day", value: "30D" }, { label: "90-day", value: "90D" }, { label: "1-year", value: "1Y" }, { label: "All-time", value: "ALL" }] },
+      { key: "autoSyncTastytradePositions", label: "Auto-sync positions from Tastytrade", type: "toggle", default: true },
+      { key: "tastytradePositionSyncInterval", label: "Sync interval", type: "select", default: "1m", options: [{ label: "1min", value: "1m" }, { label: "5min", value: "5m" }, { label: "15min", value: "15m" }, { label: "Manual only", value: "manual" }] },
+      { key: "showManualPositions", label: "Show positions not in Tastytrade", description: "Manual positions", type: "toggle", default: true },
+      { key: "matchTastytradePositionDisplay", label: "Match Tastytrade position display format", type: "toggle", default: false },
       { key: "positionsDefaultSort", label: "Default sort", type: "select", default: "openDate", options: [{ label: "Open date (newest)", value: "openDate" }, { label: "P&L ($)", value: "pnlAbs" }, { label: "P&L (%)", value: "pnlPct" }, { label: "DTE (soonest)", value: "dte" }, { label: "Symbol", value: "symbol" }] },
-      { key: "showPortfolioDelta", label: "Show portfolio delta", description: "Display total portfolio Δ in the positions header", type: "toggle", default: true },
-      { key: "showPortfolioTheta", label: "Show portfolio theta / day", description: "Display total portfolio Θ in the positions header", type: "toggle", default: true },
       { key: "autoCloseAtExpiry", label: "Auto-close at expiry warning", description: "Surface a reminder to close positions within 1 DTE", type: "toggle", default: false },
       { key: "pnlAlertThreshold", label: "Daily P&L alert", description: "Alert when daily P&L exceeds this amount (absolute)", type: "number", default: 1000, min: 0, unit: "$" },
     ],
@@ -1595,6 +1625,74 @@ function WatchlistSettingsPanel({
   );
 }
 
+const POSITIONS_SECTION_SLICES = [
+  { label: "P&L Display", start: 0, end: 6 },
+  { label: "Position Grouping", start: 6, end: 10 },
+  { label: "Closed Positions", start: 10, end: 14 },
+  { label: "Position Management", start: 14, end: 22 },
+  { label: "Portfolio Analytics", start: 22, end: 29 },
+  { label: "Tastytrade Sync", start: 29, end: 33 },
+  { label: "Defaults & Alerts", start: 33, end: 36 },
+] as const;
+
+function PositionsSettingsPanel({
+  settings,
+  onChange,
+  onReset,
+}: {
+  settings: AppSettings;
+  onChange: (key: string, value: unknown) => void;
+  onReset: () => void;
+}) {
+  const positionSettings = CATEGORIES.find(category => category.id === "positions")!.settings;
+  const visibleAnalytics = [
+    settings.showPositionsPortfolioGreeksSummary ? "Greeks" : null,
+    settings.showBuyingPowerUsedPct ? "Buying power" : null,
+    settings.showPortfolioDeltaExposure ? "Delta" : null,
+    settings.showSectorAllocationChart ? "Sector chart" : null,
+    settings.showStrategyAllocationChart ? "Strategy chart" : null,
+    settings.showWinRateStatistics ? "Win rate" : null,
+  ].filter(Boolean).join(", ") || "None";
+
+  const syncLabel =
+    settings.tastytradePositionSyncInterval === "manual"
+      ? "Manual only"
+      : settings.tastytradePositionSyncInterval.replace("m", " min");
+
+  return (
+    <div style={{ paddingTop: 8, display: "grid", gap: 24 }}>
+      <div style={{ border: "1px solid rgba(255,255,255,0.07)", borderRadius: 8, background: "rgba(255,255,255,0.02)", padding: 14 }}>
+        <div style={{ fontSize: 14, fontWeight: 700 }}>Positions Display Preview</div>
+        <div style={{ fontSize: 11.5, color: "hsl(var(--muted-foreground))", marginTop: 3 }}>Current grouping, management targets, and sync cadence.</div>
+        <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
+          <RiskSummaryItem label="P&L Format" value={String(settings.positionsPnlDisplayFormat)} />
+          <RiskSummaryItem label="Grouping" value={String(settings.positionsGroupBy)} />
+          <RiskSummaryItem label="Targets" value={`${settings.defaultProfitTargetPct}% / ${settings.defaultStopLossPct}%`} tone="warning" />
+          <RiskSummaryItem label="Sync" value={settings.autoSyncTastytradePositions ? syncLabel : "Off"} />
+          <RiskSummaryItem label="Closed History" value={`${settings.closedPositionHistoryDays}d`} />
+          <RiskSummaryItem label="Analytics" value={visibleAnalytics} />
+        </div>
+      </div>
+
+      {POSITIONS_SECTION_SLICES.map(section => (
+        <div key={section.label}>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: "hsl(var(--muted-foreground))", textTransform: "uppercase" }}>{section.label}</div>
+          {positionSettings.slice(section.start, section.end).map(setting => (
+            <SettingRow key={setting.key} setting={setting} value={settings[setting.key as keyof AppSettings]} onChange={onChange} />
+          ))}
+        </div>
+      ))}
+
+      <ActionRow
+        label="Reset to Defaults"
+        description="Restore every Positions option to its default value"
+        icon={<RotateCcw size={13} />}
+        onClick={onReset}
+      />
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const isMobile = useIsMobile();
   const [activeCategory, setActiveCategory] = useState("general");
@@ -1779,6 +1877,14 @@ export default function SettingsPage() {
               />
             )}
 
+            {activeCategory === "positions" && (
+              <PositionsSettingsPanel
+                settings={settings}
+                onChange={handleChange}
+                onReset={() => handleResetCategory(activeCategoryDef)}
+              />
+            )}
+
             {activeCategory === "security" && (
               <div style={{ paddingTop: 8 }}>
                 {activeCategoryDef.settings.map(s => (
@@ -1812,7 +1918,7 @@ export default function SettingsPage() {
             )}
 
             {/* All other categories */}
-            {activeCategory !== "security" && activeCategory !== "data" && activeCategory !== "strategy" && activeCategory !== "risk" && activeCategory !== "timeHorizon" && activeCategory !== "chartAnalysis" && activeCategory !== "pnl" && activeCategory !== "greeks" && activeCategory !== "watchlist" && (
+            {activeCategory !== "security" && activeCategory !== "data" && activeCategory !== "strategy" && activeCategory !== "risk" && activeCategory !== "timeHorizon" && activeCategory !== "chartAnalysis" && activeCategory !== "pnl" && activeCategory !== "greeks" && activeCategory !== "watchlist" && activeCategory !== "positions" && (
               <div style={{ paddingTop: 8 }}>
                 {activeCategoryDef.settings.map(s => (
                   <SettingRow key={s.key} setting={s} value={settings[s.key as keyof AppSettings]} onChange={handleChange} />
