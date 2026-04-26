@@ -9,7 +9,7 @@ import { AlertCircle, BarChart2, Minus, Pencil, Plus, X, TrendingUp } from "luci
 import { useToast } from "@/hooks/use-toast";
 import { useSettings } from "@/contexts/SettingsContext";
 import type { AppSettings } from "@/lib/settings-defaults";
-import type { OptionsStrategy, StrategyLeg, GetStrategiesOutlook, AccountPosition } from "@workspace/api-client-react";
+import type { OptionsStrategy, StrategyLeg, GetStrategiesOutlook, AccountPosition, OptionsChain, OptionContract } from "@workspace/api-client-react";
 
 interface StrategyPanelProps {
   symbol: string;
@@ -426,19 +426,72 @@ function StrategyDetail({
 // â”€â”€ Modify Panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 interface ModifiedLeg extends StrategyLeg {
   premium: number;
+  symbol?: string;
+  streamerSymbol?: string | null;
+  bid?: number;
+  ask?: number;
+  delta?: number;
+  openInterest?: number;
+  volume?: number;
+}
+
+function contractPremium(contract: OptionContract): number {
+  return Math.max(0.01, Math.round((contract.mid || ((contract.bid + contract.ask) / 2) || contract.ask || contract.bid || 0.01) * 100) / 100);
+}
+
+function legFromContract(leg: ModifiedLeg, contract: OptionContract): ModifiedLeg {
+  return {
+    ...leg,
+    symbol: contract.symbol,
+    streamerSymbol: contract.streamerSymbol,
+    optionType: contract.optionType,
+    strikePrice: contract.strikePrice,
+    expiration: contract.expiration,
+    premium: contractPremium(contract),
+    bid: contract.bid,
+    ask: contract.ask,
+    delta: contract.delta,
+    openInterest: contract.openInterest,
+    volume: contract.volume,
+  };
+}
+
+function findNearestContract(contracts: OptionContract[], optionType: "call" | "put", strike: number): OptionContract | null {
+  const matches = contracts.filter((contract) => contract.optionType === optionType);
+  if (matches.length === 0) return null;
+  return matches.reduce((best, contract) =>
+    Math.abs(contract.strikePrice - strike) < Math.abs(best.strikePrice - strike) ? contract : best,
+  matches[0]!);
+}
+
+function findContractByLeg(chain: OptionsChain | undefined, leg: ModifiedLeg, fallbackExpiration: string): OptionContract | null {
+  if (!chain || leg.optionType === "stock") return null;
+  if (chain.expirations.length === 0) return null;
+  const expiration = leg.expiration || fallbackExpiration;
+  const expiry = chain.expirations.find((entry) => entry.expiration === expiration)
+    ?? chain.expirations.reduce((best, entry) =>
+      Math.abs(entry.daysToExpiration - Math.round((new Date(expiration).getTime() - Date.now()) / 86_400_000)) <
+      Math.abs(best.daysToExpiration - Math.round((new Date(expiration).getTime() - Date.now()) / 86_400_000)) ? entry : best,
+    chain.expirations[0]!);
+  return expiry ? findNearestContract(expiry.contracts, leg.optionType, leg.strikePrice) : null;
 }
 
 function ModifyPanel({
-  strategy, currentPrice, iv, onClose,
+  strategy, currentPrice, iv, chainData, onClose,
 }: {
   strategy: OptionsStrategy;
   currentPrice: number;
   iv: number;
+  chainData?: OptionsChain;
   onClose: (updated: OptionsStrategy | null) => void;
 }) {
   const increment = currentPrice < 50 ? 1 : currentPrice < 200 ? 2.5 : 5;
   const [legs, setLegs] = useState<ModifiedLeg[]>(
-    strategy.legs.map(l => ({ ...l }))
+    strategy.legs.map(l => {
+      const leg = { ...l } as ModifiedLeg;
+      const contract = findContractByLeg(chainData, leg, strategy.expirationDate);
+      return contract ? legFromContract(leg, contract) : leg;
+    })
   );
   // Derive initial expiry date from strategy, default to 45 DTE if past
   const initExpStr = (() => {
@@ -449,6 +502,12 @@ function ModifyPanel({
   })();
   const [expStr, setExpStr] = useState(initExpStr);
   const [contracts, setContracts] = useState(1);
+  const availableExpirations = chainData?.expirations ?? [];
+  const selectedExpiry = availableExpirations.find((entry) => entry.expiration === expStr) ?? null;
+  const contractSource = selectedExpiry?.contracts ?? [];
+  const optionLegEntries = legs
+    .map((leg, index) => ({ leg, index }))
+    .filter(({ leg }) => leg.optionType !== "stock");
 
   // DTE computed from the chosen date
   const dte = Math.max(1, Math.round((new Date(expStr).getTime() - Date.now()) / 86_400_000));
@@ -459,7 +518,11 @@ function ModifyPanel({
 
   const setDteQuick = (days: number) => {
     const d = new Date(); d.setDate(d.getDate() + days);
-    setExpStr(d.toISOString().split("T")[0]!);
+    const target = d.toISOString().split("T")[0]!;
+    const expiry = availableExpirations.reduce((best, entry) =>
+      Math.abs(entry.daysToExpiration - days) < Math.abs(best.daysToExpiration - days) ? entry : best,
+    availableExpirations[0] ?? { expiration: target, daysToExpiration: days, settlementType: "", contracts: [] });
+    setExpStr(expiry.expiration);
   };
 
   // Which quick button (if any) matches the current date?
@@ -473,6 +536,8 @@ function ModifyPanel({
 
   const recalcPremium = (leg: ModifiedLeg): ModifiedLeg => {
     if (leg.optionType === "stock") return leg;
+    const contract = findContractByLeg(chainData, leg, expStr);
+    if (contract) return legFromContract(leg, contract);
     const premium = Math.round(bsPrice(currentPrice, leg.strikePrice, T, sigma, leg.optionType as "call" | "put") * 100) / 100;
     return { ...leg, premium: Math.max(0.01, premium) };
   };
@@ -481,10 +546,12 @@ function ModifyPanel({
   useEffect(() => {
     setLegs(prev => prev.map(l => {
       if (l.optionType === "stock") return l;
+      const contract = findContractByLeg(chainData, { ...l, expiration: expStr }, expStr);
+      if (contract) return legFromContract({ ...l, expiration: expStr }, contract);
       const premium = Math.round(bsPrice(currentPrice, l.strikePrice, T, sigma, l.optionType as "call" | "put") * 100) / 100;
       return { ...l, premium: Math.max(0.01, premium) };
     }));
-  }, [expStr]);
+  }, [chainData, currentPrice, expStr, sigma, T]);
 
   const updateStrike = (i: number, delta: number) => {
     setLegs(prev => {
@@ -492,6 +559,30 @@ function ModifyPanel({
       const leg = { ...next[i]! };
       leg.strikePrice = Math.round((leg.strikePrice + delta * increment) * 100) / 100;
       next[i] = recalcPremium(leg);
+      return next;
+    });
+  };
+
+  const selectContract = (legIndex: number, contractSymbol: string) => {
+    const contract = contractSource.find((candidate) => candidate.symbol === contractSymbol);
+    if (!contract) return;
+    setLegs(prev => {
+      const next = [...prev];
+      const current = next[legIndex];
+      if (!current || current.optionType === "stock") return prev;
+      const strikeOffset = contract.strikePrice - current.strikePrice;
+      next[legIndex] = legFromContract(current, contract);
+
+      for (let i = 0; i < next.length; i++) {
+        if (i === legIndex) continue;
+        const leg = next[i]!;
+        if (leg.optionType === "stock") continue;
+        const sameTypeSpread = leg.optionType === current.optionType && leg.expiration === current.expiration;
+        const sameStrikePair = leg.strikePrice === current.strikePrice;
+        if (!sameTypeSpread && !sameStrikePair) continue;
+        const correlated = findNearestContract(contractSource, leg.optionType, leg.strikePrice + strikeOffset);
+        if (correlated) next[i] = legFromContract(leg, correlated);
+      }
       return next;
     });
   };
@@ -504,11 +595,16 @@ function ModifyPanel({
   const apply = () => {
     // Replace the leading date label in the name (e.g. "Jun 5 265/285â€¦" â†’ "Jun 18 265/285â€¦")
     const newName = strategy.name.replace(/^[A-Z][a-z]+ \d+\s/, `${newExpLabel} `);
+    const strategyExpiration = legs
+      .filter(l => l.optionType !== "stock")
+      .map(l => l.expiration || expStr)
+      .sort()
+      .at(-1) ?? expStr;
     const updated: OptionsStrategy = {
       ...strategy,
       name: newName,
-      legs: legs.map(l => ({ ...l, quantity: l.quantity * contracts, expiration: expStr })),
-      expirationDate: expStr,
+      legs: legs.map(l => ({ ...l, quantity: l.quantity * contracts, expiration: l.optionType === "stock" ? strategyExpiration : (l.expiration || expStr) })),
+      expirationDate: strategyExpiration,
       tradeCost: Math.round(updatedMetrics.cost * 100) / 100,
       maxProfit: Math.round(updatedMetrics.maxProfit * 100) / 100,
       maxLoss: Math.round(updatedMetrics.maxLoss * 100) / 100,
@@ -537,8 +633,13 @@ function ModifyPanel({
 
       {/* Legs editor */}
       <div style={{ padding: "8px 12px", borderTop: "1px solid rgba(255,255,255,0.05)", display: "flex", flexDirection: "column", gap: 10 }}>
-        {legs.filter(l => l.optionType !== "stock").map((leg, i) => (
-          <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        {optionLegEntries.map(({ leg, index }) => {
+          const contractsForLeg = contractSource
+            .filter((contract) => contract.optionType === leg.optionType)
+            .sort((a, b) => a.strikePrice - b.strikePrice);
+          const selectedContract = contractsForLeg.find((contract) => Math.abs(contract.strikePrice - leg.strikePrice) < 0.01) ?? null;
+          return (
+          <div key={index} style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{
               fontSize: 9, fontWeight: 600, letterSpacing: "0.04em", padding: "2px 5px", borderRadius: 3,
               background: leg.action === "buy" ? "hsl(var(--success)/0.15)" : "hsl(var(--destructive)/0.15)",
@@ -548,17 +649,36 @@ function ModifyPanel({
               {leg.action} {leg.optionType}
             </span>
             <div style={{ display: "flex", alignItems: "center", gap: 4, flex: 1, justifyContent: "flex-end" }}>
-              <button onClick={() => updateStrike(i, -1)} style={stepBtn}><Minus style={{ width: 10, height: 10 }} /></button>
-              <span style={{ fontSize: 12, fontWeight: 600, minWidth: 52, textAlign: "center", fontVariantNumeric: "tabular-nums" }}>
-                ${leg.strikePrice % 1 === 0 ? leg.strikePrice.toFixed(0) : leg.strikePrice.toFixed(1)}
-              </span>
-              <button onClick={() => updateStrike(i, +1)} style={stepBtn}><Plus style={{ width: 10, height: 10 }} /></button>
+              <button onClick={() => updateStrike(index, -1)} style={stepBtn}><Minus style={{ width: 10, height: 10 }} /></button>
+              {contractsForLeg.length > 0 ? (
+                <select
+                  value={selectedContract?.symbol ?? ""}
+                  onChange={(event) => selectContract(index, event.target.value)}
+                  style={{
+                    minWidth: 118, flex: 1, height: 26, borderRadius: 5, border: "1px solid rgba(255,255,255,0.12)",
+                    background: "rgba(255,255,255,0.06)", color: "hsl(var(--foreground))", fontSize: 11,
+                    fontWeight: 650, fontVariantNumeric: "tabular-nums", outline: "none",
+                  }}
+                >
+                  {!selectedContract && <option value="">Select contract</option>}
+                  {contractsForLeg.map((contract) => (
+                    <option key={contract.symbol} value={contract.symbol}>
+                      {contract.strikePrice % 1 === 0 ? contract.strikePrice.toFixed(0) : contract.strikePrice.toFixed(1)} {contract.optionType.toUpperCase()} @ ${contractPremium(contract).toFixed(2)}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <span style={{ fontSize: 12, fontWeight: 600, minWidth: 52, textAlign: "center", fontVariantNumeric: "tabular-nums" }}>
+                  ${leg.strikePrice % 1 === 0 ? leg.strikePrice.toFixed(0) : leg.strikePrice.toFixed(1)}
+                </span>
+              )}
+              <button onClick={() => updateStrike(index, +1)} style={stepBtn}><Plus style={{ width: 10, height: 10 }} /></button>
               <span style={{ fontSize: 10, color: "hsl(var(--muted-foreground))", minWidth: 44, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
                 ${leg.premium.toFixed(2)}
               </span>
             </div>
           </div>
-        ))}
+        );})}
       </div>
 
       {/* Expiry + Contracts */}
@@ -579,21 +699,38 @@ function ModifyPanel({
               </button>
             ))}
           </div>
-          {/* Exact date picker */}
-          <input
-            type="date"
-            value={expStr}
-            min={minDate}
-            max={maxDate}
-            onChange={e => { if (e.target.value) setExpStr(e.target.value); }}
-            style={{
-              width: "100%", padding: "4px 8px", borderRadius: 5, fontSize: 11, fontWeight: 500,
-              border: activeQuick === null ? "1px solid hsl(var(--primary)/0.5)" : "1px solid rgba(255,255,255,0.10)",
-              background: activeQuick === null ? "hsl(var(--primary)/0.07)" : "rgba(255,255,255,0.04)",
-              color: "hsl(var(--foreground))", outline: "none", cursor: "pointer",
-              colorScheme: "dark", boxSizing: "border-box",
-            }}
-          />
+          {availableExpirations.length > 0 ? (
+            <select
+              value={selectedExpiry?.expiration ?? expStr}
+              onChange={e => { if (e.target.value) setExpStr(e.target.value); }}
+              style={{
+                width: "100%", padding: "5px 8px", borderRadius: 5, fontSize: 11, fontWeight: 600,
+                border: "1px solid hsl(var(--primary)/0.35)", background: "hsl(var(--primary)/0.07)",
+                color: "hsl(var(--foreground))", outline: "none", cursor: "pointer", boxSizing: "border-box",
+              }}
+            >
+              {availableExpirations.map((expiry) => (
+                <option key={expiry.expiration} value={expiry.expiration}>
+                  {expiry.expiration} ({expiry.daysToExpiration}d)
+                </option>
+              ))}
+            </select>
+          ) : (
+            <input
+              type="date"
+              value={expStr}
+              min={minDate}
+              max={maxDate}
+              onChange={e => { if (e.target.value) setExpStr(e.target.value); }}
+              style={{
+                width: "100%", padding: "4px 8px", borderRadius: 5, fontSize: 11, fontWeight: 500,
+                border: activeQuick === null ? "1px solid hsl(var(--primary)/0.5)" : "1px solid rgba(255,255,255,0.10)",
+                background: activeQuick === null ? "hsl(var(--primary)/0.07)" : "rgba(255,255,255,0.04)",
+                color: "hsl(var(--foreground))", outline: "none", cursor: "pointer",
+                colorScheme: "dark", boxSizing: "border-box",
+              }}
+            />
+          )}
         </div>
         <div style={{ flexShrink: 0 }}>
           <div style={{ fontSize: 10, color: "hsl(var(--muted-foreground))", marginBottom: 5 }}>Contracts</div>
@@ -855,6 +992,23 @@ export function StrategyPanel({ symbol, currentPrice = 0, recommendedOutlook }: 
             );
           })}
         </div>
+        {displayStrategies.length > 0 && (
+          <select
+            value={selectedStrategyId ?? ""}
+            onChange={(event) => { setSelectedStrategyId(Number(event.target.value)); setModifying(false); }}
+            style={{
+              width: "100%", marginBottom: 14, height: 34, borderRadius: 7, padding: "0 10px",
+              border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.05)",
+              color: "hsl(var(--foreground))", fontSize: 12, fontWeight: 650, outline: "none",
+            }}
+          >
+            {displayStrategies.map((strategy) => (
+              <option key={strategy.id} value={strategy.id}>
+                {strategy.score} - {strategy.name}
+              </option>
+            ))}
+          </select>
+        )}
       </div>
 
       <ScrollArea className="flex-1">
@@ -871,7 +1025,9 @@ export function StrategyPanel({ symbol, currentPrice = 0, recommendedOutlook }: 
             </div>
           ) : (() => {
             const topId = displayStrategies[0]!.id;
-            return displayStrategies.map((strategy) => {
+            return displayStrategies
+            .filter((strategy) => strategy.id === selectedStrategyId)
+            .map((strategy) => {
               const contractKey = `${symbol}:${outlook}:${strategy.id}`;
               const contracts = contractsByStrategy[contractKey] ?? defaultContracts;
               return (
@@ -904,6 +1060,7 @@ export function StrategyPanel({ symbol, currentPrice = 0, recommendedOutlook }: 
                   strategy={selectedStrategy}
                   currentPrice={currentPrice}
                   iv={estimatedIv}
+                  chainData={chainData}
                   onClose={(updated) => {
                     if (updated) setCustomStrategies(prev => ({ ...prev, [customKey]: updated }));
                     setModifying(false);

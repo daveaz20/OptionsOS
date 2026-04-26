@@ -96,7 +96,9 @@ const SCREENER_PRESET_OPTIONS = [
   "All", "Options Seller", "Momentum", "High Volume", "Value", "Bullish Setup",
   "Short Squeeze", "Dividend", "High IV", "Low IV", "Oversold", "Overbought",
   "Earnings Soon", "Large Cap", "Small Cap", "Liquid Options", "Unusual Volume",
-  "Oversold Bounce", "Covered Calls", "Put Credit Spreads", "Iron Condors",
+  "Oversold Bounce", "Long Calls", "Bull Call Spreads", "Bull Put Spreads",
+  "Covered Calls", "Long Puts", "Bear Put Spreads", "Bear Call Spreads",
+  "Iron Condors", "Long Straddles", "Calendar Spreads",
 ].map(label => ({ label, value: label }));
 
 const CATEGORIES: CategoryDef[] = [

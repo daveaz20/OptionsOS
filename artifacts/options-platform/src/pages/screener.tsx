@@ -52,6 +52,8 @@ const FILTER_DEFS: FilterDef[] = [
     options:[{value:"",label:"All Sectors"},{value:"Technology",label:"Technology"},{value:"Healthcare",label:"Healthcare"},{value:"Financial Services",label:"Financials"},{value:"Consumer Cyclical",label:"Consumer Cyclical"},{value:"Consumer Defensive",label:"Consumer Defensive"},{value:"Industrials",label:"Industrials"},{value:"Communication Services",label:"Communication Services"},{value:"Energy",label:"Energy"},{value:"Basic Materials",label:"Basic Materials"},{value:"Real Estate",label:"Real Estate"},{value:"Utilities",label:"Utilities"}] },
   { key:"outlook",       label:"Outlook",         category:"General",      type:"select",  field:r=>r.recommendedOutlook,
     options:[{value:"",label:"Any"},{value:"bullish",label:"Bullish"},{value:"neutral",label:"Neutral"},{value:"bearish",label:"Bearish"}] },
+  { key:"setupType",     label:"Strategy",        category:"Options",      type:"select",  field:r=>r.setupType,
+    options:[{value:"",label:"Any Strategy"},{value:"Long Call",label:"Long Call"},{value:"Call Spread",label:"Bull Call Spread"},{value:"Bull Put Spread",label:"Bull Put Spread"},{value:"Covered Call",label:"Covered Call"},{value:"Long Put",label:"Long Put"},{value:"Bear Put Spread",label:"Bear Put Spread"},{value:"Bear Call Spread",label:"Bear Call Spread"},{value:"Iron Condor",label:"Iron Condor"},{value:"Straddle",label:"Long Straddle"},{value:"Calendar",label:"Calendar Spread"}] },
   { key:"marketCap",     label:"Market Cap",      category:"General",      type:"select",  field:r=>r.marketCap,
     options:[{value:"",label:"Any size"},{value:"small",label:"Small (<$2B)"},{value:"mid",label:"Mid ($2–10B)"},{value:"large",label:"Large ($10–200B)"},{value:"mega",label:"Mega (>$200B)"}] },
   { key:"price",         label:"Price",           category:"General",      type:"range",   unit:"$",  field:r=>r.price,           min:0,   max:2000, step:1   },
@@ -121,12 +123,12 @@ const TABS: { key: TabKey; label: string }[] = [
 
 const PRESETS = [
   { label:"All",           filters:[] as ActiveFilter[] },
-  { label:"Options Seller",filters:[{key:"ivRank",min:"65"},{key:"marketCap",value:"mid"}] as ActiveFilter[] },
+  { label:"Options Seller",filters:[{key:"ivRank",min:"55"},{key:"opportunityScore",min:"55"}] as ActiveFilter[] },
   { label:"Momentum",      filters:[{key:"momentumScore",min:"7"},{key:"technicalScore",min:"6"}] as ActiveFilter[] },
-  { label:"High Volume",   filters:[{key:"relVol",min:"2"}] as ActiveFilter[] },
-  { label:"Value",         filters:[{key:"pe",max:"20"},{key:"dividendYield",min:"1"}] as ActiveFilter[] },
+  { label:"High Volume",   filters:[{key:"relVol",min:"1.5"},{key:"volume",min:"500000"}] as ActiveFilter[] },
+  { label:"Value",         filters:[{key:"pe",max:"25"},{key:"forwardPE",max:"30"}] as ActiveFilter[] },
   { label:"Bullish Setup", filters:[{key:"outlook",value:"bullish"},{key:"technicalStr",min:"6"}] as ActiveFilter[] },
-  { label:"Short Squeeze", filters:[{key:"squeezeScore",min:"65"}] as ActiveFilter[] },
+  { label:"Short Squeeze", filters:[{key:"squeezeScore",min:"55"},{key:"volume",min:"250000"}] as ActiveFilter[] },
   { label:"Dividend",      filters:[{key:"dividendYield",min:"3"}] as ActiveFilter[] },
   { label:"High IV",       filters:[{key:"ivRank",min:"70"}] as ActiveFilter[] },
   { label:"Low IV",        filters:[{key:"ivRank",max:"20"}] as ActiveFilter[] },
@@ -138,9 +140,16 @@ const PRESETS = [
   { label:"Liquid Options", filters:[{key:"liquidity",value:"Liquid"},{key:"volume",min:"1000000"},{key:"relVol",min:"1"}] as ActiveFilter[] },
   { label:"Unusual Volume", filters:[{key:"relVol",min:"3"},{key:"volume",min:"750000"}] as ActiveFilter[] },
   { label:"Oversold Bounce", filters:[{key:"rsi14",max:"35"},{key:"technicalScore",min:"4"},{key:"entryScore",min:"5"}] as ActiveFilter[] },
-  { label:"Covered Calls", filters:[{key:"outlook",value:"neutral"},{key:"ivRank",min:"45"},{key:"liquidity",value:"Liquid"}] as ActiveFilter[] },
-  { label:"Put Credit Spreads", filters:[{key:"outlook",value:"bullish"},{key:"ivRank",min:"40"},{key:"entryScore",min:"5"}] as ActiveFilter[] },
-  { label:"Iron Condors", filters:[{key:"outlook",value:"neutral"},{key:"ivRank",min:"50"},{key:"riskScore",min:"5"}] as ActiveFilter[] },
+  { label:"Long Calls", filters:[{key:"setupType",value:"Long Call"},{key:"opportunityScore",min:"45"}] as ActiveFilter[] },
+  { label:"Bull Call Spreads", filters:[{key:"setupType",value:"Call Spread"},{key:"opportunityScore",min:"45"}] as ActiveFilter[] },
+  { label:"Bull Put Spreads", filters:[{key:"setupType",value:"Bull Put Spread"},{key:"opportunityScore",min:"45"}] as ActiveFilter[] },
+  { label:"Covered Calls", filters:[{key:"setupType",value:"Covered Call"},{key:"opportunityScore",min:"45"}] as ActiveFilter[] },
+  { label:"Long Puts", filters:[{key:"setupType",value:"Long Put"},{key:"opportunityScore",min:"45"}] as ActiveFilter[] },
+  { label:"Bear Put Spreads", filters:[{key:"setupType",value:"Bear Put Spread"},{key:"opportunityScore",min:"45"}] as ActiveFilter[] },
+  { label:"Bear Call Spreads", filters:[{key:"setupType",value:"Bear Call Spread"},{key:"opportunityScore",min:"45"}] as ActiveFilter[] },
+  { label:"Iron Condors", filters:[{key:"setupType",value:"Iron Condor"},{key:"opportunityScore",min:"45"}] as ActiveFilter[] },
+  { label:"Long Straddles", filters:[{key:"setupType",value:"Straddle"},{key:"opportunityScore",min:"45"}] as ActiveFilter[] },
+  { label:"Calendar Spreads", filters:[{key:"setupType",value:"Calendar"},{key:"opportunityScore",min:"45"}] as ActiveFilter[] },
 ];
 
 function filtersFromScreenerDefaults(settings: AppSettings): ActiveFilter[] {
@@ -196,6 +205,7 @@ function computeFactors(rows: ScreenerRow[]): FactoredRow[] {
   const opp   = rows.map(r => r.opportunityScore);
   const rv    = rows.map(r => Math.min(r.relVol, 10));
   const betaS = rows.map(r => -r.beta);
+  const short = rows.map(r => r.shortRatio > 0 ? r.shortRatio : 0);
   return rows.map((r, i) => {
     const fMomentum   = Math.round(pctRank(chg,chg[i])*0.35 + pctRank(tech,tech[i])*0.40 + pctRank(rsi,rsi[i])*0.25);
     const fValue      = Math.round(pctRank(peLow,peLow[i])*0.35 + pctRank(fwdLow,fwdLow[i])*0.25 + pctRank(divY,divY[i])*0.20 + pctRank(p52lo,p52lo[i])*0.20);
@@ -203,11 +213,11 @@ function computeFactors(rows: ScreenerRow[]): FactoredRow[] {
     const fVolatility = pctRank(ivR, ivR[i]);
     const fOptions    = Math.round(pctRank(opp,opp[i])*0.60 + pctRank(rv,Math.min(r.relVol,10))*0.40);
     const alpha       = Math.round((fMomentum + fValue + fQuality + fVolatility + fOptions) / 5);
-    const shortComponent = r.shortRatio > 0 ? Math.min(100, r.shortRatio * 12) : 35;
-    const volumeComponent = Math.min(100, Math.max(0, r.relVol * 24));
-    const moveComponent = Math.min(100, Math.max(0, (r.changePercent + 2) * 18));
+    const shortComponent = r.shortRatio > 0 ? pctRank(short, r.shortRatio) : 45;
+    const volumeComponent = pctRank(rv, Math.min(r.relVol, 10));
+    const moveComponent = pctRank(chg, chg[i]);
     const technicalComponent = Math.min(100, Math.max(0, r.momentumScore * 10));
-    const squeezeScore = Math.round(shortComponent * 0.35 + volumeComponent * 0.30 + moveComponent * 0.20 + technicalComponent * 0.15);
+    const squeezeScore = Math.round(shortComponent * 0.30 + volumeComponent * 0.30 + moveComponent * 0.25 + technicalComponent * 0.15);
     return { ...r, fMomentum, fValue, fQuality, fVolatility, fOptions, alpha, squeezeScore, daysToEarnings: parseEarningsDays(r.earningsDate) };
   });
 }
@@ -263,7 +273,7 @@ const fmtVol = (n: number) => {
 function useScreenerData() {
   const { settings } = useSettings();
   return useQuery<ScreenerRow[]>({
-    queryKey: ["screener-v3"],
+      queryKey: ["screener-v4"],
     queryFn: async () => {
       const res = await fetch("/api/screener");
       if (!res.ok) throw new Error("failed");
