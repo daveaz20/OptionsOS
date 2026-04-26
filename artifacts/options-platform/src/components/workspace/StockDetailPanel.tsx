@@ -210,7 +210,7 @@ export function StockDetailPanel({ symbol }: StockDetailPanelProps) {
             <QuoteStat label="Market Cap" value={formatNumber(stock.marketCap)} sub={stock.sector || "sector"} />
             <QuoteStat label="IV Rank" value={`${Math.round(stock.ivRank ?? 0)}%`} tone={(stock.ivRank ?? 0) >= 50 ? "warn" : "neutral"} sub="options regime" />
             <QuoteStat label="Tech Strength" value={`${stock.technicalStrength}/10`} tone={stock.technicalStrength >= 7 ? "good" : stock.technicalStrength <= 3 ? "bad" : "neutral"} sub="trend score" />
-            <QuoteStat label="P/E" value={stock.pe > 0 ? stock.pe.toFixed(1) : "N/A"} sub={stock.forwardPE > 0 ? `${stock.forwardPE.toFixed(1)} fwd` : "forward N/A"} />
+            <QuoteStat label="P/E" value={stock.pe > 0 ? stock.pe.toFixed(1) : "N/A"} sub={quote.forwardPE > 0 ? `${quote.forwardPE.toFixed(1)} fwd` : "forward N/A"} />
             <QuoteStat label="52W Position" value={`${Math.round(dayRangePct)}%`} sub={`${formatCurrency(stock.fiftyTwoWeekLow)} - ${formatCurrency(stock.fiftyTwoWeekHigh)}`} />
           </div>
 

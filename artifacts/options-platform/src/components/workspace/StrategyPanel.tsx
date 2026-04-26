@@ -24,6 +24,16 @@ const OUTLOOK_TABS: { id: GetStrategiesOutlook; label: string; color: string }[]
 ];
 
 type RiskBadge = { severity: "warning" | "danger"; label: string };
+type StrategyScoreDetails = OptionsStrategy & {
+  technicalScore?: number;
+  ivScore?: number;
+  rrScore?: number;
+  popScore?: number;
+  earningsRiskScore?: number;
+  expectedValue?: number;
+  tier?: "conservative" | "balanced" | "aggressive" | string;
+  probProfit?: number;
+};
 
 function strategyCapital(strategy: OptionsStrategy, contracts: number): number {
   return Math.max(Math.abs(strategy.tradeCost), Math.abs(strategy.maxLoss)) * contracts;
@@ -199,14 +209,14 @@ function PayoffDiagram({ legs, currentPrice }: { legs: StrategyLeg[]; currentPri
 
 // â”€â”€ Strategy Detail (OptionsPlay-style card) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // ScoreBreakdown
-function ScoreBreakdown({ strategy }) {
+function ScoreBreakdown({ strategy }: { strategy: StrategyScoreDetails }) {
   if (strategy.technicalScore === undefined) return null;
   const factors = [
-    { label: 'Technical', value: strategy.technicalScore },
-    { label: 'IV Regime', value: strategy.ivScore },
-    { label: 'Risk / Reward', value: strategy.rrScore },
-    { label: 'Prob. Profit', value: strategy.popScore },
-    { label: 'Earnings Risk', value: strategy.earningsRiskScore },
+    { label: 'Technical', value: strategy.technicalScore ?? 0 },
+    { label: 'IV Regime', value: strategy.ivScore ?? 0 },
+    { label: 'Risk / Reward', value: strategy.rrScore ?? 0 },
+    { label: 'Prob. Profit', value: strategy.popScore ?? 0 },
+    { label: 'Earnings Risk', value: strategy.earningsRiskScore ?? 0 },
   ];
   const tc = strategy.tier === 'conservative' ? 'hsl(var(--success))'
     : strategy.tier === 'aggressive' ? 'hsl(var(--destructive))'
@@ -295,8 +305,9 @@ function StrategyDetail({
   const isCredit = strategy.type === "income" && strategy.tradeCost > 0 && !hasStockLeg;
 
   // Use real BS-derived POP when available, otherwise approximate
-  const pop = strategy.probProfit !== undefined
-    ? Math.round(strategy.probProfit * 100)
+  const scoredStrategy = strategy as StrategyScoreDetails;
+  const pop = scoredStrategy.probProfit !== undefined
+    ? Math.round(scoredStrategy.probProfit * 100)
     : strategy.type === 'income'
       ? Math.min(85, Math.max(20, Math.round((Math.abs(strategy.tradeCost) / Math.max(1, Math.abs(strategy.tradeCost) + Math.abs(strategy.maxLoss))) * 100)))
       : Math.min(75, Math.max(25, Math.round(42 + (strategy.score - 50) * 0.30)));

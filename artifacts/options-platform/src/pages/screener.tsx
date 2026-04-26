@@ -719,6 +719,15 @@ export default function Screener() {
           )}
         </div>
       )}
+      {selectedRow && (
+        <OpportunityDrawer
+          row={selectedRow}
+          isWatched={watchlistSymbolMap.has(selectedRow.symbol)}
+          onClose={() => setSelectedRow(null)}
+          onAnalyze={() => setLocation(`/analysis?symbol=${selectedRow.symbol}`)}
+          onWatchlist={(e) => handleWatchlistToggle(selectedRow.symbol, e)}
+        />
+      )}
     </div>
   );
 }
@@ -887,15 +896,6 @@ function StockTable({ rows, tab, sortKey, sortDir, onSort, navigate, watchlistSy
       <span style={{ fontWeight:600, fontVariantNumeric:"tabular-nums" }}>${r.price.toFixed(2)}</span>
       {r.priceSource === "tastytrade-live" && (
         <span title="Tastytrade live quote" style={{ width:6, height:6, borderRadius:"50%", background:"#30d158", boxShadow:"0 0 0 2px rgba(48,209,88,0.16)" }} />
-      )}
-      {selectedRow && (
-        <OpportunityDrawer
-          row={selectedRow}
-          isWatched={watchlistSymbolMap.has(selectedRow.symbol)}
-          onClose={() => setSelectedRow(null)}
-          onAnalyze={() => setLocation(`/analysis?symbol=${selectedRow.symbol}`)}
-          onWatchlist={(e) => handleWatchlistToggle(selectedRow.symbol, e)}
-        />
       )}
       {r.priceSource === "tastytrade-rest" && (
         <span title="Tastytrade quote" style={{ width:6, height:6, borderRadius:"50%", background:"#ffd60a", boxShadow:"0 0 0 2px rgba(255,214,10,0.14)" }} />
