@@ -165,6 +165,8 @@ export interface ScreenerRow {
   source: "polygon" | "yahoo" | "polygon-eod";
   priceSource?: "tastytrade-live" | "polygon";
   fullyScored?: boolean;
+  optionsConfirmed?: boolean;
+  scoreSource?: "full-options" | "full-estimated" | "snapshot-options" | "snapshot-estimated";
   isETF?: boolean;
   etfCategory?: "leveraged-bull" | "leveraged-bear" | "leveraged-single" | "sector";
 }
@@ -175,6 +177,17 @@ const cache: Cache = { data: [], at: 0, promise: null };
 const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 const POLYGON_VALID_TYPES = new Set(["CS", "ADRC"]);
 const DEFAULT_POLYGON_TECHNICAL_LIMIT = 600;
+const DEFAULT_TASTYTRADE_ENRICH_LIMIT = 1_200;
+
+function readPositiveIntEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+const POLYGON_TECHNICAL_LIMIT = readPositiveIntEnv("SCREENER_POLYGON_TECHNICAL_LIMIT", DEFAULT_POLYGON_TECHNICAL_LIMIT);
+const TASTYTRADE_ENRICH_LIMIT = readPositiveIntEnv("SCREENER_TASTYTRADE_ENRICH_LIMIT", DEFAULT_TASTYTRADE_ENRICH_LIMIT);
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -230,6 +243,31 @@ function snapshotSignals(
     strength: r2(strength),
     relativeStrength: `${Math.round(strength)}/10`,
   };
+}
+
+function selectPrioritySymbols(
+  snapshots: Awaited<ReturnType<typeof getPolygonSnapshots>>,
+  knownSet: Set<string>,
+  etfMap: Map<string, { ticker: string; etfCategory: "leveraged-bull" | "leveraged-bear" | "leveraged-single" | "sector" }>,
+  limit: number,
+): string[] {
+  const ranked = snapshots
+    .map((s) => {
+      const symbol = s.ticker;
+      const volume = snapshotVolume(s);
+      const isKnown = knownSet.has(symbol);
+      const isEtf = etfMap.has(symbol);
+      const moveScore = Math.abs(s.todaysChangePerc ?? 0) * 50_000_000;
+      const liquidityScore = Math.min(volume, 25_000_000);
+      const priority = (isKnown ? 1_000_000_000_000 : 0)
+        + (isEtf ? 750_000_000_000 : 0)
+        + liquidityScore
+        + moveScore;
+      return { symbol, priority };
+    })
+    .sort((a, b) => b.priority - a.priority);
+
+  return ranked.slice(0, limit).map((item) => item.symbol);
 }
 
 // ─── Yahoo Finance screener (original, ~477 symbols) ─────────────────────────
@@ -301,6 +339,9 @@ async function buildYahooData(strategyPreferences: StrategyPreferences, riskPref
           setupType: scan?.setupType ?? "Neutral",
           recommendedOutlook: scan?.recommendedOutlook ?? "neutral",
           supportPrice: sig.support, resistancePrice: sig.resistance,
+          fullyScored: true,
+          optionsConfirmed: Boolean(tt),
+          scoreSource: tt ? "full-options" : "full-estimated",
           ...(etfCat ? { isETF: true, etfCategory: etfCat } : {}),
         } satisfies ScreenerRow;
       } catch (err) {
@@ -312,6 +353,9 @@ async function buildYahooData(strategyPreferences: StrategyPreferences, riskPref
           weakFactors: [], scoreCapped: false,
           setupType: "Neutral", recommendedOutlook: "neutral",
           supportPrice: r2(q.price * 0.94), resistancePrice: r2(q.price * 1.06),
+          fullyScored: false,
+          optionsConfirmed: false,
+          scoreSource: "snapshot-estimated",
         } satisfies ScreenerRow;
       }
     }));
@@ -372,28 +416,27 @@ async function buildPolygonData(strategyPreferences: StrategyPreferences, riskPr
   }
 
   // Fetch Yahoo Finance fundamentals for curated universe only (P/E, beta, etc.)
-  const knownSet  = new Set(DEFAULT_UNIVERSE);
+  const knownSet  = new Set([...DEFAULT_UNIVERSE, ...ETF_UNIVERSE.map((e) => e.symbol)]);
   const quotes    = await getQuotes(filtered.filter(s => knownSet.has(s.ticker)).map(s => s.ticker));
   const quoteMap  = new Map(quotes.map(q => [q.symbol, q]));
 
   const rows: ScreenerRow[] = [];
 
-  // Batch-fetch TT market metrics once for the curated universe (true IV rank)
+  const tastytradeUniverse = selectPrioritySymbols(filtered, knownSet, etfMap, TASTYTRADE_ENRICH_LIMIT);
+
+  // Batch-fetch TT market metrics for a bounded, prioritized candidate set (true options IV rank).
   let ttMetrics = new Map<string, import("../lib/tastytrade.js").TtMarketMetrics>();
   if (isTastytradeEnabled() && isTastytradeAuthorized()) {
     try {
-      ttMetrics = await getMarketMetrics([...knownSet]);
-      console.log(`[screener] TT metrics fetched for ${ttMetrics.size}/${knownSet.size} symbols`);
+      ttMetrics = await getMarketMetrics(tastytradeUniverse);
+      console.log(`[screener] TT metrics fetched for ${ttMetrics.size}/${tastytradeUniverse.length} priority symbols`);
     } catch (err) {
       console.warn("[screener] TT metrics batch failed, falling back to HV proxy:", (err as Error)?.message ?? err);
     }
   }
 
   const technicalUniverse = new Set(
-    filtered
-      .filter((s) => knownSet.has(s.ticker))
-      .slice(0, DEFAULT_POLYGON_TECHNICAL_LIMIT)
-      .map((s) => s.ticker),
+    selectPrioritySymbols(filtered, knownSet, etfMap, POLYGON_TECHNICAL_LIMIT),
   );
 
   for (let i = 0; i < filtered.length; i += 25) {
@@ -434,7 +477,8 @@ async function buildPolygonData(strategyPreferences: StrategyPreferences, riskPr
       if (!technicalUniverse.has(s.ticker)) {
         const etfRef = etfMap.get(s.ticker);
         const sig = snapshotSignals(s, price, chPct);
-        const ivRank = 30;
+        const tt = ttMetrics.get(s.ticker);
+        const ivRank = tt ? tt.ivRank : 30;
         const scan = scanOpportunity(sig, ivRank, price, chPct, undefined, dayVwap, prevDayVwap,
           { ...(etfRef ? { isETF: true, etfCategory: etfRef.etfCategory } : {}), strategyPreferences, riskPreferences });
         return {
@@ -454,6 +498,8 @@ async function buildPolygonData(strategyPreferences: StrategyPreferences, riskPr
           recommendedOutlook: scan.recommendedOutlook,
           supportPrice: sig.support, resistancePrice: sig.resistance,
           fullyScored: false,
+          optionsConfirmed: Boolean(tt),
+          scoreSource: tt ? "snapshot-options" : "snapshot-estimated",
           ...(etfRef ? { isETF: true, etfCategory: etfRef.etfCategory } : {}),
         } satisfies ScreenerRow;
       }
@@ -486,6 +532,8 @@ async function buildPolygonData(strategyPreferences: StrategyPreferences, riskPr
           recommendedOutlook: scan.recommendedOutlook,
           supportPrice: sig.support, resistancePrice: sig.resistance,
           fullyScored: true,
+          optionsConfirmed: Boolean(tt),
+          scoreSource: tt ? "full-options" : "full-estimated",
           ...(etfRef ? { isETF: true, etfCategory: etfRef.etfCategory } : {}),
         } satisfies ScreenerRow;
       } catch (err) {
@@ -497,6 +545,9 @@ async function buildPolygonData(strategyPreferences: StrategyPreferences, riskPr
           weakFactors: [], scoreCapped: false,
           setupType: "Neutral", recommendedOutlook: "neutral",
           supportPrice: r2(price * 0.94), resistancePrice: r2(price * 1.06),
+          fullyScored: false,
+          optionsConfirmed: false,
+          scoreSource: "snapshot-estimated",
         } satisfies ScreenerRow;
       }
     }));
@@ -508,7 +559,8 @@ async function buildPolygonData(strategyPreferences: StrategyPreferences, riskPr
     if (i + 25 < filtered.length) await sleep(100);
   }
 
-  console.log(`[polygon] built ${rows.length} rows (${technicalUniverse.size} with full technicals)`);
+  const optionsConfirmed = rows.filter((row) => row.optionsConfirmed).length;
+  console.log(`[polygon] built ${rows.length} rows (${technicalUniverse.size} with full technicals, ${optionsConfirmed} with TT options metrics)`);
   return rows;
 }
 
@@ -731,8 +783,10 @@ router.get("/screener/stats", async (_req, res): Promise<void> => {
   const total   = rows.length;
 
   const withTechnicals = rows.filter(r => r.fullyScored || r.source === "yahoo");
+  const withOptionsMetrics = rows.filter(r => r.optionsConfirmed);
   const highConvictionThreshold = settings.highConvictionThresholds.opportunityScore;
   const highConviction = rows.filter(r => r.opportunityScore >= highConvictionThreshold).length;
+  const optionsConfirmedHighConviction = withOptionsMetrics.filter(r => r.opportunityScore >= highConvictionThreshold).length;
   const strictHighConviction = withTechnicals.filter(r => isHighConviction(r, settings.highConvictionThresholds)).length;
 
   const ivVals = rows.map(r => r.ivRank).filter(v => v > 0);
@@ -753,9 +807,11 @@ router.get("/screener/stats", async (_req, res): Promise<void> => {
     bull, bear, neutral,
     breadth: total > 0 ? Math.round((bull / total) * 100) : 50,
     highConviction,
+    optionsConfirmedHighConviction,
     strictHighConviction,
     highConvictionThreshold,
     technicalsCount: withTechnicals.length,
+    optionsMetricsCount: withOptionsMetrics.length,
     highIv,
     avgIv,
     bestScore,

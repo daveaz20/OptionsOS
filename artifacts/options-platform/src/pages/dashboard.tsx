@@ -233,7 +233,7 @@ function AccountSummaryModule() {
 
 interface MarketStats {
   total: number; bull: number; bear: number; neutral: number;
-  breadth: number; highConviction: number; strictHighConviction?: number; highConvictionThreshold?: number; technicalsCount: number;
+  breadth: number; highConviction: number; optionsConfirmedHighConviction?: number; strictHighConviction?: number; highConvictionThreshold?: number; technicalsCount: number; optionsMetricsCount?: number;
   highIv: number; avgIv: number; bestScore: number; setups60: number; marketOpen: boolean;
   source: string; cachedAt: number;
 }
@@ -276,12 +276,12 @@ function StatsModule({ stocks: _stocks, loadingStocks: _loadingStocks }: { stock
     {
       label: "UNIVERSE",
       value: total.toLocaleString(),
-      sub: `${mkt?.technicalsCount ?? 0} fully scored`,
+      sub: `${mkt?.technicalsCount ?? 0} full technicals · ${mkt?.optionsMetricsCount ?? 0} options IV`,
     },
     {
       label: "SETUPS FOUND",
-      value: <span style={{ color: "hsl(var(--success))" }}>{mkt?.highConviction ?? 0}</span>,
-      sub: `opportunity score >= ${mkt?.highConvictionThreshold ?? 72}`,
+      value: <span style={{ color: "hsl(var(--success))" }}>{mkt?.optionsConfirmedHighConviction ?? mkt?.highConviction ?? 0}</span>,
+      sub: `options-confirmed score >= ${mkt?.highConvictionThreshold ?? 72}`,
     },
     {
       label: "HIGH IV",
