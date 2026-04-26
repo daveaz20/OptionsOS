@@ -731,7 +731,9 @@ router.get("/screener/stats", async (_req, res): Promise<void> => {
   const total   = rows.length;
 
   const withTechnicals = rows.filter(r => r.fullyScored || r.source === "yahoo");
-  const highConviction = withTechnicals.filter(r => isHighConviction(r, settings.highConvictionThresholds)).length;
+  const highConvictionThreshold = settings.highConvictionThresholds.opportunityScore;
+  const highConviction = rows.filter(r => r.opportunityScore >= highConvictionThreshold).length;
+  const strictHighConviction = withTechnicals.filter(r => isHighConviction(r, settings.highConvictionThresholds)).length;
 
   const ivVals = rows.map(r => r.ivRank).filter(v => v > 0);
   const avgIv  = ivVals.length > 0
@@ -751,6 +753,8 @@ router.get("/screener/stats", async (_req, res): Promise<void> => {
     bull, bear, neutral,
     breadth: total > 0 ? Math.round((bull / total) * 100) : 50,
     highConviction,
+    strictHighConviction,
+    highConvictionThreshold,
     technicalsCount: withTechnicals.length,
     highIv,
     avgIv,

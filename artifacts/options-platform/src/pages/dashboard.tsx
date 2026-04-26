@@ -233,7 +233,7 @@ function AccountSummaryModule() {
 
 interface MarketStats {
   total: number; bull: number; bear: number; neutral: number;
-  breadth: number; highConviction: number; technicalsCount: number;
+  breadth: number; highConviction: number; strictHighConviction?: number; highConvictionThreshold?: number; technicalsCount: number;
   highIv: number; avgIv: number; bestScore: number; setups60: number; marketOpen: boolean;
   source: string; cachedAt: number;
 }
@@ -281,7 +281,7 @@ function StatsModule({ stocks: _stocks, loadingStocks: _loadingStocks }: { stock
     {
       label: "SETUPS FOUND",
       value: <span style={{ color: "hsl(var(--success))" }}>{mkt?.highConviction ?? 0}</span>,
-      sub: `high conviction ≥ 75 · of ${mkt?.technicalsCount ?? 0} scored`,
+      sub: `opportunity score >= ${mkt?.highConvictionThreshold ?? 72}`,
     },
     {
       label: "HIGH IV",
