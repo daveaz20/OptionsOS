@@ -275,19 +275,18 @@ function ThetaDecayChart({ dte, closeDte, profitTarget }: { dte: number; closeDt
 }
 
 function StrategyDetail({
-  strategy, currentPrice, symbol, iv, onModify,
+  strategy, currentPrice, symbol, iv, contracts, onContractsChange, onModify,
 }: {
   strategy: OptionsStrategy;
   currentPrice: number;
   symbol: string;
   iv: number;
+  contracts: number;
+  onContractsChange: (n: number) => void;
   onModify: () => void;
 }) {
   const { toast } = useToast();
   const { settings } = useSettings();
-  const [contracts, setContracts] = useState(Math.max(1, Number(settings.defaultContracts || 1)));
-  // Reset contracts when the strategy changes (different expiry/type)
-  useEffect(() => { setContracts(Math.max(1, Number(settings.defaultContracts || 1))); }, [strategy.id, strategy.expirationDate, settings.defaultContracts]);
 
   const exp = strategy.expirationDate;
   const dte = Math.max(0, Math.round((new Date(exp).getTime() - Date.now()) / 86_400_000));
@@ -407,7 +406,7 @@ function StrategyDetail({
       {/* P&L Simulator */}
       <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)", padding: "10px 12px 14px" }}>
         <div style={{ fontSize: 11, fontWeight: 600, color: "hsl(var(--muted-foreground))", marginBottom: 10 }}>P&amp;L Simulator</div>
-        <PnlSimulator strategy={strategy} currentPrice={currentPrice} symbol={symbol} initialIv={iv} contracts={contracts} onContractsChange={setContracts} />
+        <PnlSimulator strategy={strategy} currentPrice={currentPrice} symbol={symbol} initialIv={iv} contracts={contracts} onContractsChange={onContractsChange} />
       </div>
     </div>
   );
@@ -724,6 +723,7 @@ function ExistingPositionBanner({
 
 
 export function StrategyPanel({ symbol, currentPrice = 0, recommendedOutlook }: StrategyPanelProps) {
+  const { settings } = useSettings();
   const initialOutlook: GetStrategiesOutlook =
     recommendedOutlook === "bearish" ? "bearish" :
     recommendedOutlook === "neutral" ? "neutral" : "bullish";
@@ -732,6 +732,7 @@ export function StrategyPanel({ symbol, currentPrice = 0, recommendedOutlook }: 
   const [modifying, setModifying] = useState(false);
   const [customStrategies, setCustomStrategies] = useState<Record<string, OptionsStrategy>>({});
   const [entryPriceOverride, setEntryPriceOverride] = useState<number | null>(null);
+  const [contractsByStrategy, setContractsByStrategy] = useState<Record<string, number>>({});
 
   const { data: strategies = [], isLoading } = useGetStrategies(symbol, { outlook }, { query: { enabled: !!symbol } });
   const { data: positionsData } = useGetAccountPositions({ query: { enabled: !!symbol } });
@@ -761,11 +762,18 @@ export function StrategyPanel({ symbol, currentPrice = 0, recommendedOutlook }: 
     return Math.round(atm.impliedVolatility);
   }, [chainData, currentPrice]);
 
+  const displayStrategies = useMemo(() => {
+    return [...strategies]
+      .map((strategy) => customStrategies[`${symbol}:${outlook}:${strategy.id}`] ?? strategy)
+      .sort((a, b) => b.score - a.score);
+  }, [customStrategies, outlook, strategies, symbol]);
+
   useEffect(() => {
-    if (strategies.length > 0 && !selectedStrategyId) setSelectedStrategyId(strategies[0]!.id);
+    const hasSelected = selectedStrategyId !== null && displayStrategies.some((strategy) => strategy.id === selectedStrategyId);
+    if (displayStrategies.length > 0 && !hasSelected) setSelectedStrategyId(displayStrategies[0]!.id);
     else if (strategies.length === 0) setSelectedStrategyId(null);
     setModifying(false);
-  }, [strategies, outlook]);
+  }, [displayStrategies, selectedStrategyId, strategies.length, outlook]);
 
   // Sync outlook tab when stock changes to a different recommendedOutlook
   useEffect(() => {
@@ -795,6 +803,11 @@ export function StrategyPanel({ symbol, currentPrice = 0, recommendedOutlook }: 
   const rawSelected = strategies.find((s) => s.id === selectedStrategyId);
   const customKey = `${symbol}:${outlook}:${selectedStrategyId}`;
   const selectedStrategy = customStrategies[customKey] ?? rawSelected;
+  const defaultContracts = Math.max(1, Number(settings.defaultContracts || 1));
+  const selectedContracts = contractsByStrategy[customKey] ?? defaultContracts;
+  const setSelectedContracts = (next: number) => {
+    setContractsByStrategy(prev => ({ ...prev, [customKey]: Math.max(1, Math.round(next || 1)) }));
+  };
 
   // Prefer real TT IV from chain; fall back to Brenner-Subrahmanyam back-calculation
   const estimatedIv = (() => {
@@ -840,21 +853,23 @@ export function StrategyPanel({ symbol, currentPrice = 0, recommendedOutlook }: 
             Array.from({ length: 3 }).map((_, i) => (
               <div key={i} style={{ height: 88, borderRadius: 8, background: "rgba(255,255,255,0.04)", animation: "pulse 1.4s infinite" }} />
             ))
-          ) : strategies.length === 0 ? (
+          ) : displayStrategies.length === 0 ? (
             <div style={{ padding: "40px 8px", textAlign: "center", color: "hsl(var(--muted-foreground))", fontSize: 13, display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
               <AlertCircle style={{ width: 22, height: 22, opacity: 0.3 }} />
               No {outlook} strategies available
             </div>
           ) : (() => {
-            const topId = strategies.reduce((best, s) => s.score > best.score ? s : best, strategies[0]!).id;
-            return strategies.map((strategy) => {
-              const custom = customStrategies[`${symbol}:${outlook}:${strategy.id}`];
+            const topId = displayStrategies[0]!.id;
+            return displayStrategies.map((strategy) => {
+              const contractKey = `${symbol}:${outlook}:${strategy.id}`;
+              const contracts = contractsByStrategy[contractKey] ?? defaultContracts;
               return (
                 <StrategyCard
                   key={strategy.id}
-                  strategy={custom ?? strategy}
+                  strategy={strategy}
+                  contracts={contracts}
                   isSelected={strategy.id === selectedStrategyId}
-                  isModified={!!custom}
+                  isModified={Boolean(customStrategies[contractKey])}
                   isTopPick={strategy.id === topId}
                   onClick={() => { setSelectedStrategyId(strategy.id); setModifying(false); }}
                 />
@@ -889,6 +904,8 @@ export function StrategyPanel({ symbol, currentPrice = 0, recommendedOutlook }: 
                   currentPrice={entryPriceOverride ?? currentPrice}
                   symbol={symbol}
                   iv={estimatedIv}
+                  contracts={selectedContracts}
+                  onContractsChange={setSelectedContracts}
                   onModify={() => setModifying(true)}
                 />
               )}
@@ -902,8 +919,8 @@ export function StrategyPanel({ symbol, currentPrice = 0, recommendedOutlook }: 
 }
 
 // â”€â”€ Strategy Card (compact list item) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-function StrategyCard({ strategy, isSelected, isModified, isTopPick, onClick }: {
-  strategy: OptionsStrategy; isSelected: boolean; isModified: boolean; isTopPick: boolean; onClick: () => void;
+function StrategyCard({ strategy, contracts, isSelected, isModified, isTopPick, onClick }: {
+  strategy: OptionsStrategy; contracts: number; isSelected: boolean; isModified: boolean; isTopPick: boolean; onClick: () => void;
 }) {
   const pct = Math.min(Math.max(strategy.score / 100, 0), 1);
   const scoreColor = strategy.score > 65 ? "hsl(var(--success))" : strategy.score < 40 ? "hsl(var(--destructive))" : "hsl(var(--primary))";
@@ -952,8 +969,8 @@ function StrategyCard({ strategy, isSelected, isModified, isTopPick, onClick }: 
         </div>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 4, paddingTop: 7, borderTop: "1px solid rgba(255,255,255,0.05)" }}>
-        <MetricCell label="Cost"       value={formatCurrency(strategy.tradeCost)}                valueColor={strategy.tradeCost < 0 ? "hsl(var(--destructive))" : "hsl(var(--success))"} />
-        <MetricCell label="Max profit" value={formatCurrency(strategy.maxProfit)}                valueColor={strategy.maxProfit >= 0 ? "hsl(var(--success))" : "hsl(var(--destructive))"} />
+        <MetricCell label="Cost"       value={formatCurrency(strategy.tradeCost * contracts)}    valueColor={strategy.tradeCost < 0 ? "hsl(var(--destructive))" : "hsl(var(--success))"} />
+        <MetricCell label="Max profit" value={formatCurrency(strategy.maxProfit * contracts)}    valueColor={strategy.maxProfit >= 0 ? "hsl(var(--success))" : "hsl(var(--destructive))"} />
         <MetricCell label="Return"     value={formatPercent(strategy.returnPercent)}             valueColor={strategy.returnPercent >= 0 ? "hsl(var(--success))" : "hsl(var(--destructive))"} />
       </div>
     </button>

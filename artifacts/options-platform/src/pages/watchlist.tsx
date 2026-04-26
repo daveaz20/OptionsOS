@@ -458,7 +458,7 @@ export default function WatchlistPage() {
                       )}
                       <div style={{ display: "flex", gap: 6, marginLeft: "auto" }}>
                         <button
-                          onClick={() => setLocation(`/scanner?symbol=${item.symbol}`)}
+                          onClick={() => setLocation(`/analysis?symbol=${item.symbol}`)}
                           style={{ padding: "4px 10px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.04)", color: "hsl(var(--muted-foreground))", fontSize: 11, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}
                         >
                           <LineChart style={{ width: 11, height: 11 }} />
@@ -517,7 +517,7 @@ export default function WatchlistPage() {
                     }}
                     onMouseEnter={(e) => (e.currentTarget as HTMLDivElement).style.background = "rgba(255,255,255,0.025)"}
                     onMouseLeave={(e) => (e.currentTarget as HTMLDivElement).style.background = "transparent"}
-                    onClick={() => setLocation(`/scanner?symbol=${item.symbol}`)}
+                    onClick={() => setLocation(`/analysis?symbol=${item.symbol}`)}
                   >
                     <div style={{ minWidth: 0 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -587,7 +587,7 @@ export default function WatchlistPage() {
 
                     <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }} onClick={(e) => e.stopPropagation()}>
                       <button
-                        onClick={() => setLocation(`/scanner?symbol=${item.symbol}`)}
+                        onClick={() => setLocation(`/analysis?symbol=${item.symbol}`)}
                         title="Analyze"
                         style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 11px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.09)", background: "rgba(255,255,255,0.04)", color: "hsl(var(--muted-foreground))", fontSize: 11, fontWeight: 500, cursor: "pointer", transition: "all 0.1s", letterSpacing: "-0.01em" }}
                         onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "hsl(var(--foreground))"; (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(255,255,255,0.18)"; }}

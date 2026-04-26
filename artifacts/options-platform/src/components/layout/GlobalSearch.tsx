@@ -93,7 +93,7 @@ export function GlobalSearch() {
       setQuery("");
       setOpen(false);
       setActiveIndex(-1);
-      setLocation(`/scanner?symbol=${symbol}`);
+      setLocation(`/analysis?symbol=${symbol}`);
     },
     [setLocation]
   );

@@ -220,7 +220,7 @@ function PositionRow({ position }: { position: ExtendedPosition }) {
       >
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 4, flexWrap: "wrap" }}>
-            <Link href={`/scanner?symbol=${position.underlying}`} onClick={e => e.stopPropagation()}>
+            <Link href={`/analysis?symbol=${position.underlying}`} onClick={e => e.stopPropagation()}>
               <span style={{ fontSize: 14, fontWeight: 700, letterSpacing: "-0.02em" }}>{position.underlying}</span>
             </Link>
             <span style={{

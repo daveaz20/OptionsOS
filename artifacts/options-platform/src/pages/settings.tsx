@@ -105,7 +105,7 @@ const CATEGORIES: CategoryDef[] = [
     icon: <Settings size={14} />,
     description: "Basic app behavior, locale, and refresh settings.",
     settings: [
-      { key: "defaultPage", label: "Default page", description: "Page shown on launch", type: "select", default: "/", options: [{ label: "Dashboard", value: "/" }, { label: "Screener", value: "/screener" }, { label: "Analysis", value: "/scanner" }, { label: "Watchlist", value: "/watchlist" }, { label: "Positions", value: "/positions" }] },
+      { key: "defaultPage", label: "Default page", description: "Page shown on launch", type: "select", default: "/", options: [{ label: "Dashboard", value: "/" }, { label: "Scans", value: "/scans" }, { label: "Analysis", value: "/analysis" }, { label: "Watchlist", value: "/watchlist" }, { label: "Positions", value: "/positions" }] },
       { key: "timezone", label: "Timezone", description: "Used for market hours and timestamps", type: "select", default: "ET", options: [{ label: "Eastern (ET)", value: "ET" }, { label: "Central (CT)", value: "CT" }, { label: "Mountain (MT)", value: "MT" }, { label: "Pacific (PT)", value: "PT" }, { label: "UTC", value: "UTC" }] },
       { key: "dateFormat", label: "Date format", type: "select", default: "MM/DD/YYYY", options: [{ label: "MM/DD/YYYY", value: "MM/DD/YYYY" }, { label: "YYYY-MM-DD", value: "YYYY-MM-DD" }, { label: "DD/MM/YYYY", value: "DD/MM/YYYY" }] },
       { key: "numberFormat", label: "Number format", type: "select", default: "US", options: [{ label: "US  1,234.56", value: "US" }, { label: "EU  1.234,56", value: "EU" }] },
@@ -118,10 +118,10 @@ const CATEGORIES: CategoryDef[] = [
     id: "display",
     label: "Display & UI",
     icon: <Palette size={14} />,
-    description: "Theme, screener table layout, and display preferences.",
+    description: "Theme, Scans table layout, and display preferences.",
     settings: [
       { key: "theme", label: "Theme", type: "select", default: "dark", options: [{ label: "Dark", value: "dark" }, { label: "Light", value: "light" }, { label: "System", value: "system" }] },
-      { key: "screenerColumnVisibility", label: "Screener column visibility", description: "Choose which columns are visible in screener tables and symbol lists.", type: "toggleGroup", default: {
+      { key: "screenerColumnVisibility", label: "Scans column visibility", description: "Choose which columns are visible in Scans tables and symbol lists.", type: "toggleGroup", default: {
         symbol: true, price: true, changePercent: true, volume: true, relVol: true,
         marketCap: true, sector: true, beta: true, recommendedOutlook: true, opportunityScore: true,
       }, options: [
@@ -136,9 +136,9 @@ const CATEGORIES: CategoryDef[] = [
         { label: "Outlook", value: "recommendedOutlook" },
         { label: "Score", value: "opportunityScore" },
       ] },
-      { key: "screenerRowsPerPage", label: "Rows per page", description: "Maximum screener rows shown at once", type: "select", default: 100, options: [{ label: "25", value: 25 }, { label: "50", value: 50 }, { label: "100", value: 100 }] },
-      { key: "uiDensity", label: "Row density", description: "Adjusts padding in screener rows", type: "select", default: "comfortable", options: [{ label: "Compact", value: "compact" }, { label: "Comfortable", value: "comfortable" }] },
-      { key: "showSectorBadge", label: "Show sector badges", description: "Display sector badges in screener lists where available", type: "toggle", default: true },
+      { key: "screenerRowsPerPage", label: "Rows per page", description: "Maximum Scans rows shown at once", type: "select", default: 100, options: [{ label: "25", value: 25 }, { label: "50", value: 50 }, { label: "100", value: 100 }] },
+      { key: "uiDensity", label: "Row density", description: "Adjusts padding in Scans rows", type: "select", default: "comfortable", options: [{ label: "Compact", value: "compact" }, { label: "Comfortable", value: "comfortable" }] },
+      { key: "showSectorBadge", label: "Show sector badges", description: "Display sector badges in Scans lists where available", type: "toggle", default: true },
       { key: "showOutlookBadge", label: "Show outlook badges", description: "Display bullish, bearish, and neutral outlook badges", type: "toggle", default: true },
       { key: "showConvictionBadges", label: "Show conviction badges", description: "Display strategy and high-conviction badges", type: "toggle", default: true },
     ],
@@ -149,25 +149,25 @@ const CATEGORIES: CategoryDef[] = [
     icon: <Database size={14} />,
     description: "Define the stock universe and control how market data is fetched and cached.",
     settings: [
-      { key: "universeMode", label: "Universe mode", description: "Choose the screener source universe.", type: "select", default: "polygon", options: [{ label: "Polygon full (~4,800 stocks)", value: "polygon" }, { label: "Yahoo curated (~477 stocks)", value: "yahoo" }] },
-      { key: "cacheRefreshInterval", label: "Cache refresh interval", description: "How long screener data stays fresh before background refresh.", type: "select", default: 30 * 60 * 1000, options: [{ label: "15 minutes", value: 15 * 60 * 1000 }, { label: "30 minutes", value: 30 * 60 * 1000 }, { label: "1 hour", value: 60 * 60 * 1000 }, { label: "2 hours", value: 2 * 60 * 60 * 1000 }] },
-      { key: "showDataSourceTags", label: "Show data source tags", description: "Display Polygon, Yahoo, and EOD badges in screener rows.", type: "toggle", default: true },
+      { key: "universeMode", label: "Universe mode", description: "Choose the Scans source universe.", type: "select", default: "polygon", options: [{ label: "Polygon full (~4,800 stocks)", value: "polygon" }, { label: "Yahoo curated (~477 stocks)", value: "yahoo" }] },
+      { key: "cacheRefreshInterval", label: "Cache refresh interval", description: "How long Scans data stays fresh before background refresh.", type: "select", default: 30 * 60 * 1000, options: [{ label: "15 minutes", value: 15 * 60 * 1000 }, { label: "30 minutes", value: 30 * 60 * 1000 }, { label: "1 hour", value: 60 * 60 * 1000 }, { label: "2 hours", value: 2 * 60 * 60 * 1000 }] },
+      { key: "showDataSourceTags", label: "Show data source tags", description: "Display Polygon, Yahoo, and EOD badges in Scans rows.", type: "toggle", default: true },
     ],
   },
   {
     id: "screener",
-    label: "Screener & Scoring",
+    label: "Scans & Scoring",
     icon: <Search size={14} />,
-    description: "Default filter values and scoring thresholds when the Screener loads.",
+    description: "Default filter values and scoring thresholds when Scans loads.",
     settings: [
-      { key: "minOpportunityScoreToShow", label: "Minimum opportunity score", description: "Hide screener rows below this composite score.", type: "slider", default: 0, min: 0, max: 100 },
+      { key: "minOpportunityScoreToShow", label: "Minimum opportunity score", description: "Hide Scans rows below this composite score.", type: "slider", default: 0, min: 0, max: 100 },
       { key: "highConvictionOpportunityScore", label: "Composite min (/100)", description: "Opportunity score required before a row can qualify as high conviction.", type: "slider", default: 72, min: 0, max: 100, showMaxInLabel: true },
       { key: "highConvictionTechnicalScore",   label: "Technical min (/10)",  type: "slider", default: 6, min: 0, max: 10, showMaxInLabel: true },
       { key: "highConvictionIvScore",          label: "IV Regime min (/10)",  type: "slider", default: 6, min: 0, max: 10, showMaxInLabel: true },
       { key: "highConvictionEntryScore",       label: "Entry min (/10)",      type: "slider", default: 5, min: 0, max: 10, showMaxInLabel: true },
       { key: "highConvictionMomentumScore",    label: "Momentum min (/10)",   type: "slider", default: 5, min: 0, max: 10, showMaxInLabel: true },
       { key: "highConvictionRiskScore",        label: "Risk min (/10)",       description: "Minimum earnings-risk grade. Useful for avoiding entries near binary events.", type: "slider", default: 5, min: 0, max: 10, showMaxInLabel: true },
-      { key: "screenerDefaultSortColumn", label: "Default sort column", description: "Column used when the screener opens or defaults are reset.", type: "select", default: "marketCap", options: SCREENER_SORT_FIELDS },
+      { key: "screenerDefaultSortColumn", label: "Default sort column", description: "Column used when Scans opens or defaults are reset.", type: "select", default: "marketCap", options: SCREENER_SORT_FIELDS },
       { key: "screenerDefaultSortDirection", label: "Default sort direction", type: "select", default: "desc", options: [{ label: "Ascending", value: "asc" }, { label: "Descending", value: "desc" }] },
       { key: "screenerDefaultPreset", label: "Default filter preset on load", type: "select", default: "All", options: SCREENER_PRESET_OPTIONS },
       { key: "screenerDefaultLiquidity", label: "Liquidity filter default", type: "select", default: "all", options: [{ label: "All", value: "all" }, { label: "Liquid only", value: "liquid" }] },
@@ -227,18 +227,18 @@ const CATEGORIES: CategoryDef[] = [
     id: "timeHorizon",
     label: "Time Horizon",
     icon: <Clock size={14} />,
-    description: "Default DTE targets and time-based filters applied across the options chain and screener.",
+    description: "Default DTE targets and time-based filters applied across the options chain and Scans.",
     settings: [
       { key: "minDTE", label: "Default DTE minimum", description: "Overrides Risk Management DTE floor for strategy recommendations", type: "slider", default: 21, min: 0, max: 180, unit: "d" },
       { key: "maxDTE", label: "Default DTE maximum", description: "Overrides Risk Management DTE ceiling for strategy recommendations", type: "slider", default: 60, min: 7, max: 365, unit: "d" },
-      { key: "showDteRangeFilterDefault", label: "Show DTE range filter in screener by default", type: "toggle", default: true },
+      { key: "showDteRangeFilterDefault", label: "Show DTE range filter in Scans by default", type: "toggle", default: true },
       { key: "preferredExpirationCycles", label: "Preferred expiration cycles", type: "multiselect", default: ["weekly", "monthly"], options: [{ label: "Weekly", value: "weekly" }, { label: "Monthly", value: "monthly" }, { label: "Quarterly", value: "quarterly" }, { label: "LEAPS", value: "leaps" }] },
       { key: "highlightPreferredExpirationCycles", label: "Highlight preferred cycles in options chain", type: "toggle", default: true },
       { key: "warnOutsidePreferredExpirationCycle", label: "Warn outside preferred cycle", type: "toggle", default: true },
       { key: "earningsAvoidanceBeforeDays", label: "Avoid before earnings", type: "slider", default: 5, min: 0, max: 21, unit: "d" },
       { key: "earningsAvoidanceAfterDays", label: "Avoid after earnings", type: "slider", default: 1, min: 0, max: 7, unit: "d" },
-      { key: "showEarningsDateColumnDefault", label: "Show earnings date column in screener by default", type: "toggle", default: true },
-      { key: "showEarningsWarningBadge", label: "Show earnings warning badge in screener", type: "toggle", default: true },
+      { key: "showEarningsDateColumnDefault", label: "Show earnings date column in Scans by default", type: "toggle", default: true },
+      { key: "showEarningsWarningBadge", label: "Show earnings warning badge in Scans", type: "toggle", default: true },
       { key: "allowEarningsAvoidanceOverride", label: "Allow earnings override with confirmation", type: "toggle", default: false },
       { key: "thetaOpenMinDTE", label: "Theta open zone minimum", type: "slider", default: 21, min: 0, max: 180, unit: "d" },
       { key: "thetaOpenMaxDTE", label: "Theta open zone maximum", type: "slider", default: 45, min: 7, max: 365, unit: "d" },
@@ -349,7 +349,7 @@ const CATEGORIES: CategoryDef[] = [
       { key: "showIvRankAlongsideIv", label: "Show IV rank alongside IV", type: "toggle", default: true },
       { key: "showIvPercentileAlongsideIvRank", label: "Show IV percentile alongside IV rank", type: "toggle", default: false },
       { key: "ivRankCalculationPeriod", label: "IV rank calculation period", type: "select", default: "1Y", options: [{ label: "30-day", value: "30D" }, { label: "60-day", value: "60D" }, { label: "1-year", value: "1Y" }] },
-      { key: "highlightHighIvStocks", label: "Highlight high IV stocks in screener", type: "toggle", default: true },
+      { key: "highlightHighIvStocks", label: "Highlight high IV stocks in Scans", type: "toggle", default: true },
       { key: "highIvHighlightThreshold", label: "High IV threshold", description: "Highlight when IV rank is at or above this level", type: "slider", default: 60, min: 0, max: 100 },
       { key: "chainStrikeRange", label: "Strikes to show each side", type: "slider", default: 5, min: 3, max: 20 },
       { key: "defaultExpirationCount", label: "Expiration count to show", type: "slider", default: 4, min: 1, max: 12 },
@@ -917,7 +917,7 @@ function DataUniversePanel({ settings, onChange }: { settings: AppSettings; onCh
         <div style={{ padding: "14px 0", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
           <SecretField label="Polygon API key" masked={serverEnv?.polygonApiKey.masked} value={drafts.polygonApiKey ?? ""} placeholder={serverEnv?.polygonApiKey.configured ? serverEnv.polygonApiKey.masked : "Enter Polygon API key"} onChange={value => updateDraft("polygonApiKey", value)} />
         </div>
-        <ActionRow label={flushStatus === "saving" ? "Clearing cache" : flushStatus === "success" ? "Cache cleared ✓" : "Flush Cache"} description="Clears in-memory screener data and the Postgres screener_cache table" icon={flushStatus === "saving" ? <Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} /> : <RotateCcw size={13} />} onClick={flushCache} />
+        <ActionRow label={flushStatus === "saving" ? "Clearing cache" : flushStatus === "success" ? "Cache cleared ✓" : "Flush Cache"} description="Clears in-memory Scans data and the Postgres screener_cache table" icon={flushStatus === "saving" ? <Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} /> : <RotateCcw size={13} />} onClick={flushCache} />
         {flushStatus === "error" && <div style={{ fontSize: 12, color: "hsl(var(--destructive))", marginTop: 8 }}>Cache flush failed.</div>}
       </div>
 
@@ -1739,7 +1739,7 @@ function SecuritySettingsPanel({
     }
   }, [refreshStatus]);
 
-  const clearScreenerCache = useCallback(() => runAction("screener", async () => {
+  const clearScansCache = useCallback(() => runAction("scans", async () => {
     const response = await fetch("/api/screener/flush", { method: "POST" });
     if (!response.ok) throw new Error(await response.text());
     queryClient.invalidateQueries({ queryKey: ["screener-stats"] });
@@ -1831,15 +1831,15 @@ function SecuritySettingsPanel({
 
       <div>
         <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: "hsl(var(--muted-foreground))", textTransform: "uppercase" }}>Cache & Data</div>
-        <ActionRow label={busy === "screener" ? "Clearing..." : "Clear screener cache"} description="Flush server screener rows through POST /api/screener/flush" icon={<RotateCcw size={13} />} onClick={clearScreenerCache} />
+        <ActionRow label={busy === "scans" ? "Clearing..." : "Clear Scans cache"} description="Flush server Scans rows through POST /api/screener/flush" icon={<RotateCcw size={13} />} onClick={clearScansCache} />
         <ActionRow label="Clear watchlist cache" description="Drop the frontend watchlist cache and refetch on next view" icon={<RotateCcw size={13} />} onClick={clearWatchlistCache} />
         <ActionRow label={busy === "export" ? "Exporting..." : "Export all settings as JSON"} description="Download a timestamped backup file" icon={<Download size={13} />} onClick={exportSettings} />
         <ActionRow label={busy === "import" ? "Importing..." : "Import settings from JSON"} description="Validate a backup file before applying it" icon={<Upload size={13} />} onClick={importSettings} />
         <ConfirmActionRow label="Clear all user settings and reset to defaults" description="Erase every user_settings row and reload defaults" icon={<Trash2 size={13} />} onConfirm={onResetAll} />
         {status && (
           <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
-            <RiskSummaryItem label="Screener Cache" value={`${status.storage.screenerCacheSize} rows`} />
-            <RiskSummaryItem label="Screener Bytes" value={formatBytes(status.storage.screenerCacheBytes)} />
+            <RiskSummaryItem label="Scans Cache" value={`${status.storage.screenerCacheSize} rows`} />
+            <RiskSummaryItem label="Scans Bytes" value={formatBytes(status.storage.screenerCacheBytes)} />
             <RiskSummaryItem label="Watchlist Size" value={`${status.storage.watchlistSize} symbols`} />
             <RiskSummaryItem label="Settings Size" value={formatBytes(status.storage.settingsBytes)} />
           </div>
@@ -1854,7 +1854,7 @@ function SecuritySettingsPanel({
             ["Polygon API", status?.polygon.status ?? "loading", ""],
             ["Tastytrade", status?.tastytrade.status ?? "loading", status?.tastytrade.tokenExpiresAt ? `expires ${new Date(status.tastytrade.tokenExpiresAt).toLocaleString()}` : ""],
             ["Server uptime", status ? formatDuration(status.serverUptimeMs) : "loading", ""],
-            ["Last screener refresh", status ? formatStatusDate(status.lastScreenerRefresh) : "loading", ""],
+            ["Last Scans refresh", status ? formatStatusDate(status.lastScreenerRefresh) : "loading", ""],
             ["App version", status?.appVersion ?? "loading", ""],
             ["Node.js version", status?.nodeVersion ?? "loading", ""],
           ].map(([label, value, detail]) => (
@@ -1878,7 +1878,7 @@ function SecuritySettingsPanel({
           Danger Zone
         </div>
         <ConfirmActionRow label="Reset all settings to defaults" description="Delete all user settings after double confirmation" icon={<RotateCcw size={13} />} onConfirm={onResetAll} />
-        <ConfirmActionRow label="Clear all cached data" description="Flush screener cache and clear client-side query cache" icon={<HardDrive size={13} />} onConfirm={clearCachedData} />
+        <ConfirmActionRow label="Clear all cached data" description="Flush Scans cache and clear client-side query cache" icon={<HardDrive size={13} />} onConfirm={clearCachedData} />
         <ConfirmActionRow label="Clear watchlist" description="Delete every saved watchlist symbol" icon={<Trash2 size={13} />} onConfirm={clearWatchlist} />
       </div>
 
@@ -2102,7 +2102,7 @@ export default function SettingsPage() {
                   <div style={{ marginTop: 18 }}>
                     <ActionRow
                       label="Reset to Defaults"
-                      description="Restore every Screener & Scoring option to its default value"
+                      description="Restore every Scans & Scoring option to its default value"
                       icon={<RotateCcw size={13} />}
                       onClick={() => handleResetCategory(activeCategoryDef)}
                     />

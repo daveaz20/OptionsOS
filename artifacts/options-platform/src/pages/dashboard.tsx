@@ -350,7 +350,7 @@ function OpportunityCard({ stock }: { stock: Stock }) {
   const isUp = stock.changePercent >= 0;
   const scoreColor = score >= 70 ? "hsl(var(--success))" : score >= 50 ? "hsl(var(--primary))" : "hsl(var(--muted-foreground))";
   return (
-    <Link href={`/scanner?symbol=${stock.symbol}`}>
+    <Link href={`/analysis?symbol=${stock.symbol}`}>
       <div style={{ padding: "13px 14px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.02)", cursor: "pointer", transition: "all 0.12s" }}
         onMouseEnter={e => { const el = e.currentTarget as HTMLDivElement; el.style.background = "rgba(255,255,255,0.045)"; el.style.borderColor = "rgba(255,255,255,0.12)"; }}
         onMouseLeave={e => { const el = e.currentTarget as HTMLDivElement; el.style.background = "rgba(255,255,255,0.02)"; el.style.borderColor = "rgba(255,255,255,0.07)"; }}>
@@ -437,7 +437,7 @@ function VolLeadersModule({ stocks, loading }: { stocks: Stock[]; loading: boole
         const band = ivBand(s.ivRank ?? 0);
         const isUp = s.changePercent >= 0;
         return (
-          <Link key={s.id} href={`/scanner?symbol=${s.symbol}`}>
+          <Link key={s.id} href={`/analysis?symbol=${s.symbol}`}>
             <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 16px", borderBottom: i < leaders.length - 1 ? "1px solid rgba(255,255,255,0.04)" : undefined, cursor: "pointer", transition: "background 0.1s" }}
               onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.background = "rgba(255,255,255,0.025)"}
               onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.background = "transparent"}>
@@ -505,7 +505,7 @@ function MoverListModule({ stocks, loading, type }: { stocks: Stock[]; loading: 
   return (
     <div>
       {stocks.map((s, i) => (
-        <Link key={s.id} href={`/scanner?symbol=${s.symbol}`}>
+        <Link key={s.id} href={`/analysis?symbol=${s.symbol}`}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 16px", borderBottom: i < stocks.length - 1 ? "1px solid rgba(255,255,255,0.04)" : undefined, cursor: "pointer", transition: "background 0.1s" }}
             onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.background = "rgba(255,255,255,0.025)"}
             onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.background = "transparent"}>
@@ -561,7 +561,7 @@ function WatchlistModule({ watchlist, loading }: { watchlist: any[]; loading: bo
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, marginBottom: 7 }}>
               <div style={{ minWidth: 0, flex: 1 }}>
-                <Link href={`/scanner?symbol=${item.symbol}`}><span style={{ fontSize: 13, fontWeight: 700, letterSpacing: "-0.02em" }}>{item.symbol}</span></Link>
+                <Link href={`/analysis?symbol=${item.symbol}`}><span style={{ fontSize: 13, fontWeight: 700, letterSpacing: "-0.02em" }}>{item.symbol}</span></Link>
                 <div style={{ fontSize: 10, color: "hsl(var(--muted-foreground))", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.name}</div>
               </div>
               <div style={{ textAlign: "right", flexShrink: 0 }}>
@@ -605,7 +605,7 @@ function TechnicalAlertsModule({ stocks, loading }: { stocks: Stock[]; loading: 
           {group.stocks.length === 0
             ? <div style={{ fontSize: 11, color: "hsl(var(--muted-foreground))", padding: "12px 0" }}>None found</div>
             : group.stocks.map(s => (
-              <Link key={s.id} href={`/scanner?symbol=${s.symbol}`}>
+              <Link key={s.id} href={`/analysis?symbol=${s.symbol}`}>
                 <div style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: "1px solid rgba(255,255,255,0.04)", cursor: "pointer" }}>
                   <span style={{ fontSize: 12, fontWeight: 700 }}>{s.symbol}</span>
                   <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
@@ -635,7 +635,7 @@ function CoveredCallsModule({ stocks, loading }: { stocks: Stock[]; loading: boo
       {ideas.map((s, i) => {
         const band = ivBand(s.ivRank ?? 0);
         return (
-          <Link key={s.id} href={`/scanner?symbol=${s.symbol}`}>
+          <Link key={s.id} href={`/analysis?symbol=${s.symbol}`}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 16px", borderBottom: i < ideas.length - 1 ? "1px solid rgba(255,255,255,0.04)" : undefined, cursor: "pointer", transition: "background 0.1s" }}
               onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.background = "rgba(255,255,255,0.025)"}
               onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.background = "transparent"}>
@@ -666,7 +666,7 @@ function MostActiveModule({ stocks, loading }: { stocks: Stock[]; loading: boole
   return (
     <div>
       {active.map((s, i) => (
-        <Link key={s.id} href={`/scanner?symbol=${s.symbol}`}>
+        <Link key={s.id} href={`/analysis?symbol=${s.symbol}`}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 16px", borderBottom: i < active.length - 1 ? "1px solid rgba(255,255,255,0.04)" : undefined, cursor: "pointer", transition: "background 0.1s" }}
             onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.background = "rgba(255,255,255,0.025)"}
             onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.background = "transparent"}>
@@ -706,7 +706,7 @@ function Week52Module({ stocks, loading }: { stocks: Stock[]; loading: boolean }
             : group.list.map(s => {
               const pct = group.label.includes("High") ? (s.price / s.fiftyTwoWeekHigh! * 100).toFixed(1) : (s.price / s.fiftyTwoWeekLow! * 100).toFixed(1);
               return (
-                <Link key={s.id} href={`/scanner?symbol=${s.symbol}`}>
+                <Link key={s.id} href={`/analysis?symbol=${s.symbol}`}>
                   <div style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: "1px solid rgba(255,255,255,0.04)", cursor: "pointer" }}>
                     <span style={{ fontSize: 12, fontWeight: 700 }}>{s.symbol}</span>
                     <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
@@ -743,7 +743,7 @@ function EarningsModule({ stocks, loading }: { stocks: Stock[]; loading: boolean
         const dte = daysUntil(s.earningsDate);
         const band = ivBand(s.ivRank ?? 0);
         return (
-          <Link key={s.id} href={`/scanner?symbol=${s.symbol}`}>
+          <Link key={s.id} href={`/analysis?symbol=${s.symbol}`}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 16px", borderBottom: i < upcoming.length - 1 ? "1px solid rgba(255,255,255,0.04)" : undefined, cursor: "pointer", transition: "background 0.1s" }}
               onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.background = "rgba(255,255,255,0.025)"}
               onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.background = "transparent"}>
@@ -784,7 +784,7 @@ function PortfolioModule({ stocks }: { stocks: Stock[] }) {
       {positions.map((s, index) => {
         const isUp = s.changePercent >= 0;
         return (
-          <Link key={s.id} href={`/scanner?symbol=${s.symbol}`}>
+          <Link key={s.id} href={`/analysis?symbol=${s.symbol}`}>
             <div
               style={{
                 width: "100%",

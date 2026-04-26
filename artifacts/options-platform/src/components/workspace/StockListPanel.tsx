@@ -109,7 +109,7 @@ export function StockListPanel({ selectedSymbol, onSelect, initialTab = "ideas" 
   const [sortKey, setSortKey] = useState<SortKey>("opportunity");
   const deferredSearch = useDeferredValue(search);
 
-  // Sync initialTab if it changes (e.g. navigating to /scanner?tab=watchlist)
+  // Sync initialTab if it changes (e.g. navigating to /analysis?tab=watchlist)
   useEffect(() => { setTab(initialTab); }, [initialTab]);
 
   const { data: stocks = [], isLoading: loadingStocks } = useListStocks(

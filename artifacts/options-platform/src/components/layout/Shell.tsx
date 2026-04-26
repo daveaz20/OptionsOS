@@ -15,8 +15,8 @@ interface ShellProps {
 
 const NAV_ITEMS = [
   { href: "/",          label: "Dashboard", icon: <LayoutDashboard size={18} /> },
-  { href: "/screener",  label: "Screener",  icon: <Filter size={18} /> },
-  { href: "/scanner",   label: "Analysis",  icon: <LineChart size={18} /> },
+  { href: "/scans",     label: "Scans",     icon: <Filter size={18} /> },
+  { href: "/analysis",  label: "Analysis",  icon: <LineChart size={18} /> },
   { href: "/watchlist", label: "Watchlist", icon: <Bookmark size={18} /> },
   { href: "/positions", label: "Positions", icon: <Briefcase size={18} /> },
 ];

@@ -35,6 +35,14 @@ function DefaultRoute() {
   return <DashboardPage />;
 }
 
+function RedirectRoute({ to }: { to: string }) {
+  const [, navigate] = useLocation();
+  useEffect(() => {
+    navigate(`${to}${window.location.search}`, { replace: true });
+  }, [navigate, to]);
+  return null;
+}
+
 const ScannerPage = lazy(() => import("@/pages/workspace"));
 const DashboardPage = lazy(() => import("@/pages/dashboard"));
 const ScreenerPage = lazy(() => import("@/pages/screener"));
@@ -57,8 +65,10 @@ function Router() {
       <Suspense fallback={<div className="h-full w-full bg-background" />}>
         <Switch>
           <Route path="/" component={DefaultRoute} />
-          <Route path="/scanner" component={ScannerPage} />
-          <Route path="/screener" component={ScreenerPage} />
+          <Route path="/analysis" component={ScannerPage} />
+          <Route path="/scans" component={ScreenerPage} />
+          <Route path="/scanner">{() => <RedirectRoute to="/analysis" />}</Route>
+          <Route path="/screener">{() => <RedirectRoute to="/scans" />}</Route>
           <Route path="/watchlist" component={WatchlistPage} />
           <Route path="/positions" component={PositionsPage} />
           <Route path="/settings" component={SettingsPage} />

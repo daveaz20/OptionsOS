@@ -661,15 +661,10 @@ function StockTable({ rows, tab, sortKey, sortDir, onSort, navigate, watchlistSy
     : undefined;
 
   const baseCol: Col = {
-    key:"symbol", label:"Symbol", width:160,
+    key:"symbol", label:"Symbol", width:132,
     render:(r)=>(
-      <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-        <div style={{
-          width:28, height:28, borderRadius:6, background:"rgba(10,132,255,0.12)",
-          display:"flex", alignItems:"center", justifyContent:"center",
-          fontSize:9, fontWeight:800, color:"#0a84ff", flexShrink:0,
-        }}>{r.symbol.slice(0,2)}</div>
-          <div>
+      <div style={{ display:"flex", alignItems:"center" }}>
+        <div>
           <div style={{ display:"flex", alignItems:"center", gap:6 }}>
             <span style={{ fontWeight:700, fontSize:12 }}>{r.symbol}</span>
             {settings.showDataSourceTags && r.source && (
@@ -845,7 +840,7 @@ function StockTable({ rows, tab, sortKey, sortDir, onSort, navigate, watchlistSy
       <tbody>
         {visibleRows.map((r,i)=>(
           <tr key={r.symbol}
-            onClick={()=>navigate(`/scanner?symbol=${r.symbol}`)}
+            onClick={()=>navigate(`/analysis?symbol=${r.symbol}`)}
             style={{ borderBottom:"1px solid rgba(255,255,255,0.035)", background:i%2?"rgba(255,255,255,0.01)":"transparent", cursor:"pointer" }}
             onMouseEnter={e=>(e.currentTarget.style.background="rgba(10,132,255,0.05)")}
             onMouseLeave={e=>(e.currentTarget.style.background=i%2?"rgba(255,255,255,0.01)":"transparent")}
