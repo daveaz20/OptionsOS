@@ -94,6 +94,14 @@ interface ActiveFilter {
   value?: string;
 }
 
+interface SavedScan {
+  name: string;
+  filters: ActiveFilter[];
+  sortKey: string;
+  sortDir: "asc" | "desc";
+  tab: TabKey;
+}
+
 // ─── Column tabs ──────────────────────────────────────────────────────────────
 
 type TabKey = "overview" | "performance" | "technicals" | "fundamentals" | "options" | "factors";
@@ -125,6 +133,12 @@ const PRESETS = [
   { label:"Earnings Soon", filters:[{key:"daysToEarnings",min:"0",max:"14"}] as ActiveFilter[] },
   { label:"Large Cap",     filters:[{key:"marketCap",value:"large+"}] as ActiveFilter[] },
   { label:"Small Cap",     filters:[{key:"marketCap",value:"small"}] as ActiveFilter[] },
+  { label:"Liquid Options", filters:[{key:"liquidity",value:"Liquid"},{key:"volume",min:"1000000"},{key:"relVol",min:"1"}] as ActiveFilter[] },
+  { label:"Unusual Volume", filters:[{key:"relVol",min:"3"},{key:"volume",min:"750000"}] as ActiveFilter[] },
+  { label:"Oversold Bounce", filters:[{key:"rsi14",max:"35"},{key:"technicalScore",min:"4"},{key:"entryScore",min:"5"}] as ActiveFilter[] },
+  { label:"Covered Calls", filters:[{key:"outlook",value:"neutral"},{key:"ivRank",min:"45"},{key:"liquidity",value:"Liquid"}] as ActiveFilter[] },
+  { label:"Put Credit Spreads", filters:[{key:"outlook",value:"bullish"},{key:"ivRank",min:"40"},{key:"entryScore",min:"5"}] as ActiveFilter[] },
+  { label:"Iron Condors", filters:[{key:"outlook",value:"neutral"},{key:"ivRank",min:"50"},{key:"riskScore",min:"5"}] as ActiveFilter[] },
 ];
 
 function filtersFromScreenerDefaults(settings: AppSettings): ActiveFilter[] {
@@ -422,6 +436,12 @@ export default function Screener() {
   const [sortDir,         setSortDir]         = useState<"asc"|"desc">(settings.screenerDefaultSortDirection || "desc");
   const [tab,             setTab]             = useState<TabKey>(() => (settings.screenerDefaultTab as TabKey) || "overview");
   const [showPicker,      setShowPicker]      = useState(false);
+  const [selectedRow,     setSelectedRow]     = useState<FactoredRow | null>(null);
+  const [compareSymbols,  setCompareSymbols]  = useState<string[]>([]);
+  const [savedScans,      setSavedScans]      = useState<SavedScan[]>(() => {
+    try { return JSON.parse(localStorage.getItem("optionsos.savedScans") || "[]") as SavedScan[]; }
+    catch { return []; }
+  });
   const pickerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -499,52 +519,88 @@ export default function Screener() {
     setActivePreset(p.label);
   };
 
+  const applySavedScan = (scan: SavedScan) => {
+    setActiveFilters(scan.filters);
+    setSortKey(scan.sortKey);
+    setSortDir(scan.sortDir);
+    setTab(scan.tab);
+    setActivePreset(scan.name);
+  };
+
+  const saveCurrentScan = () => {
+    const name = prompt("Name this scan");
+    if (!name?.trim()) return;
+    const next = [
+      ...savedScans.filter(scan => scan.name.toLowerCase() !== name.trim().toLowerCase()),
+      { name: name.trim(), filters: activeFilters, sortKey, sortDir, tab },
+    ];
+    setSavedScans(next);
+    localStorage.setItem("optionsos.savedScans", JSON.stringify(next));
+  };
+
+  const toggleCompare = (symbol: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setCompareSymbols(prev => prev.includes(symbol) ? prev.filter(s => s !== symbol) : [...prev, symbol].slice(-6));
+  };
+
   const onSort = (k: string) => {
     if (sortKey === k) setSortDir(d => d === "desc" ? "asc" : "desc");
     else { setSortKey(k); setSortDir("desc"); }
   };
 
   const existingKeys = activeFilters.map(f => f.key);
+  const highScoreCount = filtered.filter(row => row.opportunityScore >= settings.highConvictionOpportunityScore).length;
+  const highIvCount = filtered.filter(row => row.ivRank >= settings.highIvHighlightThreshold).length;
+  const liquidCount = filtered.filter(row => row.liquidity === "Liquid").length;
+  const avgScore = filtered.length ? Math.round(filtered.reduce((sum, row) => sum + row.opportunityScore, 0) / filtered.length) : 0;
+  const compareRows = compareSymbols
+    .map(symbol => factored.find(row => row.symbol === symbol))
+    .filter(Boolean) as FactoredRow[];
 
   return (
     <div style={{ display:"flex", flexDirection:"column", height:"100%", background:"#0a0a0a", color:"#fff", fontFamily:"Inter,system-ui,sans-serif", overflow:"hidden" }}>
 
       {/* ── Header ── */}
-      <div style={{ padding:"10px 16px 0", flexShrink:0 }}>
-        <div style={{ display:"flex", alignItems:"baseline", gap:10, marginBottom:4 }}>
-          <div style={{ fontSize:18, fontWeight:700, letterSpacing:"-0.03em" }}>
+      <div style={{ padding:"16px 20px 0", flexShrink:0 }}>
+        <div style={{ display:"flex", alignItems:"flex-start", gap:14, marginBottom:12 }}>
+          <div>
+            <div style={{ fontSize:24, fontWeight:750, letterSpacing:"-0.02em", lineHeight:1.05 }}>
             {activePreset === "All" ? "All stocks" : activePreset}
+            </div>
+            <div style={{ marginTop:4, fontSize:13, color:"rgba(255,255,255,0.46)" }}>
+              Opportunity discovery, ranking, compare, and quick triage
+            </div>
           </div>
           {activeFilters.length > 0 && (
             <button onClick={() => { setActiveFilters([]); setActivePreset("All"); }}
-              style={{ fontSize:11, color:"rgba(255,69,58,0.8)", background:"none", border:"none", cursor:"pointer", padding:0 }}>
+              style={{ fontSize:13, color:"rgba(255,69,58,0.9)", background:"none", border:"none", cursor:"pointer", padding:"7px 0 0" }}>
               Clear all
             </button>
           )}
           <div style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:8 }}>
             {settings.showDataSourceTags && sourceInfo && (
               <div style={{
-                display:"flex", alignItems:"center", gap:5,
-                padding:"2px 8px", borderRadius:4,
+                display:"flex", alignItems:"center", gap:6,
+                padding:"5px 10px", borderRadius:6,
                 background: "rgba(10,132,255,0.12)",
                 border: "1px solid rgba(10,132,255,0.3)",
               }}>
                 <div style={{
-                  width:6, height:6, borderRadius:"50%",
+                  width:7, height:7, borderRadius:"50%",
                   background: "#0a84ff",
                   boxShadow: "0 0 6px rgba(10,132,255,0.8)",
                 }} />
-                <span style={{ fontSize:10, fontWeight:600, letterSpacing:"0.04em",
+                <span style={{ fontSize:11, fontWeight:700, letterSpacing:"0.04em",
                   color: "#0a84ff",
                   textTransform:"uppercase" }}>
                   Universe
                 </span>
-                <span style={{ fontSize:10, color:"rgba(255,255,255,0.3)" }}>
+                <span style={{ fontSize:12, color:"rgba(255,255,255,0.5)" }}>
                   {sourceInfo.count.toLocaleString()} stocks
                 </span>
               </div>
             )}
-            <span style={{ fontSize:11, color:"rgba(255,255,255,0.35)", fontVariantNumeric:"tabular-nums" }}>
+            <span style={{ fontSize:13, color:"rgba(255,255,255,0.45)", fontVariantNumeric:"tabular-nums" }}>
               {isLoading ? "Loading…" : `${filtered.length.toLocaleString()} results`}
               {isFetching && !isLoading ? " · Refreshing" : ""}
             </span>
@@ -552,16 +608,35 @@ export default function Screener() {
         </div>
 
         {/* ── Preset row ── */}
-        <div style={{ display:"flex", gap:5, marginBottom:8, flexWrap:"wrap", alignItems:"center" }}>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(5, minmax(0, 1fr))", gap:8, marginBottom:12 }}>
+          <WorkbenchMetric label="Results" value={filtered.length.toLocaleString()} sub={`${raw.length.toLocaleString()} in universe`} />
+          <WorkbenchMetric label="Avg Score" value={String(avgScore)} sub="filtered opportunity" />
+          <WorkbenchMetric label="High Conviction" value={highScoreCount.toLocaleString()} sub={`score >= ${settings.highConvictionOpportunityScore}`} tone="good" />
+          <WorkbenchMetric label="High IV" value={highIvCount.toLocaleString()} sub={`IV rank >= ${settings.highIvHighlightThreshold}`} tone="warn" />
+          <WorkbenchMetric label="Liquid" value={liquidCount.toLocaleString()} sub="optionable/liquid rows" />
+        </div>
+
+        <div style={{ display:"flex", gap:6, marginBottom:10, flexWrap:"wrap", alignItems:"center" }}>
           {PRESETS.map(p => (
             <button key={p.label} onClick={() => applyPreset(p)} style={{
-              padding:"3px 10px", borderRadius:5, border:"none", fontSize:11, fontWeight:600, cursor:"pointer",
+              padding:"6px 11px", borderRadius:6, border:"1px solid rgba(255,255,255,0.06)", fontSize:12, fontWeight:650, cursor:"pointer",
               background: activePreset===p.label && JSON.stringify(activeFilters)===JSON.stringify(p.filters)
                 ? "rgba(10,132,255,0.22)" : "rgba(255,255,255,0.06)",
               color: activePreset===p.label && JSON.stringify(activeFilters)===JSON.stringify(p.filters)
                 ? "#0a84ff" : "rgba(255,255,255,0.55)",
             }}>{p.label}</button>
           ))}
+          {savedScans.map(scan => (
+            <button key={scan.name} onClick={() => applySavedScan(scan)} style={{
+              padding:"6px 11px", borderRadius:6, border:"1px solid rgba(48,209,88,0.22)", fontSize:12, fontWeight:650, cursor:"pointer",
+              background: activePreset===scan.name ? "rgba(48,209,88,0.16)" : "rgba(48,209,88,0.06)",
+              color: activePreset===scan.name ? "#30d158" : "rgba(255,255,255,0.58)",
+            }}>{scan.name}</button>
+          ))}
+          <button onClick={saveCurrentScan} style={{
+            padding:"6px 11px", borderRadius:6, border:"1px dashed rgba(255,255,255,0.18)", fontSize:12, fontWeight:650, cursor:"pointer",
+            background:"transparent", color:"rgba(255,255,255,0.52)",
+          }}>Save scan</button>
         </div>
 
         {/* ── Filter chip bar ── */}
@@ -570,7 +645,7 @@ export default function Screener() {
             <div key={f.key} style={{
               display:"flex", alignItems:"center", gap:4, padding:"4px 8px 4px 10px",
               background:"rgba(10,132,255,0.12)", border:"1px solid rgba(10,132,255,0.28)",
-              borderRadius:6, fontSize:11, color:"#0a84ff", fontWeight:500, whiteSpace:"nowrap",
+              borderRadius:6, fontSize:12, color:"#0a84ff", fontWeight:600, whiteSpace:"nowrap",
             }}>
               {filterSummary(f)}
               <button onClick={()=>removeFilter(f.key)} style={{ background:"none", border:"none", color:"rgba(10,132,255,0.7)", cursor:"pointer", padding:"0 0 0 2px", lineHeight:1, fontSize:12 }}>✕</button>
@@ -580,9 +655,9 @@ export default function Screener() {
           <div ref={pickerRef} style={{ position:"relative" }}>
             <button onClick={()=>setShowPicker(s=>!s)} style={{
               display:"flex", alignItems:"center", gap:4,
-              padding:"4px 10px", borderRadius:6, border:"1px solid rgba(255,255,255,0.12)",
+              padding:"6px 11px", borderRadius:6, border:"1px solid rgba(255,255,255,0.12)",
               background: showPicker ? "rgba(255,255,255,0.1)" : "rgba(255,255,255,0.05)",
-              color:"rgba(255,255,255,0.55)", fontSize:11, fontWeight:600, cursor:"pointer",
+              color:"rgba(255,255,255,0.62)", fontSize:12, fontWeight:650, cursor:"pointer",
             }}>
               <span style={{ fontSize:14, lineHeight:1 }}>+</span> Add filter
             </button>
@@ -604,8 +679,8 @@ export default function Screener() {
         <div style={{ display:"flex", gap:0, borderBottom:"1px solid rgba(255,255,255,0.07)", marginTop:2 }}>
           {TABS.map(t => (
             <button key={t.key} onClick={()=>setTab(t.key)} style={{
-              padding:"7px 14px", background:"none", border:"none", borderBottom: tab===t.key ? "2px solid #0a84ff" : "2px solid transparent",
-              color: tab===t.key ? "#0a84ff" : "rgba(255,255,255,0.4)", fontSize:12, fontWeight:600, cursor:"pointer",
+              padding:"10px 16px", background:"none", border:"none", borderBottom: tab===t.key ? "2px solid #0a84ff" : "2px solid transparent",
+              color: tab===t.key ? "#0a84ff" : "rgba(255,255,255,0.48)", fontSize:13, fontWeight:700, cursor:"pointer",
               marginBottom:-1, transition:"color 0.15s",
             }}>{t.label}</button>
           ))}
@@ -621,9 +696,24 @@ export default function Screener() {
         </div>
       ) : (
         <div style={{ flex:1, overflow:"auto" }}>
-          <StockTable rows={sorted} tab={tab} sortKey={sortKey} sortDir={sortDir} onSort={onSort} navigate={setLocation} watchlistSymbolMap={watchlistSymbolMap} onWatchlistToggle={handleWatchlistToggle} />
+          {compareRows.length > 0 && (
+            <CompareStrip rows={compareRows} onClear={() => setCompareSymbols([])} onOpen={(symbol) => setLocation(`/analysis?symbol=${symbol}`)} />
+          )}
+          <StockTable
+            rows={sorted}
+            tab={tab}
+            sortKey={sortKey}
+            sortDir={sortDir}
+            onSort={onSort}
+            navigate={setLocation}
+            watchlistSymbolMap={watchlistSymbolMap}
+            onWatchlistToggle={handleWatchlistToggle}
+            onInspect={setSelectedRow}
+            compareSymbols={compareSymbols}
+            onCompareToggle={toggleCompare}
+          />
           {sorted.length > settings.screenerRowsPerPage && (
-            <div style={{ padding:"10px", color:"rgba(255,255,255,0.25)", fontSize:11, textAlign:"center" }}>
+            <div style={{ padding:"12px", color:"rgba(255,255,255,0.35)", fontSize:13, textAlign:"center" }}>
               Showing {settings.screenerRowsPerPage} of {sorted.length.toLocaleString()} — add filters to narrow results
             </div>
           )}
@@ -635,16 +725,126 @@ export default function Screener() {
 
 // ─── Stock Table ──────────────────────────────────────────────────────────────
 
-function StockTable({ rows, tab, sortKey, sortDir, onSort, navigate, watchlistSymbolMap, onWatchlistToggle }: {
+function WorkbenchMetric({ label, value, sub, tone = "neutral" }: { label: string; value: string; sub: string; tone?: "good" | "warn" | "neutral" }) {
+  const color = tone === "good" ? "#30d158" : tone === "warn" ? "#ff9f0a" : "rgba(255,255,255,0.9)";
+  return (
+    <div style={{ minWidth: 0, padding: "11px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.025)" }}>
+      <div style={{ fontSize: 11, color: "rgba(255,255,255,0.42)", fontWeight: 700, marginBottom: 5 }}>{label}</div>
+      <div style={{ fontSize: 20, color, fontWeight: 800, fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>{value}</div>
+      <div style={{ fontSize: 11, color: "rgba(255,255,255,0.34)", marginTop: 5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sub}</div>
+    </div>
+  );
+}
+
+function CompareStrip({ rows, onClear, onOpen }: { rows: FactoredRow[]; onClear: () => void; onOpen: (symbol: string) => void }) {
+  return (
+    <div style={{ position: "sticky", top: 0, zIndex: 5, display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", background: "rgba(18,18,18,0.96)", borderBottom: "1px solid rgba(255,255,255,0.08)", boxShadow: "0 8px 24px rgba(0,0,0,0.28)" }}>
+      <div style={{ fontSize: 12, color: "rgba(255,255,255,0.44)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>Compare</div>
+      {rows.map(row => (
+        <button key={row.symbol} onClick={() => onOpen(row.symbol)} style={{ display: "grid", gridTemplateColumns: "auto auto auto", gap: 7, alignItems: "center", padding: "6px 9px", borderRadius: 7, border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.04)", color: "#fff", cursor: "pointer" }}>
+          <span style={{ fontSize: 13, fontWeight: 800 }}>{row.symbol}</span>
+          <span style={{ fontSize: 12, color: row.opportunityScore >= 70 ? "#30d158" : "#ffd60a", fontVariantNumeric: "tabular-nums" }}>{row.opportunityScore}</span>
+          <span style={{ fontSize: 12, color: row.changePercent >= 0 ? "#30d158" : "#ff453a", fontVariantNumeric: "tabular-nums" }}>{row.changePercent >= 0 ? "+" : ""}{row.changePercent.toFixed(1)}%</span>
+        </button>
+      ))}
+      <button onClick={onClear} style={{ marginLeft: "auto", border: "none", background: "transparent", color: "rgba(255,255,255,0.46)", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>Clear</button>
+    </div>
+  );
+}
+
+function OpportunityDrawer({ row, isWatched, onClose, onAnalyze, onWatchlist }: {
+  row: FactoredRow;
+  isWatched: boolean;
+  onClose: () => void;
+  onAnalyze: () => void;
+  onWatchlist: (e: React.MouseEvent) => void;
+}) {
+  const scoreColor = row.opportunityScore >= 70 ? "#30d158" : row.opportunityScore >= 50 ? "#ffd60a" : "#ff453a";
+  const scoreItems = [
+    ["Technical", row.technicalScore, 10],
+    ["IV Regime", row.ivScore, 10],
+    ["Momentum", row.momentumScore, 10],
+    ["Entry", row.entryScore, 10],
+    ["Risk", row.riskScore, 10],
+    ["Alpha", row.alpha, 100],
+  ] as const;
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 300, pointerEvents: "none" }}>
+      <div onClick={onClose} style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.35)", pointerEvents: "auto" }} />
+      <aside style={{ position: "absolute", top: 0, right: 0, bottom: 0, width: 420, maxWidth: "92vw", background: "#111", borderLeft: "1px solid rgba(255,255,255,0.10)", boxShadow: "-24px 0 60px rgba(0,0,0,0.45)", pointerEvents: "auto", display: "flex", flexDirection: "column" }}>
+        <div style={{ padding: 18, borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
+            <div>
+              <div style={{ fontSize: 28, fontWeight: 800, lineHeight: 1 }}>{row.symbol}</div>
+              <div style={{ fontSize: 13, color: "rgba(255,255,255,0.48)", marginTop: 4 }}>{row.name}</div>
+            </div>
+            <button onClick={onClose} style={{ border: "none", background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.72)", width: 30, height: 30, borderRadius: 6, cursor: "pointer", fontSize: 16 }}>x</button>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 16 }}>
+            <DrawerMetric label="Price" value={`$${row.price.toFixed(2)}`} sub={`${row.changePercent >= 0 ? "+" : ""}${row.changePercent.toFixed(2)}% today`} tone={row.changePercent >= 0 ? "good" : "bad"} />
+            <DrawerMetric label="Opportunity" value={String(row.opportunityScore)} sub={row.setupType || "setup"} color={scoreColor} />
+            <DrawerMetric label="IV Rank" value={`${Math.round(row.ivRank)}%`} sub={row.liquidity || "liquidity"} tone={row.ivRank >= 50 ? "warn" : "neutral"} />
+            <DrawerMetric label="Rel Volume" value={`${row.relVol.toFixed(2)}x`} sub={fmtVol(row.volume)} />
+          </div>
+        </div>
+        <div style={{ padding: 18, overflow: "auto", flex: 1 }}>
+          <div style={{ fontSize: 12, color: "rgba(255,255,255,0.42)", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>Score Breakdown</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+            {scoreItems.map(([label, value, max]) => (
+              <div key={label}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 5 }}>
+                  <span style={{ color: "rgba(255,255,255,0.72)" }}>{label}</span>
+                  <span style={{ color: "rgba(255,255,255,0.48)", fontVariantNumeric: "tabular-nums" }}>{value}/{max}</span>
+                </div>
+                <div style={{ height: 6, borderRadius: 999, background: "rgba(255,255,255,0.07)", overflow: "hidden" }}>
+                  <div style={{ width: `${Math.max(0, Math.min(100, (value / max) * 100))}%`, height: "100%", background: value / max >= 0.7 ? "#30d158" : value / max >= 0.45 ? "#ffd60a" : "#ff453a" }} />
+                </div>
+              </div>
+            ))}
+          </div>
+          <div style={{ marginTop: 18, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <DrawerMetric label="Support" value={`$${row.supportPrice.toFixed(2)}`} />
+            <DrawerMetric label="Resistance" value={`$${row.resistancePrice.toFixed(2)}`} />
+            <DrawerMetric label="52W High" value={`$${row.fiftyTwoWeekHigh.toFixed(2)}`} />
+            <DrawerMetric label="52W Low" value={`$${row.fiftyTwoWeekLow.toFixed(2)}`} />
+            <DrawerMetric label="Earnings" value={row.earningsDate || "TBD"} />
+            <DrawerMetric label="Source" value={row.priceSource || row.source || "market"} />
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 8, padding: 18, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+          <button onClick={onAnalyze} style={{ flex: 1, height: 38, borderRadius: 7, border: "none", background: "#0a84ff", color: "#fff", fontSize: 14, fontWeight: 750, cursor: "pointer" }}>Analyze</button>
+          <button onClick={onWatchlist} style={{ height: 38, padding: "0 14px", borderRadius: 7, border: "1px solid rgba(255,255,255,0.10)", background: isWatched ? "rgba(10,132,255,0.15)" : "rgba(255,255,255,0.05)", color: isWatched ? "#0a84ff" : "rgba(255,255,255,0.72)", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>{isWatched ? "Watching" : "Watch"}</button>
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+function DrawerMetric({ label, value, sub, tone = "neutral", color }: { label: string; value: string; sub?: string; tone?: "good" | "bad" | "warn" | "neutral"; color?: string }) {
+  const resolved = color ?? (tone === "good" ? "#30d158" : tone === "bad" ? "#ff453a" : tone === "warn" ? "#ff9f0a" : "rgba(255,255,255,0.9)");
+  return (
+    <div style={{ padding: "10px 11px", borderRadius: 7, border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.025)", minWidth: 0 }}>
+      <div style={{ fontSize: 11, color: "rgba(255,255,255,0.42)", fontWeight: 700, marginBottom: 5 }}>{label}</div>
+      <div style={{ fontSize: 16, color: resolved, fontWeight: 800, fontVariantNumeric: "tabular-nums", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{value}</div>
+      {sub && <div style={{ fontSize: 11, color: "rgba(255,255,255,0.34)", marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sub}</div>}
+    </div>
+  );
+}
+
+function StockTable({ rows, tab, sortKey, sortDir, onSort, navigate, watchlistSymbolMap, onWatchlistToggle, onInspect, compareSymbols, onCompareToggle }: {
   rows: FactoredRow[]; tab: TabKey; sortKey:string; sortDir:"asc"|"desc";
   onSort:(k:string)=>void; navigate:(p:string)=>void;
   watchlistSymbolMap: Map<string, number>;
   onWatchlistToggle: (symbol: string, e: React.MouseEvent) => void;
+  onInspect: (row: FactoredRow) => void;
+  compareSymbols: string[];
+  onCompareToggle: (symbol: string, e: React.MouseEvent) => void;
 }) {
   const { settings } = useSettings();
   interface Col { key:string; label:string; width?:number; right?:boolean; render:(r:FactoredRow)=>React.ReactNode }
-  const rowPadding = settings.uiDensity === "compact" ? "4px 10px" : "8px 10px";
-  const headerPadding = settings.uiDensity === "compact" ? "6px 10px" : "8px 10px";
+  const rowPadding = settings.uiDensity === "compact" ? "7px 12px" : "11px 12px";
+  const headerPadding = settings.uiDensity === "compact" ? "8px 12px" : "10px 12px";
   const columnVisibility = settings.screenerColumnVisibility;
   const isVisible = (key: string) => columnVisibility[key as keyof typeof columnVisibility] ?? true;
   const scoreTitle = (r: FactoredRow) => settings.showScoreBreakdownTooltip
@@ -666,16 +866,16 @@ function StockTable({ rows, tab, sortKey, sortDir, onSort, navigate, watchlistSy
       <div style={{ display:"flex", alignItems:"center" }}>
         <div>
           <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-            <span style={{ fontWeight:700, fontSize:12 }}>{r.symbol}</span>
+            <span style={{ fontWeight:750, fontSize:15 }}>{r.symbol}</span>
             {settings.showDataSourceTags && r.source && (
               <span style={{
-                padding:"1px 4px", borderRadius:3, fontSize:8, fontWeight:800, letterSpacing:"0.04em",
+                padding:"2px 5px", borderRadius:4, fontSize:9, fontWeight:800, letterSpacing:"0.04em",
                 color: r.source === "yahoo" ? "hsl(38 92% 50%)" : "hsl(var(--primary))",
                 background: r.source === "yahoo" ? "hsl(38 92% 50% / 0.10)" : "hsl(var(--primary) / 0.10)",
               }}>{r.source === "polygon-eod" ? "EOD" : r.source.toUpperCase()}</span>
             )}
           </div>
-          <div style={{ fontSize:9, color:"rgba(255,255,255,0.3)", maxWidth:110, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{r.name}</div>
+          <div style={{ fontSize:11, color:"rgba(255,255,255,0.42)", maxWidth:132, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{r.name}</div>
         </div>
       </div>
     ),
@@ -687,6 +887,15 @@ function StockTable({ rows, tab, sortKey, sortDir, onSort, navigate, watchlistSy
       <span style={{ fontWeight:600, fontVariantNumeric:"tabular-nums" }}>${r.price.toFixed(2)}</span>
       {r.priceSource === "tastytrade-live" && (
         <span title="Tastytrade live quote" style={{ width:6, height:6, borderRadius:"50%", background:"#30d158", boxShadow:"0 0 0 2px rgba(48,209,88,0.16)" }} />
+      )}
+      {selectedRow && (
+        <OpportunityDrawer
+          row={selectedRow}
+          isWatched={watchlistSymbolMap.has(selectedRow.symbol)}
+          onClose={() => setSelectedRow(null)}
+          onAnalyze={() => setLocation(`/analysis?symbol=${selectedRow.symbol}`)}
+          onWatchlist={(e) => handleWatchlistToggle(selectedRow.symbol, e)}
+        />
       )}
       {r.priceSource === "tastytrade-rest" && (
         <span title="Tastytrade quote" style={{ width:6, height:6, borderRadius:"50%", background:"#ffd60a", boxShadow:"0 0 0 2px rgba(255,214,10,0.14)" }} />
@@ -818,7 +1027,7 @@ function StockTable({ rows, tab, sortKey, sortDir, onSort, navigate, watchlistSy
 
   const TH = ({ col }: { col: Col }) => (
     <th onClick={()=>onSort(col.key)} style={{
-      padding:headerPadding, fontSize:10, fontWeight:700, letterSpacing:"0.06em", textTransform:"uppercase",
+      padding:headerPadding, fontSize:11, fontWeight:750, letterSpacing:"0.05em", textTransform:"uppercase",
       color: sortKey===col.key ? "#0a84ff" : "rgba(255,255,255,0.3)",
       textAlign: col.right ? "right" : "left", cursor:"pointer", userSelect:"none", whiteSpace:"nowrap",
       position:"sticky", top:0, background:"#111", zIndex:2,
@@ -830,11 +1039,11 @@ function StockTable({ rows, tab, sortKey, sortDir, onSort, navigate, watchlistSy
   );
 
   return (
-    <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12 }}>
+    <table style={{ width:"100%", borderCollapse:"collapse", fontSize:14 }}>
       <thead>
         <tr>
           {cols.map(c=><TH key={c.key} col={c} />)}
-          <th style={{ padding:"7px 8px", fontSize:10, fontWeight:700, color:"rgba(255,255,255,0.2)", textAlign:"right", position:"sticky", top:0, background:"#111", zIndex:2, borderBottom:"1px solid rgba(255,255,255,0.06)", width:36 }}>WL</th>
+          <th style={{ padding:"8px 10px", fontSize:11, fontWeight:750, color:"rgba(255,255,255,0.28)", textAlign:"right", position:"sticky", top:0, background:"#111", zIndex:2, borderBottom:"1px solid rgba(255,255,255,0.06)", width:118 }}>Actions</th>
         </tr>
       </thead>
       <tbody>
@@ -850,7 +1059,30 @@ function StockTable({ rows, tab, sortKey, sortDir, onSort, navigate, watchlistSy
                 {c.render(r)}
               </td>
             ))}
-            <td style={{ padding:"4px 8px", textAlign:"right" }}>
+            <td style={{ padding:"6px 10px", textAlign:"right", whiteSpace:"nowrap" }}>
+              <button
+                onClick={(e) => { e.stopPropagation(); onInspect(r); }}
+                title="Inspect opportunity"
+                style={{
+                  height:26, padding:"0 8px", borderRadius:5, border:"none", marginRight:5,
+                  background:"rgba(255,255,255,0.06)", color:"rgba(255,255,255,0.64)",
+                  cursor:"pointer", fontSize:12, fontWeight:650,
+                }}
+              >
+                Detail
+              </button>
+              <button
+                onClick={(e) => onCompareToggle(r.symbol, e)}
+                title="Compare"
+                style={{
+                  height:26, padding:"0 8px", borderRadius:5, border:"none", marginRight:5,
+                  background: compareSymbols.includes(r.symbol) ? "rgba(48,209,88,0.16)" : "rgba(255,255,255,0.06)",
+                  color: compareSymbols.includes(r.symbol) ? "#30d158" : "rgba(255,255,255,0.64)",
+                  cursor:"pointer", fontSize:12, fontWeight:650,
+                }}
+              >
+                Compare
+              </button>
               <button
                 onClick={(e) => onWatchlistToggle(r.symbol, e)}
                 title={watchlistSymbolMap.has(r.symbol) ? "Remove from watchlist" : "Add to watchlist"}

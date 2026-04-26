@@ -92,6 +92,17 @@ export function StockDetailPanel({ symbol }: StockDetailPanelProps) {
   }
 
   const isUp = stock.change >= 0;
+  const quote = stock as any;
+  const quoteSource =
+    quote.priceSource === "tastytrade-live" ? "Tastytrade live" :
+    quote.priceSource === "tastytrade-rest" ? "Tastytrade quote" :
+    quote.source === "polygon-eod" ? "Polygon EOD" :
+    quote.source === "polygon" ? "Polygon" :
+    "Market data";
+  const relVol = Number(quote.relVol ?? (stock.volume && quote.avgVolume ? stock.volume / quote.avgVolume : 0));
+  const dayRangePct = stock.fiftyTwoWeekHigh > stock.fiftyTwoWeekLow
+    ? Math.max(0, Math.min(100, ((stock.price - stock.fiftyTwoWeekLow) / (stock.fiftyTwoWeekHigh - stock.fiftyTwoWeekLow)) * 100))
+    : 50;
 
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "hsl(var(--background))" }}>
@@ -99,7 +110,7 @@ export function StockDetailPanel({ symbol }: StockDetailPanelProps) {
         <div style={{ padding: "28px 32px 40px", width: "100%" }}>
 
           {/* Header */}
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 28 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 18, gap: 24 }}>
             <div>
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 5 }}>
                 <h1 style={{ fontSize: 32, fontWeight: 700, letterSpacing: "-0.04em", color: "hsl(var(--foreground))", lineHeight: 1 }}>
@@ -155,8 +166,20 @@ export function StockDetailPanel({ symbol }: StockDetailPanelProps) {
               <p style={{ fontSize: 13, color: "hsl(var(--muted-foreground))", fontWeight: 400 }}>{stock.name}</p>
             </div>
 
-            <div style={{ textAlign: "right" }}>
-              <div style={{ fontSize: 32, fontWeight: 700, letterSpacing: "-0.04em", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
+            <div style={{ textAlign: "right", minWidth: 280 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8, marginBottom: 6 }}>
+                <span style={{
+                  display: "inline-flex", alignItems: "center", gap: 6, padding: "3px 8px", borderRadius: 999,
+                  background: quote.priceSource === "tastytrade-live" ? "hsl(var(--success) / 0.10)" : "rgba(255,255,255,0.05)",
+                  border: quote.priceSource === "tastytrade-live" ? "1px solid hsl(var(--success) / 0.24)" : "1px solid rgba(255,255,255,0.08)",
+                  color: quote.priceSource === "tastytrade-live" ? "hsl(var(--success))" : "hsl(var(--muted-foreground))",
+                  fontSize: 11, fontWeight: 700,
+                }}>
+                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: "currentColor" }} />
+                  {quoteSource}
+                </span>
+              </div>
+              <div style={{ fontSize: 36, fontWeight: 750, letterSpacing: "-0.04em", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
                 {formatCurrency(stock.price)}
               </div>
               <div style={{
@@ -174,6 +197,21 @@ export function StockDetailPanel({ symbol }: StockDetailPanelProps) {
                 {isUp ? "+" : ""}{formatCurrency(stock.change)} ({formatPercent(Math.abs(stock.changePercent))})
               </div>
             </div>
+          </div>
+
+          {/* Quote workup */}
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(6, minmax(0, 1fr))",
+            gap: 8,
+            marginBottom: 20,
+          }}>
+            <QuoteStat label="Volume" value={formatNumber(stock.volume)} sub={relVol > 0 ? `${relVol.toFixed(2)}x rel vol` : "relative volume"} />
+            <QuoteStat label="Market Cap" value={formatNumber(stock.marketCap)} sub={stock.sector || "sector"} />
+            <QuoteStat label="IV Rank" value={`${Math.round(stock.ivRank ?? 0)}%`} tone={(stock.ivRank ?? 0) >= 50 ? "warn" : "neutral"} sub="options regime" />
+            <QuoteStat label="Tech Strength" value={`${stock.technicalStrength}/10`} tone={stock.technicalStrength >= 7 ? "good" : stock.technicalStrength <= 3 ? "bad" : "neutral"} sub="trend score" />
+            <QuoteStat label="P/E" value={stock.pe > 0 ? stock.pe.toFixed(1) : "N/A"} sub={stock.forwardPE > 0 ? `${stock.forwardPE.toFixed(1)} fwd` : "forward N/A"} />
+            <QuoteStat label="52W Position" value={`${Math.round(dayRangePct)}%`} sub={`${formatCurrency(stock.fiftyTwoWeekLow)} - ${formatCurrency(stock.fiftyTwoWeekHigh)}`} />
           </div>
 
           {/* Chart card */}
@@ -263,6 +301,28 @@ export function StockDetailPanel({ symbol }: StockDetailPanelProps) {
           </div>
         </div>
       </ScrollArea>
+    </div>
+  );
+}
+
+function QuoteStat({ label, value, sub, tone = "neutral" }: { label: string; value: string; sub?: string; tone?: "good" | "bad" | "warn" | "neutral" }) {
+  const color =
+    tone === "good" ? "hsl(var(--success))" :
+    tone === "bad" ? "hsl(var(--destructive))" :
+    tone === "warn" ? "hsl(38 92% 50%)" :
+    "hsl(var(--foreground))";
+
+  return (
+    <div style={{
+      minWidth: 0,
+      padding: "12px 13px",
+      borderRadius: 8,
+      border: "1px solid rgba(255,255,255,0.07)",
+      background: "rgba(255,255,255,0.025)",
+    }}>
+      <div style={{ fontSize: 11, color: "hsl(var(--muted-foreground))", fontWeight: 650, marginBottom: 5 }}>{label}</div>
+      <div style={{ fontSize: 17, color, fontWeight: 750, fontVariantNumeric: "tabular-nums", lineHeight: 1.15, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{value}</div>
+      {sub && <div style={{ fontSize: 10.5, color: "hsl(var(--muted-foreground))", marginTop: 5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sub}</div>}
     </div>
   );
 }

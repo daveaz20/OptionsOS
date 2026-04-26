@@ -1,16 +1,14 @@
 import { useState, useEffect } from "react";
 import { useLocation, useSearch } from "wouter";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
-import { StockListPanel } from "@/components/workspace/StockListPanel";
 import { StockDetailPanel } from "@/components/workspace/StockDetailPanel";
 import { StrategyPanel } from "@/components/workspace/StrategyPanel";
 import { useGetStock } from "@workspace/api-client-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 
-type MobileTab = "list" | "detail" | "strategy";
+type MobileTab = "detail" | "strategy";
 
 const MOBILE_TABS: { key: MobileTab; label: string }[] = [
-  { key: "list",     label: "Stocks"   },
   { key: "detail",   label: "Analysis" },
   { key: "strategy", label: "Strategy" },
 ];
@@ -26,23 +24,14 @@ export default function ScannerPage() {
     catch { return "AAPL"; }
   })();
 
-  const initialStockListTab = (() => {
-    try { return new URLSearchParams(window.location.search).get("tab") === "watchlist" ? "watchlist" : "ideas"; }
-    catch { return "ideas"; }
-  })() as "ideas" | "watchlist";
-
   const [selectedSymbol, setSelectedSymbol] = useState<string>(initialSymbol);
-  const [stockListTab, setStockListTab] = useState<"ideas" | "watchlist">(initialStockListTab);
 
   // Reactive to both path and search changes (handles same-path navigation with different ?tab=)
   useEffect(() => {
     try {
       const params = new URLSearchParams(search || window.location.search);
       const sym = params.get("symbol");
-      const tab = params.get("tab");
       if (sym && sym !== selectedSymbol) { setSelectedSymbol(sym); }
-      if (tab === "watchlist") setStockListTab("watchlist");
-      else if (!tab) setStockListTab("ideas");
     } catch { /* ignore */ }
   }, [location, search]);
 
@@ -54,13 +43,6 @@ export default function ScannerPage() {
       <div className="h-full w-full flex flex-col bg-background">
         {/* Active panel */}
         <div className="flex-1 overflow-hidden">
-          {mobileTab === "list" && (
-            <StockListPanel
-              selectedSymbol={selectedSymbol}
-              onSelect={(sym) => { setSelectedSymbol(sym); setMobileTab("detail"); }}
-              initialTab={stockListTab}
-            />
-          )}
           {mobileTab === "detail" && (
             <StockDetailPanel symbol={selectedSymbol} />
           )}
@@ -102,27 +84,17 @@ export default function ScannerPage() {
     );
   }
 
-  // Desktop: resizable 3-panel layout
+  // Desktop: focused 2-panel analysis layout. Discovery now lives in Scans.
   return (
     <div className="h-full w-full flex flex-col bg-background">
       <ResizablePanelGroup direction="horizontal" className="h-full w-full rounded-none">
-        <ResizablePanel defaultSize={20} minSize={15} maxSize={30} className="h-full">
-          <StockListPanel
-            selectedSymbol={selectedSymbol}
-            onSelect={(sym) => { setSelectedSymbol(sym); }}
-            initialTab={stockListTab}
-          />
-        </ResizablePanel>
-
-        <ResizableHandle className="w-px bg-white/5 hover:bg-primary/50 transition-colors cursor-col-resize" />
-
-        <ResizablePanel defaultSize={50} minSize={40} className="h-full">
+        <ResizablePanel defaultSize={64} minSize={48} className="h-full">
           <StockDetailPanel symbol={selectedSymbol} />
         </ResizablePanel>
 
         <ResizableHandle className="w-px bg-white/5 hover:bg-primary/50 transition-colors cursor-col-resize" />
 
-        <ResizablePanel defaultSize={30} minSize={25} maxSize={40} className="h-full">
+        <ResizablePanel defaultSize={36} minSize={28} maxSize={48} className="h-full">
           <StrategyPanel
             symbol={selectedSymbol}
             currentPrice={stock?.price}
