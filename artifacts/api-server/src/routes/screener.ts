@@ -22,7 +22,7 @@ import {
   ETF_UNIVERSE,
   getSectorForSymbol,
 } from "../lib/market-data.js";
-import { computeSignals } from "../lib/technical-analysis.js";
+import { computeSignals, type TechnicalSignals } from "../lib/technical-analysis.js";
 import {
   DEFAULT_HIGH_CONVICTION_THRESHOLDS,
   DEFAULT_RISK_PREFERENCES,
@@ -164,6 +164,7 @@ export interface ScreenerRow {
   liquidity: "Liquid" | "Illiquid";
   source: "polygon" | "yahoo" | "polygon-eod";
   priceSource?: "tastytrade-live" | "polygon";
+  fullyScored?: boolean;
   isETF?: boolean;
   etfCategory?: "leveraged-bull" | "leveraged-bear" | "leveraged-single" | "sector";
 }
@@ -193,6 +194,42 @@ function snapshotPrice(s: Awaited<ReturnType<typeof getPolygonSnapshots>>[number
 
 function snapshotVolume(s: Awaited<ReturnType<typeof getPolygonSnapshots>>[number]): number {
   return s.day?.v || s.prevDay?.v || 0;
+}
+
+function snapshotSignals(
+  s: Awaited<ReturnType<typeof getPolygonSnapshots>>[number],
+  price: number,
+  changePercent: number,
+): TechnicalSignals {
+  const dayHigh = s.day?.h || s.prevDay?.h || price * 1.04;
+  const dayLow = s.day?.l || s.prevDay?.l || price * 0.96;
+  const support = Math.min(dayLow, price * 0.97);
+  const resistance = Math.max(dayHigh, price * 1.03);
+  const volumeRatio = s.prevDay?.v ? Math.max(0.2, Math.min(5, snapshotVolume(s) / s.prevDay.v)) : 1;
+  const trend = changePercent >= 0.75 ? "bullish" : changePercent <= -0.75 ? "bearish" : "neutral";
+  const rsi14 = Math.max(20, Math.min(80, 50 + changePercent * 4));
+  const macdHistogram = Math.max(-3, Math.min(3, changePercent / 2));
+  const strength = Math.max(1, Math.min(10, 5 + changePercent * 0.9 + (volumeRatio - 1) * 0.8));
+
+  const sma20 = trend === "bullish" ? price * 0.995 : trend === "bearish" ? price * 1.005 : price;
+  const sma50 = trend === "bullish" ? price * 0.985 : trend === "bearish" ? price * 1.015 : price;
+  const sma200 = trend === "bullish" ? price * 0.975 : trend === "bearish" ? price * 1.025 : price;
+
+  return {
+    rsi14: r2(rsi14),
+    macd: { value: r2(macdHistogram), signal: 0, histogram: r2(macdHistogram) },
+    sma20: r2(sma20),
+    sma50: r2(sma50),
+    sma200: r2(sma200),
+    volumeRatio: r2(volumeRatio),
+    atr14: r2(Math.max(price * 0.01, resistance - support)),
+    support: r2(support),
+    resistance: r2(resistance),
+    trend,
+    priceAction: "Polygon snapshot-derived technical estimate.",
+    strength: r2(strength),
+    relativeStrength: `${Math.round(strength)}/10`,
+  };
 }
 
 // ─── Yahoo Finance screener (original, ~477 symbols) ─────────────────────────
@@ -396,15 +433,27 @@ async function buildPolygonData(strategyPreferences: StrategyPreferences, riskPr
 
       if (!technicalUniverse.has(s.ticker)) {
         const etfRef = etfMap.get(s.ticker);
-        const supportPrice = r2((s.day?.l || s.prevDay?.l || price * 0.94));
-        const resistancePrice = r2((s.day?.h || s.prevDay?.h || price * 1.06));
+        const sig = snapshotSignals(s, price, chPct);
+        const ivRank = 30;
+        const scan = scanOpportunity(sig, ivRank, price, chPct, undefined, dayVwap, prevDayVwap,
+          { ...(etfRef ? { isETF: true, etfCategory: etfRef.etfCategory } : {}), strategyPreferences, riskPreferences });
         return {
           ...base,
-          technicalStrength: 5, rsi14: 50, macdHistogram: 0, ivRank: 30,
-          opportunityScore: 40, technicalScore: 0, ivScore: 0, entryScore: 0, momentumScore: 0, riskScore: 0,
-          weakFactors: [], scoreCapped: false,
-          setupType: "Neutral", recommendedOutlook: "neutral",
-          supportPrice, resistancePrice,
+          technicalStrength: Math.round(sig.strength),
+          rsi14: sig.rsi14, macdHistogram: sig.macd.histogram,
+          ivRank,
+          opportunityScore: scan.opportunityScore,
+          technicalScore: scan.technicalScore,
+          ivScore: scan.ivScore,
+          entryScore: scan.entryScore,
+          momentumScore: scan.momentumScore,
+          riskScore: scan.riskScore,
+          weakFactors: scan.weakFactors,
+          scoreCapped: scan.scoreCapped,
+          setupType: scan.setupType,
+          recommendedOutlook: scan.recommendedOutlook,
+          supportPrice: sig.support, resistancePrice: sig.resistance,
+          fullyScored: false,
           ...(etfRef ? { isETF: true, etfCategory: etfRef.etfCategory } : {}),
         } satisfies ScreenerRow;
       }
@@ -436,6 +485,7 @@ async function buildPolygonData(strategyPreferences: StrategyPreferences, riskPr
           setupType: scan.setupType,
           recommendedOutlook: scan.recommendedOutlook,
           supportPrice: sig.support, resistancePrice: sig.resistance,
+          fullyScored: true,
           ...(etfRef ? { isETF: true, etfCategory: etfRef.etfCategory } : {}),
         } satisfies ScreenerRow;
       } catch (err) {
@@ -680,8 +730,7 @@ router.get("/screener/stats", async (_req, res): Promise<void> => {
   const neutral = rows.filter(r => r.changePercent === 0).length;
   const total   = rows.length;
 
-  // Rows with real technical analysis (not polygon-only defaults)
-  const withTechnicals = rows.filter(r => r.opportunityScore !== 40);
+  const withTechnicals = rows.filter(r => r.fullyScored || r.source === "yahoo");
   const highConviction = withTechnicals.filter(r => isHighConviction(r, settings.highConvictionThresholds)).length;
 
   const ivVals = rows.map(r => r.ivRank).filter(v => v > 0);
