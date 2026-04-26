@@ -172,6 +172,7 @@ interface Cache { data: ScreenerRow[]; at: number; promise: Promise<void> | null
 const cache: Cache = { data: [], at: 0, promise: null };
 
 const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
+const POLYGON_VALID_TYPES = new Set(["CS", "ADRC"]);
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -308,17 +309,21 @@ async function buildPolygonData(strategyPreferences: StrategyPreferences, riskPr
   const etfMap = new Map(etfRefs.map(e => [e.ticker, e]));
 
   // Filter: CS/ADRC stocks ($2+, 100k+ vol) OR known ETFs ($2+, 500k+ vol for options liquidity)
-  const VALID_TYPES = new Set(["CS", "ADRC"]);
   const filtered = snaps.filter((s) => {
     const price = s.day?.c ?? s.lastTrade?.p ?? 0;
     const vol   = s.day?.v ?? 0;
     if (etfMap.has(s.ticker)) return price >= 2 && vol >= 100_000;
     const ref = tickerMap.get(s.ticker);
-    if (!ref || !VALID_TYPES.has(ref.type)) return false;
+    if (ref && !POLYGON_VALID_TYPES.has(ref.type)) return false;
+    if (!ref && tickerMap.size > 0) return false;
     return price >= 2 && vol >= 100_000;
   });
 
   console.log(`[polygon] ${snaps.length} snaps → ${filtered.length} quality stocks`);
+
+  if (filtered.length === 0) {
+    throw new Error(`Polygon returned ${snaps.length} snapshots but 0 tradable rows after filtering`);
+  }
 
   // Fetch Yahoo Finance fundamentals for curated universe only (P/E, beta, etc.)
   const knownSet  = new Set(DEFAULT_UNIVERSE);
@@ -471,14 +476,29 @@ async function doRefresh(): Promise<void> {
   try {
     const settings = await getScreenerSettings();
     const source = settings.universeMode === "polygon" && isPolygonEnabled() ? "polygon" : "yahoo";
-    const rows   = source === "polygon"
-      ? await buildPolygonData(settings.strategyPreferences, settings.riskPreferences)
-      : await buildYahooData(settings.strategyPreferences, settings.riskPreferences, settings.ivRankCalculationPeriod);
+    let rows: ScreenerRow[];
+    let actualSource = source;
+
+    if (source === "polygon") {
+      try {
+        rows = await buildPolygonData(settings.strategyPreferences, settings.riskPreferences);
+      } catch (err) {
+        console.error("[screener] Polygon refresh failed, falling back to Yahoo:", (err as Error)?.message ?? err);
+        rows = await buildYahooData(settings.strategyPreferences, settings.riskPreferences, settings.ivRankCalculationPeriod);
+        actualSource = "yahoo";
+      }
+    } else {
+      rows = await buildYahooData(settings.strategyPreferences, settings.riskPreferences, settings.ivRankCalculationPeriod);
+    }
+
+    if (rows.length === 0) {
+      throw new Error(`${actualSource} refresh produced 0 rows`);
+    }
     await applyWatchlistAutomation(rows, settings.watchlistSettings);
     cache.data = await enrichWatchlistRows(rows);
     cache.at   = Date.now();
-    console.log(`[screener] cache updated: ${cache.data.length} rows (${source})`);
-    persistToDb(cache.data, source);  // fire-and-forget — don't block response
+    console.log(`[screener] cache updated: ${cache.data.length} rows (${actualSource})`);
+    persistToDb(cache.data, actualSource);  // fire-and-forget — don't block response
   } catch (err) {
     console.error("[screener] refresh error", err);
   } finally {

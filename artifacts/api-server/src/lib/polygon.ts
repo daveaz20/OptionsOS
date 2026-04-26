@@ -17,10 +17,10 @@ import { loadServerEnvIntoProcess } from "./server-env.js";
 loadServerEnvIntoProcess();
 
 const BASE = "https://api.polygon.io";
-const key  = () => process.env.POLYGON_API_KEY ?? "";
+const key  = () => (process.env.POLYGON_API_KEY ?? "").trim();
 
 export function isPolygonEnabled(): boolean {
-  return Boolean(process.env.POLYGON_API_KEY);
+  return key().length > 0;
 }
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
