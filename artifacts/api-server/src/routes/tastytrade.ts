@@ -53,26 +53,38 @@ router.get("/tastytrade/quotes", async (req, res): Promise<void> => {
 
   subscribeQuotes(symbols);
 
+  const streamedQuotes = new Map<string, {
+    symbol: string;
+    bid: number;
+    ask: number;
+    last: number;
+    mark: number;
+    volume: number;
+    source: "stream";
+  }>();
+
   if (isStreamerConnected()) {
-    const quotes = symbols.map((symbol) => {
+    for (const symbol of symbols) {
       const streamed = getStreamedQuote(symbol);
-      return {
+      if (!streamed) continue;
+      streamedQuotes.set(symbol.toUpperCase(), {
         symbol,
-        bid: streamed?.bid ?? 0,
-        ask: streamed?.ask ?? 0,
-        last: streamed?.last ?? 0,
-        mark: streamed?.mark ?? 0,
-        volume: streamed?.volume ?? 0,
-        source: streamed ? "stream" : "none",
-      };
-    });
-    res.json(quotes);
-    return;
+        bid: streamed.bid,
+        ask: streamed.ask,
+        last: streamed.last,
+        mark: streamed.mark,
+        volume: streamed.volume,
+        source: "stream",
+      });
+    }
   }
 
   try {
-    const snapshots = await getQuoteSnapshots(symbols);
+    const missing = symbols.filter((symbol) => !streamedQuotes.has(symbol.toUpperCase()));
+    const snapshots = missing.length > 0 ? await getQuoteSnapshots(missing) : new Map();
     res.json(symbols.map((symbol) => {
+      const streamed = streamedQuotes.get(symbol.toUpperCase());
+      if (streamed) return streamed;
       const quote = snapshots.get(symbol.toUpperCase());
       return {
         symbol,

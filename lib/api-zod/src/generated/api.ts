@@ -62,6 +62,7 @@ export const ListStocksResponseItem = zod.object({
   setupType: zod.string().optional(),
   recommendedOutlook: zod.enum(["bullish", "bearish", "neutral"]).optional(),
   setupDescription: zod.string().optional(),
+  priceSource: zod.enum(["tastytrade-live", "tastytrade-rest", "polygon"]).optional(),
   isETF: zod.boolean().optional(),
   etfCategory: zod.enum(["leveraged-bull", "leveraged-bear", "leveraged-single", "sector"]).optional(),
   topStrategies: zod.array(TopStrategySummary).optional(),
@@ -102,6 +103,7 @@ export const GetStockResponse = zod.object({
   setupType: zod.string().optional(),
   recommendedOutlook: zod.enum(["bullish", "bearish", "neutral"]).optional(),
   setupDescription: zod.string().optional(),
+  priceSource: zod.enum(["tastytrade-live", "tastytrade-rest", "polygon"]).optional(),
   topStrategies: zod.array(TopStrategySummary).optional(),
 });
 

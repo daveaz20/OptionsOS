@@ -22,6 +22,7 @@ interface ScreenerRow {
   setupType: string; recommendedOutlook: string;
   supportPrice: number; resistancePrice: number; liquidity: string;
   source?: "polygon" | "yahoo" | "polygon-eod";
+  priceSource?: "tastytrade-live" | "tastytrade-rest" | "polygon";
 }
 
 interface FactoredRow extends ScreenerRow {
@@ -687,7 +688,15 @@ function StockTable({ rows, tab, sortKey, sortDir, onSort, navigate, watchlistSy
 
   const priceCol: Col = {
     key:"price", label:"Price", right:true,
-    render:(r)=><span style={{ fontWeight:600, fontVariantNumeric:"tabular-nums" }}>${r.price.toFixed(2)}</span>,
+    render:(r)=><span style={{ display:"inline-flex", alignItems:"center", justifyContent:"flex-end", gap:5 }}>
+      <span style={{ fontWeight:600, fontVariantNumeric:"tabular-nums" }}>${r.price.toFixed(2)}</span>
+      {r.priceSource === "tastytrade-live" && (
+        <span title="Tastytrade live quote" style={{ width:6, height:6, borderRadius:"50%", background:"#30d158", boxShadow:"0 0 0 2px rgba(48,209,88,0.16)" }} />
+      )}
+      {r.priceSource === "tastytrade-rest" && (
+        <span title="Tastytrade quote" style={{ width:6, height:6, borderRadius:"50%", background:"#ffd60a", boxShadow:"0 0 0 2px rgba(255,214,10,0.14)" }} />
+      )}
+    </span>,
   };
 
   const changeCol: Col = {

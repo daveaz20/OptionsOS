@@ -26,6 +26,7 @@ import {
 } from "../lib/tastytrade.js";
 import {
   daysUntilEarnings,
+  enrichRowsWithTastytradeQuotes,
   ensureScreenerReady,
   getScreenerData,
   getScreenerRow,
@@ -70,7 +71,8 @@ router.get("/stocks", async (req, res): Promise<void> => {
 
     const sorted = [...rows].sort((a, b) => b.opportunityScore - a.opportunityScore);
     const limited = limit ? sorted.slice(0, limit) : sorted;
-    res.json(ListStocksResponse.parse(limited.map(screenerRowToStock)));
+    const liveRows = await enrichRowsWithTastytradeQuotes(limited);
+    res.json(ListStocksResponse.parse(liveRows.map(screenerRowToStock)));
     return;
   }
 
@@ -200,7 +202,8 @@ router.get("/stocks/:symbol", async (req, res): Promise<void> => {
     if (isPolygonEnabled()) {
       const cached = getScreenerRow(symbol);
       if (cached) {
-        res.json(GetStockResponse.parse(screenerRowToStock(cached)));
+        const [liveRow] = await enrichRowsWithTastytradeQuotes([cached]);
+        res.json(GetStockResponse.parse(screenerRowToStock(liveRow ?? cached)));
         return;
       }
     }

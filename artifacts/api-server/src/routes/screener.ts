@@ -45,6 +45,7 @@ import {
   isTastytradeEnabled,
   isTastytradeAuthorized,
   getMarketMetrics,
+  getQuoteSnapshots,
   getStreamedQuote,
   subscribeQuotes,
 } from "../lib/tastytrade.js";
@@ -163,7 +164,7 @@ export interface ScreenerRow {
   supportPrice: number; resistancePrice: number;
   liquidity: "Liquid" | "Illiquid";
   source: "polygon" | "yahoo" | "polygon-eod";
-  priceSource?: "tastytrade-live" | "polygon";
+  priceSource?: "tastytrade-live" | "tastytrade-rest" | "polygon";
   fullyScored?: boolean;
   optionsConfirmed?: boolean;
   scoreSource?: "full-options" | "full-estimated" | "snapshot-options" | "snapshot-estimated";
@@ -178,6 +179,7 @@ const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, m
 const POLYGON_VALID_TYPES = new Set(["CS", "ADRC"]);
 const DEFAULT_POLYGON_TECHNICAL_LIMIT = 600;
 const DEFAULT_TASTYTRADE_ENRICH_LIMIT = 1_200;
+const DEFAULT_TASTYTRADE_LIVE_QUOTE_LIMIT = 200;
 
 function readPositiveIntEnv(name: string, fallback: number): number {
   const raw = process.env[name];
@@ -188,6 +190,7 @@ function readPositiveIntEnv(name: string, fallback: number): number {
 
 const POLYGON_TECHNICAL_LIMIT = readPositiveIntEnv("SCREENER_POLYGON_TECHNICAL_LIMIT", DEFAULT_POLYGON_TECHNICAL_LIMIT);
 const TASTYTRADE_ENRICH_LIMIT = readPositiveIntEnv("SCREENER_TASTYTRADE_ENRICH_LIMIT", DEFAULT_TASTYTRADE_ENRICH_LIMIT);
+const TASTYTRADE_LIVE_QUOTE_LIMIT = readPositiveIntEnv("SCREENER_TASTYTRADE_LIVE_QUOTE_LIMIT", DEFAULT_TASTYTRADE_LIVE_QUOTE_LIMIT);
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -627,7 +630,7 @@ async function doRefresh(): Promise<void> {
       throw new Error(`${actualSource} refresh produced 0 rows`);
     }
     await applyWatchlistAutomation(rows, settings.watchlistSettings);
-    cache.data = await enrichWatchlistRows(rows);
+    cache.data = rows;
     cache.at   = Date.now();
     console.log(`[screener] cache updated: ${cache.data.length} rows (${actualSource})`);
     persistToDb(cache.data, actualSource);  // fire-and-forget — don't block response
@@ -684,48 +687,97 @@ async function applyWatchlistAutomation(rows: ScreenerRow[], settings: Watchlist
   }
 }
 
-async function enrichWatchlistRows(rows: ScreenerRow[]): Promise<ScreenerRow[]> {
+function applyTastytradeQuote(row: ScreenerRow, quote: {
+  last: number;
+  mark: number;
+  bid?: number;
+  ask?: number;
+  volume: number;
+  previousClose?: number;
+}, priceSource: "tastytrade-live" | "tastytrade-rest"): ScreenerRow {
+  const livePrice = quote.last || quote.mark || quote.bid || quote.ask || 0;
+  const previousClose = quote.previousClose ?? 0;
+
+  if (livePrice <= 0) {
+    return { ...row, priceSource: row.priceSource ?? "polygon" };
+  }
+
+  const change = previousClose > 0 ? r2(livePrice - previousClose) : row.change;
+  const changePercent =
+    previousClose > 0 ? r2((change / previousClose) * 100) : row.changePercent;
+
+  return {
+    ...row,
+    price: r2(livePrice),
+    change,
+    changePercent,
+    volume: quote.volume > 0 ? quote.volume : row.volume,
+    priceSource,
+  };
+}
+
+async function selectLiveQuoteSymbols(rows: ScreenerRow[]): Promise<Set<string>> {
+  const selected = new Set<string>();
+
   try {
     const watchlistEntries = await db.select().from(watchlistTable);
-    const watchlistSymbols = new Set(watchlistEntries.map((entry) => entry.symbol.toUpperCase()));
-    const symbolsToEnrich = rows
-      .map((row) => row.symbol)
-      .filter((symbol) => watchlistSymbols.has(symbol.toUpperCase()));
+    for (const entry of watchlistEntries) selected.add(entry.symbol.toUpperCase());
+  } catch (err) {
+    console.warn("[screener] watchlist live quote selection failed:", (err as Error).message);
+  }
+
+  const priorityRows = [...rows]
+    .sort((a, b) => {
+      const scoreDelta = b.opportunityScore - a.opportunityScore;
+      if (scoreDelta !== 0) return scoreDelta;
+      return Math.abs(b.changePercent) - Math.abs(a.changePercent);
+    })
+    .slice(0, TASTYTRADE_LIVE_QUOTE_LIMIT);
+
+  for (const row of priorityRows) selected.add(row.symbol.toUpperCase());
+
+  return selected;
+}
+
+export async function enrichRowsWithTastytradeQuotes(rows: ScreenerRow[]): Promise<ScreenerRow[]> {
+  try {
+    const selectedSymbols = await selectLiveQuoteSymbols(rows);
+    const symbolsToEnrich = [...selectedSymbols]
+      .filter((symbol) => rows.some((row) => row.symbol.toUpperCase() === symbol));
 
     if (symbolsToEnrich.length === 0) {
       return rows.map((row) => ({ ...row, priceSource: row.priceSource ?? "polygon" }));
     }
 
+    if (!isTastytradeEnabled() || !isTastytradeAuthorized()) {
+      return rows.map((row) => ({ ...row, priceSource: row.priceSource ?? "polygon" }));
+    }
+
     subscribeQuotes(symbolsToEnrich);
 
-    return rows.map((row) => {
-      if (!watchlistSymbols.has(row.symbol.toUpperCase())) {
-        return { ...row, priceSource: row.priceSource ?? "polygon" };
-      }
-
+    const quoteRows = new Map<string, ScreenerRow>();
+    for (const row of rows) {
       const liveQuote = getStreamedQuote(row.symbol);
-      const livePrice = liveQuote?.last || liveQuote?.mark || 0;
-      const previousClose = liveQuote?.previousClose ?? 0;
-
-      if (!liveQuote || livePrice <= 0) {
-        return { ...row, priceSource: row.priceSource ?? "polygon" };
+      if (liveQuote && (liveQuote.last || liveQuote.mark || liveQuote.bid || liveQuote.ask) > 0) {
+        quoteRows.set(row.symbol.toUpperCase(), applyTastytradeQuote(row, liveQuote, "tastytrade-live"));
       }
+    }
 
-      const change = previousClose > 0 ? r2(livePrice - previousClose) : row.change;
-      const changePercent =
-        previousClose > 0 ? r2((change / previousClose) * 100) : row.changePercent;
+    const missing = symbolsToEnrich.filter((symbol) => !quoteRows.has(symbol));
+    if (missing.length > 0) {
+      const snapshots = await getQuoteSnapshots(missing);
+      for (const row of rows) {
+        if (quoteRows.has(row.symbol.toUpperCase())) continue;
+        const snapshot = snapshots.get(row.symbol.toUpperCase());
+        if (snapshot) {
+          quoteRows.set(row.symbol.toUpperCase(), applyTastytradeQuote(row, snapshot, "tastytrade-rest"));
+        }
+      }
+    }
 
-      return {
-        ...row,
-        price: r2(livePrice),
-        change,
-        changePercent,
-        volume: liveQuote.volume > 0 ? liveQuote.volume : row.volume,
-        priceSource: "tastytrade-live",
-      };
-    });
+    return rows.map((row) => quoteRows.get(row.symbol.toUpperCase()) ?? { ...row, priceSource: row.priceSource ?? "polygon" });
   } catch (err) {
-    console.warn("[screener] watchlist live quote enrichment failed:", (err as Error).message);
+    console.warn("[screener] live quote enrichment failed:", (err as Error).message);
     return rows.map((row) => ({ ...row, priceSource: row.priceSource ?? "polygon" }));
   }
 }
@@ -741,7 +793,8 @@ loadFromDb().then(() => triggerRefresh().catch(() => {}));
 router.get("/screener", async (req, res): Promise<void> => {
   if (cache.data.length === 0) await triggerRefresh();
   const settings = await getScreenerSettings();
-  res.json(cache.data.filter((row) => row.opportunityScore >= settings.minOpportunityScoreToShow));
+  const rows = cache.data.filter((row) => row.opportunityScore >= settings.minOpportunityScoreToShow);
+  res.json(await enrichRowsWithTastytradeQuotes(rows));
   if (Date.now() - cache.at > settings.cacheRefreshInterval) triggerRefresh().catch(() => {});
 });
 

@@ -7,7 +7,6 @@ import { getScreenerRow, ensureScreenerReady } from "./screener.js";
 import {
   getQuoteSnapshots,
   getStreamedQuote,
-  isStreamerConnected,
   isTastytradeAuthorized,
   isTastytradeEnabled,
   subscribeQuotes,
@@ -142,7 +141,7 @@ async function getTastytradeQuoteMap(symbols: string[]) {
     }
 
     const missing = symbols.filter((symbol) => !quoteMap.has(symbol));
-    if (missing.length > 0 && !isStreamerConnected()) {
+    if (missing.length > 0) {
       const snapshots = await getQuoteSnapshots(missing);
       for (const symbol of missing) {
         const snapshot = snapshots.get(symbol);

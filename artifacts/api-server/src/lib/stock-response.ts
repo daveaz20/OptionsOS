@@ -45,6 +45,7 @@ export function screenerRowToStock(row: ScreenerRow) {
     opportunityScore: row.opportunityScore,
     setupType: row.setupType,
     recommendedOutlook: row.recommendedOutlook,
+    priceSource: row.priceSource,
     setupDescription: `${row.setupType} — score ${row.opportunityScore}/100 · IV rank ${row.ivRank}%.`,
     ...(row.isETF ? { isETF: true } : {}),
     ...(row.etfCategory ? { etfCategory: row.etfCategory } : {}),
