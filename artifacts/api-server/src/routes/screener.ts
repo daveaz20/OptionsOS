@@ -173,6 +173,7 @@ const cache: Cache = { data: [], at: 0, promise: null };
 
 const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 const POLYGON_VALID_TYPES = new Set(["CS", "ADRC"]);
+const DEFAULT_POLYGON_TECHNICAL_LIMIT = 600;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -184,6 +185,14 @@ function daysUntilEarnings(earningsDate: string): number | undefined {
     if (isNaN(d.getTime())) return undefined;
     return Math.floor((d.getTime() - Date.now()) / 86_400_000);
   } catch { return undefined; }
+}
+
+function snapshotPrice(s: Awaited<ReturnType<typeof getPolygonSnapshots>>[number]): number {
+  return s.day?.c || s.lastTrade?.p || s.prevDay?.c || 0;
+}
+
+function snapshotVolume(s: Awaited<ReturnType<typeof getPolygonSnapshots>>[number]): number {
+  return s.day?.v || s.prevDay?.v || 0;
 }
 
 // ─── Yahoo Finance screener (original, ~477 symbols) ─────────────────────────
@@ -310,8 +319,8 @@ async function buildPolygonData(strategyPreferences: StrategyPreferences, riskPr
 
   // Filter: CS/ADRC stocks ($2+, 100k+ vol) OR known ETFs ($2+, 500k+ vol for options liquidity)
   const filtered = snaps.filter((s) => {
-    const price = s.day?.c ?? s.lastTrade?.p ?? 0;
-    const vol   = s.day?.v ?? 0;
+    const price = snapshotPrice(s);
+    const vol   = snapshotVolume(s);
     if (etfMap.has(s.ticker)) return price >= 2 && vol >= 100_000;
     const ref = tickerMap.get(s.ticker);
     if (ref && !POLYGON_VALID_TYPES.has(ref.type)) return false;
@@ -343,16 +352,22 @@ async function buildPolygonData(strategyPreferences: StrategyPreferences, riskPr
     }
   }
 
-  // Full technicals for ALL quality stocks — 15 concurrent, 500ms between batches
-  for (let i = 0; i < filtered.length; i += 15) {
-    const batch   = filtered.slice(i, i + 15);
+  const technicalUniverse = new Set(
+    filtered
+      .filter((s) => knownSet.has(s.ticker))
+      .slice(0, DEFAULT_POLYGON_TECHNICAL_LIMIT)
+      .map((s) => s.ticker),
+  );
+
+  for (let i = 0; i < filtered.length; i += 25) {
+    const batch   = filtered.slice(i, i + 25);
     const results = await Promise.allSettled(batch.map(async (s) => {
       const q          = quoteMap.get(s.ticker);
       const ref        = tickerMap.get(s.ticker);
-      const price      = s.day?.c ?? s.lastTrade?.p ?? q?.price ?? 0;
+      const price      = snapshotPrice(s) || q?.price || 0;
       const change     = s.todaysChange ?? q?.change ?? 0;
       const chPct      = s.todaysChangePerc ?? q?.changePercent ?? 0;
-      const vol        = s.day?.v ?? q?.volume ?? 0;
+      const vol        = snapshotVolume(s) || q?.volume || 0;
       const prevVol    = s.prevDay?.v ?? vol;
       const relVol     = prevVol > 0 ? r2(vol / prevVol) : 1;
       const hi52       = q?.fiftyTwoWeekHigh  || price * 1.3;
@@ -378,6 +393,21 @@ async function buildPolygonData(strategyPreferences: StrategyPreferences, riskPr
         liquidity: (vol > 1_000_000 ? "Liquid" : "Illiquid") as ScreenerRow["liquidity"],
         source: (isEod ? "polygon-eod" : "polygon") as ScreenerRow["source"],
       };
+
+      if (!technicalUniverse.has(s.ticker)) {
+        const etfRef = etfMap.get(s.ticker);
+        const supportPrice = r2((s.day?.l || s.prevDay?.l || price * 0.94));
+        const resistancePrice = r2((s.day?.h || s.prevDay?.h || price * 1.06));
+        return {
+          ...base,
+          technicalStrength: 5, rsi14: 50, macdHistogram: 0, ivRank: 30,
+          opportunityScore: 40, technicalScore: 0, ivScore: 0, entryScore: 0, momentumScore: 0, riskScore: 0,
+          weakFactors: [], scoreCapped: false,
+          setupType: "Neutral", recommendedOutlook: "neutral",
+          supportPrice, resistancePrice,
+          ...(etfRef ? { isETF: true, etfCategory: etfRef.etfCategory } : {}),
+        } satisfies ScreenerRow;
+      }
 
       try {
         const history  = await getPolygonBars(s.ticker, 580);
@@ -425,10 +455,10 @@ async function buildPolygonData(strategyPreferences: StrategyPreferences, riskPr
       if (r.status === "fulfilled") rows.push(r.value);
     }
 
-    if (i + 15 < filtered.length) await sleep(500);
+    if (i + 25 < filtered.length) await sleep(100);
   }
 
-  console.log(`[polygon] built ${rows.length} rows with full technicals`);
+  console.log(`[polygon] built ${rows.length} rows (${technicalUniverse.size} with full technicals)`);
   return rows;
 }
 
