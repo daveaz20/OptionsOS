@@ -9,6 +9,12 @@ import type { OptionLeg } from "./optionLeg";
 import type { OptionsStrategyOutlook } from "./optionsStrategyOutlook";
 import type { OptionsStrategyType } from "./optionsStrategyType";
 
+export interface OptionsStrategyGreeks {
+  delta: number;
+  theta: number;
+  vega: number;
+}
+
 export interface OptionsStrategy {
   id: number;
   name: string;
@@ -21,10 +27,26 @@ export interface OptionsStrategy {
   maxLoss: number;
   returnPercent: number;
   breakeven: number;
+  breakeven2?: number;
   /**
    * @minimum 0
-   * @maximum 200
+   * @maximum 100
    */
   score: number;
+  /** @minimum 0 @maximum 10 */
+  technicalScore: number;
+  /** @minimum 0 @maximum 10 */
+  ivScore: number;
+  /** @minimum 0 @maximum 10 */
+  rrScore: number;
+  /** @minimum 0 @maximum 10 */
+  popScore: number;
+  /** @minimum 0 @maximum 10 */
+  earningsRiskScore: number;
+  /** @minimum 0 @maximum 1 */
+  probProfit: number;
+  greeks: OptionsStrategyGreeks;
+  expectedValue: number;
+  tier: "conservative" | "standard" | "aggressive";
   expirationDate: string;
 }

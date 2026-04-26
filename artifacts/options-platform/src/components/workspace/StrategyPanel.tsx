@@ -198,6 +198,56 @@ function PayoffDiagram({ legs, currentPrice }: { legs: StrategyLeg[]; currentPri
 }
 
 // â”€â”€ Strategy Detail (OptionsPlay-style card) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ScoreBreakdown
+function ScoreBreakdown({ strategy }) {
+  if (strategy.technicalScore === undefined) return null;
+  const factors = [
+    { label: 'Technical', value: strategy.technicalScore },
+    { label: 'IV Regime', value: strategy.ivScore },
+    { label: 'Risk / Reward', value: strategy.rrScore },
+    { label: 'Prob. Profit', value: strategy.popScore },
+    { label: 'Earnings Risk', value: strategy.earningsRiskScore },
+  ];
+  const tc = strategy.tier === 'conservative' ? 'hsl(var(--success))'
+    : strategy.tier === 'aggressive' ? 'hsl(var(--destructive))'
+    : 'hsl(var(--primary))';
+  const tb = strategy.tier === 'conservative' ? 'hsl(var(--success)/0.15)'
+    : strategy.tier === 'aggressive' ? 'hsl(var(--destructive)/0.15)'
+    : 'hsl(var(--primary)/0.15)';
+  return (
+    <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)', padding: '10px 12px' }}>
+      <div style={{ fontSize: 9.5, fontWeight: 600, color: 'hsl(var(--muted-foreground))', marginBottom: 7, letterSpacing: '0.04em' }}>SCORE BREAKDOWN</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+        {factors.map(({ label, value }) => {
+          const bc = value >= 7 ? 'hsl(var(--success))' : value < 4 ? 'hsl(var(--destructive))' : 'hsl(var(--primary))';
+          return (
+            <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 9.5, color: 'hsl(var(--muted-foreground))', width: 82, flexShrink: 0 }}>{label}</span>
+              <div style={{ flex: 1, height: 3, borderRadius: 99, background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
+                <div style={{ height: '100%', width: `${value * 10}%`, borderRadius: 99, background: bc, transition: 'width 0.3s' }} />
+              </div>
+              <span style={{ fontSize: 10, fontWeight: 600, color: bc, width: 22, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{value}</span>
+            </div>
+          );
+        })}
+      </div>
+      {strategy.expectedValue !== undefined && (
+        <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8, fontSize: 9.5, color: 'hsl(var(--muted-foreground))' }}>
+          <span>EV</span>
+          <span style={{ fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: strategy.expectedValue >= 0 ? 'hsl(var(--success))' : 'hsl(var(--destructive))' }}>
+            {strategy.expectedValue >= 0 ? '+' : ''}{strategy.expectedValue.toFixed(0)}
+          </span>
+          {strategy.tier && (
+            <span style={{ marginLeft: 4, padding: '1px 5px', borderRadius: 3, fontSize: 8.5, fontWeight: 700, letterSpacing: '0.04em', background: tb, color: tc }}>
+              {strategy.tier.toUpperCase()}
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ThetaDecayChart({ dte, closeDte, profitTarget }: { dte: number; closeDte: number; profitTarget: number }) {
   const W = 300, H = 58;
   const maxDte = Math.max(dte, closeDte, 60);
@@ -245,10 +295,13 @@ function StrategyDetail({
   const hasStockLeg = strategy.legs.some(l => l.optionType === "stock");
   const isCredit = strategy.type === "income" && strategy.tradeCost > 0 && !hasStockLeg;
 
-  // POP approximation â€” credit spreads: credit / width; debit: 1 - debit/width
-  const pop = strategy.type === "income"
-    ? Math.min(85, Math.max(20, Math.round((Math.abs(strategy.tradeCost) / Math.max(1, Math.abs(strategy.tradeCost) + Math.abs(strategy.maxLoss))) * 100)))
-    : Math.min(75, Math.max(25, Math.round(42 + (strategy.score - 50) * 0.30)));
+  // Use real BS-derived POP when available, otherwise approximate
+  const pop = strategy.probProfit !== undefined
+    ? Math.round(strategy.probProfit * 100)
+    : strategy.type === 'income'
+      ? Math.min(85, Math.max(20, Math.round((Math.abs(strategy.tradeCost) / Math.max(1, Math.abs(strategy.tradeCost) + Math.abs(strategy.maxLoss))) * 100)))
+      : Math.min(75, Math.max(25, Math.round(42 + (strategy.score - 50) * 0.30)));
+
   const riskBadges = settings.showRiskWarnings ? getRiskBadges(strategy, contracts, dte, settings) : [];
   const suggestedCapital = Math.min(
     Number(settings.maxCapitalPerTrade || 0),
@@ -322,6 +375,9 @@ function StrategyDetail({
           </div>
         );
       })()}
+
+      {/* Score breakdown */}
+      <ScoreBreakdown strategy={strategy} />
 
       {/* Action buttons */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, padding: "10px 12px", borderTop: "1px solid rgba(255,255,255,0.05)" }}>

@@ -177,7 +177,7 @@ export const GetStrategiesQueryParams = zod.object({
 });
 
 export const getStrategiesResponseScoreMin = 0;
-export const getStrategiesResponseScoreMax = 200;
+export const getStrategiesResponseScoreMax = 100;
 
 export const GetStrategiesResponseItem = zod.object({
   id: zod.number(),
@@ -200,10 +200,24 @@ export const GetStrategiesResponseItem = zod.object({
   maxLoss: zod.number(),
   returnPercent: zod.number(),
   breakeven: zod.number(),
+  breakeven2: zod.number().optional(),
   score: zod
     .number()
     .min(getStrategiesResponseScoreMin)
     .max(getStrategiesResponseScoreMax),
+  technicalScore: zod.number().min(0).max(10),
+  ivScore: zod.number().min(0).max(10),
+  rrScore: zod.number().min(0).max(10),
+  popScore: zod.number().min(0).max(10),
+  earningsRiskScore: zod.number().min(0).max(10),
+  probProfit: zod.number().min(0).max(1),
+  greeks: zod.object({
+    delta: zod.number(),
+    theta: zod.number(),
+    vega: zod.number(),
+  }),
+  expectedValue: zod.number(),
+  tier: zod.enum(["conservative", "standard", "aggressive"]),
   expirationDate: zod.string(),
 });
 export const GetStrategiesResponse = zod.array(GetStrategiesResponseItem);
