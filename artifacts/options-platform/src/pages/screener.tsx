@@ -28,6 +28,7 @@ interface ScreenerRow {
 interface FactoredRow extends ScreenerRow {
   fMomentum: number; fValue: number; fQuality: number; fVolatility: number; fOptions: number;
   alpha: number;
+  squeezeScore: number;
   daysToEarnings: number;
 }
 
@@ -76,6 +77,7 @@ const FILTER_DEFS: FilterDef[] = [
   { key:"momentumScore", label:"Momentum",        category:"Options",      type:"minonly",            field:r=>r.momentumScore, min:0, max:10, step:0.5 },
   { key:"entryScore",    label:"Entry Quality",   category:"Options",      type:"minonly",            field:r=>r.entryScore, min:0, max:10, step:0.5 },
   { key:"riskScore",     label:"Risk (Earnings)", category:"Options",      type:"minonly",            field:r=>r.riskScore, min:0, max:10, step:0.5 },
+  { key:"squeezeScore",  label:"Squeeze Score",    category:"Technicals",   type:"minonly",            field:r=>r.squeezeScore, min:0, max:100 },
   { key:"marketCapNum",  label:"Mkt Cap ($)",     category:"General",      type:"range",              field:r=>r.marketCap,       min:0 },
   { key:"daysToEarnings",label:"Days to Earnings",category:"General",      type:"range",              field:r=>r.daysToEarnings,  min:0, max:365 },
   { key:"alpha",         label:"Alpha Score",     category:"Factors",      type:"minonly",            field:r=>r.alpha,           min:0,  max:100 },
@@ -124,7 +126,7 @@ const PRESETS = [
   { label:"High Volume",   filters:[{key:"relVol",min:"2"}] as ActiveFilter[] },
   { label:"Value",         filters:[{key:"pe",max:"20"},{key:"dividendYield",min:"1"}] as ActiveFilter[] },
   { label:"Bullish Setup", filters:[{key:"outlook",value:"bullish"},{key:"technicalStr",min:"6"}] as ActiveFilter[] },
-  { label:"Short Squeeze", filters:[{key:"shortRatio",min:"5"},{key:"changePercent",min:"1"}] as ActiveFilter[] },
+  { label:"Short Squeeze", filters:[{key:"squeezeScore",min:"65"}] as ActiveFilter[] },
   { label:"Dividend",      filters:[{key:"dividendYield",min:"3"}] as ActiveFilter[] },
   { label:"High IV",       filters:[{key:"ivRank",min:"70"}] as ActiveFilter[] },
   { label:"Low IV",        filters:[{key:"ivRank",max:"20"}] as ActiveFilter[] },
@@ -166,6 +168,14 @@ function parseEarningsDays(dateStr: string): number {
   return days >= 0 ? days : 999;
 }
 
+function displayEarningsDate(dateStr: string): string {
+  if (!dateStr || dateStr === "TBD") return "TBD";
+  const d = new Date(dateStr);
+  const currentYear = new Date().getFullYear();
+  if (Number.isNaN(d.getTime()) || d.getFullYear() < currentYear - 1) return "TBD";
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
 function pctRank(arr: number[], val: number): number {
   if (arr.length === 0) return 50;
   return Math.min(99, Math.round((arr.filter(v => v < val).length / arr.length) * 100));
@@ -193,7 +203,12 @@ function computeFactors(rows: ScreenerRow[]): FactoredRow[] {
     const fVolatility = pctRank(ivR, ivR[i]);
     const fOptions    = Math.round(pctRank(opp,opp[i])*0.60 + pctRank(rv,Math.min(r.relVol,10))*0.40);
     const alpha       = Math.round((fMomentum + fValue + fQuality + fVolatility + fOptions) / 5);
-    return { ...r, fMomentum, fValue, fQuality, fVolatility, fOptions, alpha, daysToEarnings: parseEarningsDays(r.earningsDate) };
+    const shortComponent = r.shortRatio > 0 ? Math.min(100, r.shortRatio * 12) : 35;
+    const volumeComponent = Math.min(100, Math.max(0, r.relVol * 24));
+    const moveComponent = Math.min(100, Math.max(0, (r.changePercent + 2) * 18));
+    const technicalComponent = Math.min(100, Math.max(0, r.momentumScore * 10));
+    const squeezeScore = Math.round(shortComponent * 0.35 + volumeComponent * 0.30 + moveComponent * 0.20 + technicalComponent * 0.15);
+    return { ...r, fMomentum, fValue, fQuality, fVolatility, fOptions, alpha, squeezeScore, daysToEarnings: parseEarningsDays(r.earningsDate) };
   });
 }
 
@@ -817,7 +832,8 @@ function OpportunityDrawer({ row, isWatched, onClose, onAnalyze, onWatchlist }: 
             <DrawerMetric label="Resistance" value={`$${row.resistancePrice.toFixed(2)}`} />
             <DrawerMetric label="52W High" value={`$${row.fiftyTwoWeekHigh.toFixed(2)}`} />
             <DrawerMetric label="52W Low" value={`$${row.fiftyTwoWeekLow.toFixed(2)}`} />
-            <DrawerMetric label="Earnings" value={row.earningsDate || "TBD"} />
+            <DrawerMetric label="Earnings" value={displayEarningsDate(row.earningsDate)} />
+            <DrawerMetric label="Squeeze Score" value={String(row.squeezeScore)} sub={row.shortRatio > 0 ? `${row.shortRatio.toFixed(1)}d short ratio` : "volume/momentum proxy"} tone={row.squeezeScore >= 65 ? "warn" : "neutral"} />
             <DrawerMetric label="Source" value={row.priceSource || row.source || "market"} />
           </div>
         </div>

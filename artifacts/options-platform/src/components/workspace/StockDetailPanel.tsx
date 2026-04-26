@@ -17,6 +17,46 @@ interface StockDetailPanelProps {
 const PERIODS = ["1D", "1W", "1M", "3M", "6M", "1Y", "2Y"] as const;
 type Period = (typeof PERIODS)[number];
 
+function parseEarningsDate(value?: string): Date | null {
+  if (!value || value === "TBD") return null;
+  const date = new Date(value);
+  const currentYear = new Date().getFullYear();
+  if (Number.isNaN(date.getTime()) || date.getFullYear() < currentYear - 1) return null;
+  return date;
+}
+
+function getEarningsInfo(earningsDate: string | undefined, eps: number, warningWindow: number) {
+  const date = parseEarningsDate(earningsDate);
+  if (!date) {
+    return {
+      value: "TBD",
+      sub: "No confirmed upcoming report date",
+      detail: `Trailing EPS ${eps.toFixed(2)}`,
+      tone: "neutral" as const,
+    };
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const reportDay = new Date(date);
+  reportDay.setHours(0, 0, 0, 0);
+  const days = Math.round((reportDay.getTime() - today.getTime()) / 86_400_000);
+  const value = date.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" });
+  const timing =
+    days === 0 ? "Reports today" :
+    days === 1 ? "Reports tomorrow" :
+    days > 1 ? `Reports in ${days} days` :
+    `Reported ${Math.abs(days)} days ago`;
+  const tone = days >= 0 && days <= warningWindow ? "warn" : days < 0 ? "muted" : "neutral";
+
+  return {
+    value,
+    sub: timing,
+    detail: `Trailing EPS ${eps.toFixed(2)} | Earnings risk window ${warningWindow}d`,
+    tone,
+  };
+}
+
 export function StockDetailPanel({ symbol }: StockDetailPanelProps) {
   const { settings } = useSettings();
   const [period, setPeriod] = useState<Period>((PERIODS.includes(settings.defaultChartPeriod as Period) ? settings.defaultChartPeriod : "1M") as Period);
@@ -103,6 +143,7 @@ export function StockDetailPanel({ symbol }: StockDetailPanelProps) {
   const dayRangePct = stock.fiftyTwoWeekHigh > stock.fiftyTwoWeekLow
     ? Math.max(0, Math.min(100, ((stock.price - stock.fiftyTwoWeekLow) / (stock.fiftyTwoWeekHigh - stock.fiftyTwoWeekLow)) * 100))
     : 50;
+  const earningsInfo = getEarningsInfo(stock.earningsDate, stock.eps, settings.earningsAvoidanceBeforeDays);
 
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "hsl(var(--background))" }}>
@@ -296,7 +337,7 @@ export function StockDetailPanel({ symbol }: StockDetailPanelProps) {
 
           {/* Footer cards */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-            <InfoCard label="Earnings Date" value={stock.earningsDate} sub={`Expected EPS: ${stock.eps.toFixed(2)}`} />
+            <EarningsInfoCard info={earningsInfo} />
             <InfoCard label="Price Action" value={stock.priceAction} />
           </div>
         </div>
@@ -513,7 +554,7 @@ function TechnicalChart({ data, stock, support, resistance, isUp }: { data: Pric
       )}
 
       {/* Current price marker */}
-      {settings.showEarningsMarkersOnChart && stock.earningsDate && stock.earningsDate !== "TBD" && (
+      {settings.showEarningsMarkersOnChart && parseEarningsDate(stock.earningsDate) && (
         <line x1={W - PR - 34} x2={W - PR - 34} y1={PT} y2={PT + PH} stroke="hsl(38 92% 50%)" strokeOpacity="0.38" strokeDasharray="4 5" />
       )}
       {settings.showStrategyPriceLevels && (
@@ -663,6 +704,27 @@ function InfoCard({ label, value, sub }: { label: string; value: string; sub?: s
       <div style={{ fontSize: 11, color: "hsl(var(--muted-foreground))", fontWeight: 400, marginBottom: 5 }}>{label}</div>
       <div style={{ fontSize: 13, fontWeight: 500, letterSpacing: "-0.01em", color: "hsl(var(--foreground))", lineHeight: 1.5 }}>{value}</div>
       {sub && <div style={{ fontSize: 12, color: "hsl(var(--muted-foreground))", marginTop: 4, fontVariantNumeric: "tabular-nums" }}>{sub}</div>}
+    </div>
+  );
+}
+
+function EarningsInfoCard({ info }: { info: ReturnType<typeof getEarningsInfo> }) {
+  const color =
+    info.tone === "warn" ? "hsl(38 92% 50%)" :
+    info.tone === "muted" ? "hsl(var(--muted-foreground))" :
+    "hsl(var(--foreground))";
+
+  return (
+    <div style={{
+      padding: "14px 16px",
+      borderRadius: 8,
+      border: info.tone === "warn" ? "1px solid hsl(38 92% 50% / 0.22)" : "1px solid rgba(255,255,255,0.06)",
+      background: info.tone === "warn" ? "hsl(38 92% 50% / 0.07)" : "rgba(255,255,255,0.02)",
+    }}>
+      <div style={{ fontSize: 11, color: "hsl(var(--muted-foreground))", fontWeight: 500, marginBottom: 5 }}>Earnings</div>
+      <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: "-0.01em", color, lineHeight: 1.35 }}>{info.value}</div>
+      <div style={{ fontSize: 12.5, color, marginTop: 4, fontWeight: 600 }}>{info.sub}</div>
+      <div style={{ fontSize: 12, color: "hsl(var(--muted-foreground))", marginTop: 5, fontVariantNumeric: "tabular-nums" }}>{info.detail}</div>
     </div>
   );
 }

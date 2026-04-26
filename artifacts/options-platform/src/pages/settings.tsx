@@ -95,7 +95,8 @@ const SCREENER_SORT_FIELDS: SelectOption[] = [
 const SCREENER_PRESET_OPTIONS = [
   "All", "Options Seller", "Momentum", "High Volume", "Value", "Bullish Setup",
   "Short Squeeze", "Dividend", "High IV", "Low IV", "Oversold", "Overbought",
-  "Earnings Soon", "Large Cap", "Small Cap",
+  "Earnings Soon", "Large Cap", "Small Cap", "Liquid Options", "Unusual Volume",
+  "Oversold Bounce", "Covered Calls", "Put Credit Spreads", "Iron Condors",
 ].map(label => ({ label, value: label }));
 
 const CATEGORIES: CategoryDef[] = [

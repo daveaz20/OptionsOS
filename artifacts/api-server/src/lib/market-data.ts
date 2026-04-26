@@ -46,6 +46,22 @@ const OPTIONS_TTL = 15 * 60 * 1000;   // 15 min
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
+function formatEarningsDate(value: unknown): string {
+  if (!value) return "TBD";
+  let date: Date;
+  if (value instanceof Date) {
+    date = value;
+  } else if (typeof value === "number") {
+    date = new Date(value < 10_000_000_000 ? value * 1000 : value);
+  } else if (typeof value === "string") {
+    date = new Date(value);
+  } else {
+    return "TBD";
+  }
+  if (Number.isNaN(date.getTime())) return "TBD";
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
 // ─── Static sector map (batch API doesn't return sector field) ────────────────
 
 const SECTOR_MAP: Record<string, string> = {
@@ -128,9 +144,7 @@ export async function getQuote(symbol: string): Promise<MarketQuote> {
     pe: q.trailingPE ?? 0,
     forwardPE: (q as any).forwardPE ?? 0,
     dividendYield: q.trailingAnnualDividendYield ?? 0,
-    earningsDate: q.earningsTimestamp
-      ? new Date(q.earningsTimestamp * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
-      : "TBD",
+    earningsDate: formatEarningsDate(q.earningsTimestamp),
     beta: (q as any).beta ?? 1,
     relVol: avgVol > 0 ? round2(vol / avgVol) : 1,
     shortRatio: (q as any).shortRatio ?? 0,
@@ -193,9 +207,7 @@ export async function getQuotes(symbols: string[]): Promise<MarketQuote[]> {
         pe:               q.trailingPE ?? 0,
         forwardPE:        q.forwardPE ?? 0,
         dividendYield:    q.trailingAnnualDividendYield ?? 0,
-        earningsDate:     q.earningsTimestamp
-          ? new Date(q.earningsTimestamp * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
-          : "TBD",
+        earningsDate:     formatEarningsDate(q.earningsTimestamp),
         beta:             q.beta ?? 1,
         relVol:           avgVol2 > 0 ? round2(vol2 / avgVol2) : 1,
         shortRatio:       q.shortRatio ?? 0,

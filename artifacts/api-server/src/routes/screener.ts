@@ -195,7 +195,7 @@ const TASTYTRADE_LIVE_QUOTE_LIMIT = readPositiveIntEnv("SCREENER_TASTYTRADE_LIVE
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 /** Returns days until earningsDate string ("Apr 30, 2026"), or undefined if unknown/past */
-function daysUntilEarnings(earningsDate: string): number | undefined {
+export function daysUntilEarnings(earningsDate: string): number | undefined {
   if (!earningsDate || earningsDate === "TBD") return undefined;
   try {
     const d = new Date(earningsDate);
@@ -912,7 +912,5 @@ export function getScreenerRow(symbol: string): ScreenerRow | undefined {
 export async function ensureScreenerReady(): Promise<void> {
   if (cache.data.length === 0) await triggerRefresh();
 }
-
-export { daysUntilEarnings };
 
 export default router;
