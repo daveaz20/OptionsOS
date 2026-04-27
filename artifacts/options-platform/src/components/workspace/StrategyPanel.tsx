@@ -128,17 +128,17 @@ function computeMetrics(legs: StrategyLeg[], currentPrice: number) {
   const prices = Array.from({ length: steps + 1 }, (_, i) => pMin + (i / steps) * (pMax - pMin));
   const pnls = computePayoffs(legs, prices);
 
-  let breakeven = currentPrice;
+  const breakevenCrossings: number[] = [];
   for (let i = 1; i <= steps; i++) {
     const a = pnls[i - 1]!, b = pnls[i]!, pa = prices[i - 1]!, pb = prices[i]!;
     if ((a < 0 && b >= 0) || (a > 0 && b <= 0)) {
-      // Linear interpolation for sub-dollar precision
-      breakeven = Math.round((pa + (pb - pa) * (-a / (b - a))) * 100) / 100;
-      break;
+      breakevenCrossings.push(Math.round((pa + (pb - pa) * (-a / (b - a))) * 100) / 100);
     }
   }
+  const breakeven = breakevenCrossings[0] ?? currentPrice;
+  const breakeven2 = breakevenCrossings.length > 1 ? breakevenCrossings[breakevenCrossings.length - 1] : undefined;
 
-  return { maxProfit, maxLoss, cost: Math.round(cost * 100) / 100, breakeven };
+  return { maxProfit, maxLoss, cost: Math.round(cost * 100) / 100, breakeven, breakeven2 };
 }
 
 // â”€â”€ PayoffDiagram â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -365,7 +365,7 @@ function StrategyDetail({
           { label: "Max risk",    value: formatCurrency(Math.abs(strategy.maxLoss) * contracts), color: "hsl(var(--destructive))" },
           ...(settings.showDailyThetaDecay ? [{ label: "Theta / day", value: settings.showThetaAsDollarsPerDay ? formatCurrency((strategy.tradeCost / Math.max(1, dte)) * contracts) : ((strategy.tradeCost / Math.max(1, dte))).toFixed(settings.greeksPrecision), color: dte <= settings.thetaDecayWarningThresholdDte ? "hsl(38 92% 50%)" : "hsl(var(--foreground))" }] : []),
           ...(settings.showProbabilityOfProfit ? [{ label: "POP", value: `${pop}%`, color: pop >= 60 ? "hsl(var(--success))" : "hsl(var(--foreground))" }] : []),
-          { label: "Breakeven",   value: formatCurrency(strategy.breakeven), color: "hsl(var(--foreground))" },
+          { label: strategy.breakeven2 != null ? "Breakeven range" : "Breakeven", value: strategy.breakeven2 != null ? `${formatCurrency(strategy.breakeven)} – ${formatCurrency(strategy.breakeven2)}` : formatCurrency(strategy.breakeven), color: "hsl(var(--foreground))" },
           { label: "Days to exp", value: `${dte}`, color: "hsl(var(--foreground))" },
         ];
         const lastRowStart = Math.floor((metrics.length - 1) / 2) * 2;
@@ -609,6 +609,7 @@ function ModifyPanel({
       maxProfit: Math.round(updatedMetrics.maxProfit * 100) / 100,
       maxLoss: Math.round(updatedMetrics.maxLoss * 100) / 100,
       breakeven: Math.round(updatedMetrics.breakeven * 100) / 100,
+      ...(updatedMetrics.breakeven2 !== undefined ? { breakeven2: Math.round(updatedMetrics.breakeven2 * 100) / 100 } : {}),
       returnPercent: updatedMetrics.maxLoss !== 0
         ? Math.round((updatedMetrics.maxProfit / Math.abs(updatedMetrics.maxLoss)) * 100 * 100) / 100
         : 0,

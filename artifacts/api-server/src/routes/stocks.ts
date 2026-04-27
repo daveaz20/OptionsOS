@@ -21,8 +21,13 @@ import { computeSignals } from "../lib/technical-analysis.js";
 import { db, userSettingsTable } from "@workspace/db";
 import {
   getMarketMetrics,
+  getQuoteSnapshots,
   isTastytradeAuthorized,
   isTastytradeEnabled,
+  isStreamerConnected,
+  subscribeQuotes,
+  getStreamedQuote,
+  streamerEvents,
 } from "../lib/tastytrade.js";
 import {
   daysUntilEarnings,
@@ -202,7 +207,7 @@ router.get("/stocks/:symbol", async (req, res): Promise<void> => {
     if (isPolygonEnabled()) {
       const cached = getScreenerRow(symbol);
       if (cached) {
-        const [liveRow] = await enrichRowsWithTastytradeQuotes([cached], { waitForLiveMs: 1200 });
+        const [liveRow] = await enrichRowsWithTastytradeQuotes([cached], { waitForLiveMs: 2500 });
         res.json(GetStockResponse.parse(screenerRowToStock(liveRow ?? cached)));
         return;
       }
@@ -218,25 +223,68 @@ router.get("/stocks/:symbol", async (req, res): Promise<void> => {
     const signals = computeSignals(history, quote.price);
     const dte = daysUntilEarnings(quote.earningsDate);
     let ivRank = hv.ivRank;
+    let ttPrice: number | null = null;
+    let ttPriceSource: "tastytrade-live" | "tastytrade-rest" | null = null;
 
     if (isTastytradeEnabled() && isTastytradeAuthorized()) {
       try {
-        const metrics = await getMarketMetrics([symbol]);
+        const [metrics] = await Promise.all([
+          getMarketMetrics([symbol]),
+          (async () => {
+            subscribeQuotes([symbol]);
+            if (!getStreamedQuote(symbol)) {
+              await new Promise<void>((resolve) => {
+                const timer = setTimeout(resolve, 2500);
+                const onQ = (q: { symbol?: string }) => {
+                  if (q.symbol?.toUpperCase() === symbol) { clearTimeout(timer); streamerEvents.off("quote", onQ); resolve(); }
+                };
+                if (isStreamerConnected()) streamerEvents.on("quote", onQ);
+                else resolve();
+              });
+            }
+          })(),
+        ]);
         const tastytradeMetrics = metrics.get(symbol);
         if (tastytradeMetrics) ivRank = tastytradeMetrics.ivRank;
+
+        const live = getStreamedQuote(symbol);
+        if (live && (live.last || live.mark || live.bid || live.ask) > 0) {
+          ttPrice = live.last || live.mark || (live.bid + live.ask) / 2;
+          ttPriceSource = "tastytrade-live";
+        } else {
+          const snaps = await getQuoteSnapshots([symbol]);
+          const snap = snaps.get(symbol);
+          if (snap && (snap.last || snap.mark) > 0) {
+            ttPrice = snap.last || snap.mark;
+            ttPriceSource = "tastytrade-rest";
+          }
+        }
       } catch {
-        // Fall back to the historical-volatility proxy.
+        // Fall back to the market-data quote.
       }
     }
+
+    const prevClose = quote.price - quote.change;
+    const finalPrice = ttPrice ?? quote.price;
+    const finalChange = ttPrice != null && prevClose > 0 ? ttPrice - prevClose : quote.change;
+    const finalChangePct = prevClose > 0 && ttPrice != null
+      ? (finalChange / prevClose) * 100
+      : quote.changePercent;
 
     const scan = scanOpportunity(
       signals,
       ivRank,
-      quote.price,
-      quote.changePercent,
+      finalPrice,
+      finalChangePct,
       dte,
     );
-    res.json(GetStockResponse.parse(quoteToStock(quote, signals, ivRank, scan)));
+    const stockResult = quoteToStock(
+      { ...quote, price: finalPrice, change: finalChange, changePercent: finalChangePct },
+      signals,
+      ivRank,
+      scan,
+    );
+    res.json(GetStockResponse.parse(ttPriceSource ? { ...stockResult, priceSource: ttPriceSource } : stockResult));
   } catch {
     res.status(404).json({ error: `Symbol not found: ${symbol}` });
   }
