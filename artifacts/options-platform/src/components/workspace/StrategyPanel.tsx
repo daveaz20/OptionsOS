@@ -992,23 +992,6 @@ export function StrategyPanel({ symbol, currentPrice = 0, recommendedOutlook }: 
             );
           })}
         </div>
-        {displayStrategies.length > 0 && (
-          <select
-            value={selectedStrategyId ?? ""}
-            onChange={(event) => { setSelectedStrategyId(Number(event.target.value)); setModifying(false); }}
-            style={{
-              width: "100%", marginBottom: 14, height: 34, borderRadius: 7, padding: "0 10px",
-              border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.05)",
-              color: "hsl(var(--foreground))", fontSize: 12, fontWeight: 650, outline: "none",
-            }}
-          >
-            {displayStrategies.map((strategy) => (
-              <option key={strategy.id} value={strategy.id}>
-                {strategy.score} - {strategy.name}
-              </option>
-            ))}
-          </select>
-        )}
       </div>
 
       <ScrollArea className="flex-1">
@@ -1025,9 +1008,7 @@ export function StrategyPanel({ symbol, currentPrice = 0, recommendedOutlook }: 
             </div>
           ) : (() => {
             const topId = displayStrategies[0]!.id;
-            return displayStrategies
-            .filter((strategy) => strategy.id === selectedStrategyId)
-            .map((strategy) => {
+            return displayStrategies.map((strategy) => {
               const contractKey = `${symbol}:${outlook}:${strategy.id}`;
               const contracts = contractsByStrategy[contractKey] ?? defaultContracts;
               return (
