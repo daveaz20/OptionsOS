@@ -3,7 +3,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { useSettings } from "@/contexts/SettingsContext";
 import type { AppSettings } from "@/lib/settings-defaults";
-import { formatFreshness, freshnessColor, getFreshnessTone } from "@/lib/freshness";
 import { useGetWatchlist, useAddToWatchlist, useRemoveFromWatchlist, getGetWatchlistQueryKey } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -605,12 +604,29 @@ export default function Screener() {
           )}
           <div style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:8 }}>
             {settings.showDataSourceTags && sourceInfo && (
-              <ProviderFreshnessPill
-                label={sourceInfo.source === "polygon-eod" ? "Polygon EOD" : sourceInfo.source === "polygon" ? "Polygon" : "Yahoo"}
-                timestamp={sourceInfo.cachedAt}
-                staleAfterMs={sourceInfo.cacheRefreshInterval ?? 10 * 60_000}
-                sub={`${sourceInfo.count.toLocaleString()} stocks${sourceInfo.universeMode ? ` | ${sourceInfo.universeMode}` : ""}`}
-              />
+              <div style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "5px 10px",
+                borderRadius: 6,
+                background: "rgba(10,132,255,0.12)",
+                border: "1px solid rgba(10,132,255,0.3)",
+              }}>
+                <div style={{
+                  width: 7,
+                  height: 7,
+                  borderRadius: "50%",
+                  background: "#0a84ff",
+                  boxShadow: "0 0 6px rgba(10,132,255,0.8)",
+                }} />
+                <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.04em", color: "#0a84ff", textTransform: "uppercase" }}>
+                  Universe
+                </span>
+                <span style={{ fontSize: 12, color: "rgba(255,255,255,0.5)" }}>
+                  {sourceInfo.count.toLocaleString()} stocks
+                </span>
+              </div>
             )}
             <span style={{ fontSize:13, color:"rgba(255,255,255,0.45)", fontVariantNumeric:"tabular-nums" }}>
               {isLoading ? "Loading…" : `${filtered.length.toLocaleString()} results`}
@@ -753,46 +769,6 @@ function WorkbenchMetric({ label, value, sub, tone = "neutral" }: { label: strin
       <div style={{ fontSize: 11, color: "rgba(255,255,255,0.42)", fontWeight: 700, marginBottom: 5 }}>{label}</div>
       <div style={{ fontSize: 20, color, fontWeight: 800, fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>{value}</div>
       <div style={{ fontSize: 11, color: "rgba(255,255,255,0.34)", marginTop: 5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sub}</div>
-    </div>
-  );
-}
-
-function ProviderFreshnessPill({
-  label,
-  timestamp,
-  staleAfterMs,
-  sub,
-}: {
-  label: string;
-  timestamp?: number;
-  staleAfterMs: number;
-  sub: string;
-}) {
-  const tone = getFreshnessTone(timestamp, staleAfterMs);
-  const color = freshnessColor(tone);
-  return (
-    <div
-      title={`${label} cache refreshed ${formatFreshness(timestamp)} | ${sub}`}
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 6,
-        padding: "5px 10px",
-        borderRadius: 6,
-        background: tone === "fresh" ? "rgba(48,209,88,0.10)" : tone === "aging" ? "rgba(255,159,10,0.10)" : "rgba(255,69,58,0.10)",
-        border: `1px solid ${tone === "fresh" ? "rgba(48,209,88,0.28)" : tone === "aging" ? "rgba(255,159,10,0.28)" : "rgba(255,69,58,0.28)"}`,
-      }}
-    >
-      <div style={{ width: 7, height: 7, borderRadius: "50%", background: color, boxShadow: `0 0 6px ${color}` }} />
-      <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.04em", color, textTransform: "uppercase" }}>
-        {label}
-      </span>
-      <span style={{ fontSize: 12, color: "rgba(255,255,255,0.5)" }}>
-        {formatFreshness(timestamp)}
-      </span>
-      <span style={{ fontSize: 12, color: "rgba(255,255,255,0.35)" }}>
-        {sub}
-      </span>
     </div>
   );
 }

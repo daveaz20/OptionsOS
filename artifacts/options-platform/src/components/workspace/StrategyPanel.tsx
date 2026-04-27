@@ -2,7 +2,6 @@ import { useState, useEffect, useMemo } from "react";
 import { useGetStrategies, useGetAccountPositions, useGetOptionsChain } from "@workspace/api-client-react";
 import { Area, AreaChart, ResponsiveContainer, Tooltip as RechartsTooltip, XAxis, YAxis, ReferenceLine } from "recharts";
 import { formatCurrency, formatPercent } from "@/lib/format";
-import { formatFreshness, freshnessColor, getFreshnessTone } from "@/lib/freshness";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Slider } from "@/components/ui/slider";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -883,9 +882,9 @@ export function StrategyPanel({ symbol, currentPrice = 0, recommendedOutlook }: 
   const [entryPriceOverride, setEntryPriceOverride] = useState<number | null>(null);
   const [contractsByStrategy, setContractsByStrategy] = useState<Record<string, number>>({});
 
-  const { data: strategies = [], isLoading, dataUpdatedAt: strategiesUpdatedAt } = useGetStrategies(symbol, { outlook }, { query: { enabled: !!symbol } });
+  const { data: strategies = [], isLoading } = useGetStrategies(symbol, { outlook }, { query: { enabled: !!symbol } });
   const { data: positionsData } = useGetAccountPositions({ query: { enabled: !!symbol } });
-  const { data: chainData, dataUpdatedAt: chainUpdatedAt } = useGetOptionsChain(symbol, { query: { enabled: !!symbol } });
+  const { data: chainData } = useGetOptionsChain(symbol, { query: { enabled: !!symbol } });
 
   // Find existing positions for this symbol (pick closest DTE if multiple)
   const existingPosition = useMemo(() => {
@@ -976,15 +975,6 @@ export function StrategyPanel({ symbol, currentPrice = 0, recommendedOutlook }: 
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 14 }}>
           <h2 style={{ fontSize: 16, fontWeight: 600, letterSpacing: "-0.02em" }}>Strategies</h2>
           <span style={{ fontSize: 11, color: "hsl(var(--muted-foreground))" }}>{symbol}</span>
-        </div>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
-          <StrategyFreshnessBadge label="Strategies" timestamp={strategiesUpdatedAt} staleAfterMs={5 * 60_000} />
-          <StrategyFreshnessBadge
-            label="Tastytrade chain"
-            timestamp={chainUpdatedAt}
-            staleAfterMs={90_000}
-            sub={chainData ? `${chainData.expirations.length} expirations` : "not loaded"}
-          />
         </div>
         <div style={{ display: "flex", gap: 2, background: "rgba(255,255,255,0.04)", borderRadius: 8, padding: 3, marginBottom: 14 }}>
           {OUTLOOK_TABS.map((t) => {
@@ -1146,45 +1136,6 @@ function MetricCell({ label, value, valueColor }: { label: string; value: string
 }
 
 // â”€â”€ Client-side P&L curve (uses actual modified legs + bsPrice) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-function StrategyFreshnessBadge({
-  label,
-  timestamp,
-  staleAfterMs,
-  sub,
-}: {
-  label: string;
-  timestamp?: number;
-  staleAfterMs: number;
-  sub?: string;
-}) {
-  const tone = getFreshnessTone(timestamp, staleAfterMs);
-  const color = freshnessColor(tone);
-  return (
-    <span
-      title={`${label} loaded ${formatFreshness(timestamp)}${sub ? ` | ${sub}` : ""}`}
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 6,
-        padding: "3px 7px",
-        borderRadius: 999,
-        border: "1px solid rgba(255,255,255,0.08)",
-        background: "rgba(255,255,255,0.04)",
-        color,
-        fontSize: 10.5,
-        fontWeight: 750,
-      }}
-    >
-      <span style={{ width: 6, height: 6, borderRadius: "50%", background: "currentColor" }} />
-      {label}
-      <span style={{ color: "hsl(var(--muted-foreground))", fontWeight: 600 }}>
-        {formatFreshness(timestamp)}
-      </span>
-      {sub && <span style={{ color: "hsl(var(--muted-foreground))", fontWeight: 500 }}>{sub}</span>}
-    </span>
-  );
-}
-
 function computePnlClient(
   legs: StrategyLeg[],
   strategyExpirationDate: string,

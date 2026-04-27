@@ -1,9 +1,10 @@
 import { useState, useCallback, useEffect } from "react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSettings } from "@/contexts/SettingsContext";
 import { SETTING_DEFAULTS, type AppSettings } from "@/lib/settings-defaults";
+import { formatFreshness, freshnessColor, getFreshnessTone } from "@/lib/freshness";
 import {
   Settings, SlidersHorizontal, ShieldAlert, Search,
   Target, BarChart2, Palette, Database, Check,
@@ -768,6 +769,14 @@ type SettingsStatusPayload = {
   };
 };
 
+type ScreenerSourcePayload = {
+  source: "polygon" | "yahoo" | "polygon-eod";
+  count: number;
+  cachedAt: number;
+  universeMode?: string;
+  cacheRefreshInterval?: number;
+};
+
 async function apiJson<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     ...init,
@@ -854,6 +863,18 @@ function DataUniversePanel({ settings, onChange }: { settings: AppSettings; onCh
   const [flushStatus, setFlushStatus] = useState<"idle" | "saving" | "success" | "error">("idle");
   const [testStatus, setTestStatus] = useState<"idle" | "saving" | "success" | "error">("idle");
   const [testMessage, setTestMessage] = useState("");
+  const { data: providerStatus, isLoading: isLoadingProviderStatus } = useQuery<SettingsStatusPayload>({
+    queryKey: ["settings-status"],
+    queryFn: () => apiJson<SettingsStatusPayload>("/api/settings/status"),
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  });
+  const { data: sourceInfo } = useQuery<ScreenerSourcePayload>({
+    queryKey: ["screener-source"],
+    queryFn: () => apiJson<ScreenerSourcePayload>("/api/screener/source"),
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  });
 
   const loadServerEnv = useCallback(() => {
     apiJson<ServerEnvPayload>("/api/settings/server-env").then(setServerEnv).catch(() => setServerEnv(null));
@@ -913,6 +934,8 @@ function DataUniversePanel({ settings, onChange }: { settings: AppSettings; onCh
 
   return (
     <div style={{ paddingTop: 8, display: "grid", gap: 22 }}>
+      <DataProviderStatusPanel status={providerStatus} sourceInfo={sourceInfo} loading={isLoadingProviderStatus} />
+
       <div>
         {CATEGORIES.find(c => c.id === "data")!.settings.map(setting => (
           <SettingRow key={setting.key} setting={setting} value={settings[setting.key as keyof AppSettings]} onChange={onChange} />
@@ -956,6 +979,109 @@ function DataUniversePanel({ settings, onChange }: { settings: AppSettings; onCh
           {testMessage && <span style={{ fontSize: 12, color: testStatus === "success" ? "hsl(var(--success))" : "hsl(var(--destructive))" }}>{testMessage}</span>}
         </div>
       </div>
+    </div>
+  );
+}
+
+function DataProviderStatusPanel({
+  status,
+  sourceInfo,
+  loading,
+}: {
+  status?: SettingsStatusPayload;
+  sourceInfo?: ScreenerSourcePayload;
+  loading: boolean;
+}) {
+  const sourceTone = getFreshnessTone(sourceInfo?.cachedAt, sourceInfo?.cacheRefreshInterval ?? 30 * 60_000);
+  const polygonTone = status?.polygon.status === "connected" ? "fresh" : status?.polygon.status === "rate_limited" ? "aging" : "stale";
+  const tastyTone = status?.tastytrade.status === "connected" ? "fresh" : status?.tastytrade.status === "token_expired" ? "aging" : "stale";
+  const databaseTone = status?.database.status === "connected" ? "fresh" : "stale";
+  const providerLabel =
+    sourceInfo?.source === "polygon-eod" ? "Polygon EOD" :
+    sourceInfo?.source === "polygon" ? "Polygon" :
+    sourceInfo?.source === "yahoo" ? "Yahoo" :
+    "Unknown";
+  const tokenExpires = status?.tastytrade.tokenExpiresAt
+    ? new Date(status.tastytrade.tokenExpiresAt).toLocaleString()
+    : "No active expiry";
+
+  return (
+    <div style={{ border: "1px solid rgba(255,255,255,0.07)", borderRadius: 8, background: "rgba(255,255,255,0.02)", padding: 14 }}>
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 700 }}>Provider Status</div>
+          <div style={{ fontSize: 11.5, color: "hsl(var(--muted-foreground))", marginTop: 3 }}>
+            Current market-data providers, cache age, and connectivity.
+          </div>
+        </div>
+        <div style={{ fontSize: 11, color: "hsl(var(--muted-foreground))" }}>
+          {loading ? "Checking..." : status?.lastScreenerRefresh ? `Scans refreshed ${formatFreshness(status.lastScreenerRefresh)}` : "No refresh recorded"}
+        </div>
+      </div>
+
+      <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(175px, 1fr))", gap: 10 }}>
+        <ProviderStatusCard
+          label="Scans Universe"
+          value={sourceInfo ? `${sourceInfo.count.toLocaleString()} stocks` : "Not loaded"}
+          sub={sourceInfo ? `${providerLabel} cache ${formatFreshness(sourceInfo.cachedAt)}${sourceInfo.universeMode ? ` | ${sourceInfo.universeMode}` : ""}` : "Waiting for source info"}
+          tone={sourceTone}
+        />
+        <ProviderStatusCard
+          label="Polygon"
+          value={status ? status.polygon.status.replace("_", " ") : "Unknown"}
+          sub={sourceInfo?.source?.startsWith("polygon") ? "Active scans provider" : "Configured for market universe and EOD fallback"}
+          tone={polygonTone}
+        />
+        <ProviderStatusCard
+          label="Tastytrade"
+          value={status ? status.tastytrade.status.replace("_", " ") : "Unknown"}
+          sub={tokenExpires}
+          tone={tastyTone}
+        />
+        <ProviderStatusCard
+          label="Database"
+          value={status?.database.status ?? "Unknown"}
+          sub={status?.database.latencyMs != null ? `${status.database.latencyMs} ms latency` : status?.database.error ?? "Postgres cache and settings"}
+          tone={databaseTone}
+        />
+        <ProviderStatusCard
+          label="Server"
+          value={status ? formatDuration(status.serverUptimeMs) : "Unknown"}
+          sub={status ? `${status.appVersion} | Node ${status.nodeVersion}` : "Runtime status unavailable"}
+          tone="neutral"
+        />
+        <ProviderStatusCard
+          label="Cache"
+          value={status ? `${status.storage.screenerCacheSize.toLocaleString()} rows` : "Unknown"}
+          sub={status ? `${formatBytes(status.storage.screenerCacheBytes)} scans | ${formatBytes(status.storage.settingsBytes)} settings` : "Storage status unavailable"}
+          tone="neutral"
+        />
+      </div>
+    </div>
+  );
+}
+
+function ProviderStatusCard({
+  label,
+  value,
+  sub,
+  tone,
+}: {
+  label: string;
+  value: string;
+  sub: string;
+  tone: "fresh" | "aging" | "stale" | "unknown" | "neutral";
+}) {
+  const color = tone === "neutral" ? "hsl(var(--foreground))" : freshnessColor(tone);
+  const dotColor = tone === "neutral" ? "hsl(var(--muted-foreground))" : color;
+  return (
+    <div style={{ padding: "12px 14px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.025)", minWidth: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 5 }}>
+        <span style={{ width: 7, height: 7, borderRadius: "50%", background: dotColor, boxShadow: tone === "neutral" ? "none" : `0 0 6px ${dotColor}` }} />
+        <div style={{ fontSize: 10.5, color: "hsl(var(--muted-foreground))", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em" }}>{label}</div>
+      </div>
+      <div style={{ fontSize: 16, fontWeight: 750, color, fontVariantNumeric: "tabular-nums", textTransform: value === value.toLowerCase() ? "capitalize" : "none" }}>{value}</div>
+      <div style={{ marginTop: 4, fontSize: 11.5, color: "hsl(var(--muted-foreground))", lineHeight: 1.35 }}>{sub}</div>
     </div>
   );
 }
