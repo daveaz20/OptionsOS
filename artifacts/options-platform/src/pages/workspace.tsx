@@ -13,27 +13,53 @@ const MOBILE_TABS: { key: MobileTab; label: string }[] = [
   { key: "strategy", label: "Strategy" },
 ];
 
+const LAST_ANALYSIS_SYMBOL_KEY = "optionsos:last-analysis-symbol";
+const DEFAULT_SYMBOL = "AAPL";
+
+function normalizeSymbol(symbol: string | null | undefined) {
+  return (symbol ?? "").trim().toUpperCase();
+}
+
+function getStoredAnalysisSymbol() {
+  try {
+    return normalizeSymbol(window.localStorage.getItem(LAST_ANALYSIS_SYMBOL_KEY)) || DEFAULT_SYMBOL;
+  } catch {
+    return DEFAULT_SYMBOL;
+  }
+}
+
+function getInitialAnalysisSymbol() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    return normalizeSymbol(params.get("symbol")) || getStoredAnalysisSymbol();
+  } catch {
+    return DEFAULT_SYMBOL;
+  }
+}
+
 export default function ScannerPage() {
   const [location] = useLocation();
   const search     = useSearch();
   const isMobile   = useIsMobile();
   const [mobileTab, setMobileTab] = useState<MobileTab>("detail");
 
-  const initialSymbol = (() => {
-    try { return new URLSearchParams(window.location.search).get("symbol") || "AAPL"; }
-    catch { return "AAPL"; }
-  })();
-
-  const [selectedSymbol, setSelectedSymbol] = useState<string>(initialSymbol);
+  const [selectedSymbol, setSelectedSymbol] = useState<string>(getInitialAnalysisSymbol);
 
   // Reactive to both path and search changes (handles same-path navigation with different ?tab=)
   useEffect(() => {
     try {
       const params = new URLSearchParams(search || window.location.search);
-      const sym = params.get("symbol");
+      const sym = normalizeSymbol(params.get("symbol"));
       if (sym && sym !== selectedSymbol) { setSelectedSymbol(sym); }
     } catch { /* ignore */ }
   }, [location, search]);
+
+  useEffect(() => {
+    if (!selectedSymbol) return;
+    try {
+      window.localStorage.setItem(LAST_ANALYSIS_SYMBOL_KEY, selectedSymbol);
+    } catch { /* ignore */ }
+  }, [selectedSymbol]);
 
   const { data: stock } = useGetStock(selectedSymbol, { query: { enabled: !!selectedSymbol } });
 
