@@ -19,6 +19,12 @@ import { Link } from "wouter";
 
 type SortKey = "openDate" | "pnlAbs" | "pnlPct" | "dte" | "symbol" | "theta";
 type PositionAlert = { type: string; label: string; severity: "success" | "danger" | "warning" };
+type PositionActionRecommendation = {
+  action: string;
+  reason: string;
+  severity: "success" | "danger" | "warning" | "neutral";
+  confidence: number;
+};
 type ExtendedPosition = AccountPosition & {
   sector?: string;
   openedAt?: string;
@@ -26,6 +32,7 @@ type ExtendedPosition = AccountPosition & {
   realizedPnl?: number;
   maxProfitPnlPercent?: number;
   alerts?: PositionAlert[];
+  recommendations?: PositionActionRecommendation[];
 };
 type PositionStats = {
   period: string;
@@ -62,6 +69,13 @@ function pnlColor(positive: boolean, scheme: string) {
     return positive ? "hsl(199 89% 58%)" : "hsl(30 95% 60%)";
   }
   return positive ? "hsl(var(--success))" : "hsl(var(--destructive))";
+}
+
+function recommendationColor(severity: PositionActionRecommendation["severity"]) {
+  if (severity === "success") return "hsl(var(--success))";
+  if (severity === "danger") return "hsl(var(--destructive))";
+  if (severity === "warning") return "hsl(38 92% 50%)";
+  return "hsl(var(--primary))";
 }
 
 function formatDate(value?: string | null) {
@@ -116,6 +130,102 @@ function allocationData(positions: ExtendedPosition[], key: "sector" | "strategy
     .map(([label, value]) => ({ label, value, pct: Math.round((value / total) * 1000) / 10 }));
 }
 
+function getPositionRecommendations(position: ExtendedPosition, settings: ReturnType<typeof useSettings>["settings"]): PositionActionRecommendation[] {
+  const recs: PositionActionRecommendation[] = [];
+  const profitTarget = Number(settings.defaultProfitTargetPct || 50);
+  const stopLoss = Math.abs(Number(settings.defaultStopLossPct || 100));
+  const dte = Number(position.dte || 0);
+  const pnlPct = Number(position.totalPnlPercent || 0);
+  const theta = Number(position.greeks.theta || 0);
+  const delta = Number(position.greeks.delta || 0);
+  const strategy = position.strategyType.toLowerCase();
+  const daysInTrade = position.daysInTrade ?? null;
+  const isCreditOrIncome = strategy.includes("put spread") || strategy.includes("call spread") || strategy.includes("short") || strategy.includes("condor") || strategy.includes("strangle");
+  const isDebit = strategy.includes("long") || strategy.includes("bull call") || strategy.includes("bear put") || strategy.includes("straddle");
+
+  if (pnlPct >= profitTarget) {
+    recs.push({
+      action: "Take profit",
+      reason: `P&L is ${pnlPct.toFixed(1)}%, above the ${profitTarget}% target.`,
+      severity: "success",
+      confidence: 95,
+    });
+  }
+
+  if (pnlPct <= -stopLoss) {
+    recs.push({
+      action: "Defend or close",
+      reason: `P&L is ${pnlPct.toFixed(1)}%, beyond the ${stopLoss}% stop threshold.`,
+      severity: "danger",
+      confidence: 94,
+    });
+  }
+
+  if (dte <= 0) {
+    recs.push({
+      action: "Expiration action",
+      reason: "This position expires today or has reached expiration.",
+      severity: "danger",
+      confidence: 98,
+    });
+  } else if (dte <= 7) {
+    recs.push({
+      action: isCreditOrIncome ? "Manage gamma risk" : "Review exit",
+      reason: `${dte} DTE leaves little time and higher gamma/assignment risk.`,
+      severity: "danger",
+      confidence: 88,
+    });
+  } else if (dte <= 21 && isCreditOrIncome) {
+    recs.push({
+      action: "Roll or close window",
+      reason: `${dte} DTE is inside the common management window for short-premium trades.`,
+      severity: "warning",
+      confidence: 82,
+    });
+  }
+
+  if (theta < -10 && isDebit && dte <= 30) {
+    recs.push({
+      action: "Watch decay",
+      reason: `Theta is ${formatCurrency(theta)}/day with ${dte} DTE remaining.`,
+      severity: "warning",
+      confidence: 76,
+    });
+  }
+
+  if (Math.abs(delta) >= 0.6) {
+    recs.push({
+      action: "Review directional exposure",
+      reason: `Net delta is ${(delta >= 0 ? "+" : "") + delta.toFixed(2)}, so this trade is carrying meaningful directional risk.`,
+      severity: "warning",
+      confidence: 72,
+    });
+  }
+
+  if (daysInTrade != null && daysInTrade >= 30 && Math.abs(pnlPct) < 10) {
+    recs.push({
+      action: "Free up capital",
+      reason: `${daysInTrade} days in trade with limited progress.`,
+      severity: "neutral",
+      confidence: 64,
+    });
+  }
+
+  if (recs.length === 0) {
+    recs.push({
+      action: "Hold / monitor",
+      reason: "No profit target, stop, DTE, or exposure trigger is active.",
+      severity: "neutral",
+      confidence: 70,
+    });
+  }
+
+  return recs.sort((a, b) => {
+    const rank = { danger: 4, success: 3, warning: 2, neutral: 1 };
+    return rank[b.severity] - rank[a.severity] || b.confidence - a.confidence;
+  });
+}
+
 function SortHeader({
   label, sortKey, active, dir, onClick,
 }: {
@@ -167,6 +277,61 @@ function AlertBadge({ alert }: { alert: PositionAlert }) {
   );
 }
 
+function ActionBadge({ recommendation }: { recommendation: PositionActionRecommendation }) {
+  const color = recommendationColor(recommendation.severity);
+  return (
+    <span
+      title={`${recommendation.reason} Confidence ${recommendation.confidence}%`}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 4,
+        padding: "2px 7px",
+        borderRadius: 999,
+        background: `${color}18`,
+        border: `1px solid ${color}35`,
+        color,
+        fontSize: 9,
+        fontWeight: 800,
+        letterSpacing: "0.02em",
+      }}
+    >
+      <Target size={10} />
+      {recommendation.action}
+    </span>
+  );
+}
+
+function RecommendationCard({ recommendation }: { recommendation: PositionActionRecommendation }) {
+  const color = recommendationColor(recommendation.severity);
+  return (
+    <div style={{
+      display: "grid",
+      gridTemplateColumns: "1fr auto",
+      gap: 10,
+      alignItems: "start",
+      padding: "10px 12px",
+      borderRadius: 8,
+      border: `1px solid ${color}30`,
+      background: `${color}10`,
+      minWidth: 0,
+    }}>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+          <Target size={12} color={color} />
+          <span style={{ fontSize: 12, fontWeight: 800, color }}>{recommendation.action}</span>
+        </div>
+        <div style={{ fontSize: 11, lineHeight: 1.45, color: "hsl(var(--muted-foreground))" }}>
+          {recommendation.reason}
+        </div>
+      </div>
+      <div style={{ fontSize: 11, color, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>
+        {recommendation.confidence}%
+      </div>
+    </div>
+  );
+}
+
 function renderPnl(position: ExtendedPosition, format: string, scheme: string, maskValue: (value: React.ReactNode, kind?: "account" | "balance" | "buyingPower" | "pnl" | "positionSize") => React.ReactNode) {
   const positive = pnlTone(position);
   const color = pnlColor(positive, scheme);
@@ -201,6 +366,8 @@ function PositionRow({ position }: { position: ExtendedPosition }) {
   const thetaColor = position.greeks.theta < 0 ? "hsl(var(--destructive))" : "hsl(var(--success))";
   const dteColor = position.dte <= 7 ? "hsl(var(--destructive))" : position.dte <= 21 ? "hsl(30 95% 60%)" : "hsl(var(--foreground))";
   const alerts = position.alerts ?? [];
+  const recommendations = position.recommendations ?? getPositionRecommendations(position, settings);
+  const primaryRecommendation = recommendations[0];
 
   return (
     <div style={{
@@ -231,6 +398,7 @@ function PositionRow({ position }: { position: ExtendedPosition }) {
               {position.strategyType}
             </span>
             {alerts.map(alert => <AlertBadge key={alert.type} alert={alert} />)}
+            {primaryRecommendation && <ActionBadge recommendation={primaryRecommendation} />}
           </div>
           <div style={{ fontSize: 10, color: "hsl(var(--muted-foreground))" }}>
             {position.strikesLabel} · exp {position.expiration}
@@ -270,6 +438,19 @@ function PositionRow({ position }: { position: ExtendedPosition }) {
 
       {expanded && (
         <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)", padding: isMobile ? "10px 14px 12px" : "12px 18px 14px" }}>
+          {recommendations.length > 0 && (
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.06em", color: "hsl(var(--muted-foreground))", marginBottom: 8 }}>
+                ACTION RECOMMENDATIONS
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fit, minmax(220px, 1fr))", gap: 8 }}>
+                {recommendations.slice(0, 3).map((recommendation) => (
+                  <RecommendationCard key={`${recommendation.action}:${recommendation.reason}`} recommendation={recommendation} />
+                ))}
+              </div>
+            </div>
+          )}
+
           <div style={{ display: "flex", gap: 16, marginBottom: 10, flexWrap: "wrap" }}>
             <GreekPill label="OPENED" value={formatDate(position.openedAt)} />
             {settings.showUnrealizedPnl && <GreekPill label="UNREALIZED" value={String(maskSensitiveValue(formatCurrency(position.unrealizedPnl ?? position.totalPnl), "pnl"))} color={pnlColor((position.unrealizedPnl ?? position.totalPnl) >= 0, settings.pnlColorScheme)} />}
@@ -468,6 +649,50 @@ function ClosedPositions({ stats }: { stats?: PositionStats }) {
   );
 }
 
+function ActionQueue({
+  items,
+}: {
+  items: Array<{ position: ExtendedPosition; recommendation: PositionActionRecommendation }>;
+}) {
+  if (items.length === 0) return null;
+  return (
+    <div style={{ border: "1px solid rgba(255,255,255,0.07)", borderRadius: 8, background: "rgba(255,255,255,0.02)", padding: 14, marginBottom: 18 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13, fontWeight: 800, marginBottom: 12 }}>
+        <Target size={14} color="hsl(var(--primary))" />
+        Action Queue
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: 8 }}>
+        {items.map(({ position, recommendation }) => {
+          const color = recommendationColor(recommendation.severity);
+          return (
+            <Link key={`${position.id}:${recommendation.action}`} href={`/analysis?symbol=${position.underlying}`}>
+              <div style={{
+                minHeight: 82,
+                padding: "10px 12px",
+                borderRadius: 8,
+                border: `1px solid ${color}30`,
+                background: `${color}10`,
+                cursor: "pointer",
+              }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 6 }}>
+                  <div style={{ fontSize: 13, fontWeight: 850 }}>{position.underlying}</div>
+                  <div style={{ fontSize: 11, fontWeight: 850, color }}>{recommendation.action}</div>
+                </div>
+                <div style={{ fontSize: 10.5, color: "hsl(var(--muted-foreground))", marginBottom: 6 }}>
+                  {position.strategyType} | {position.dte} DTE | {position.totalPnlPercent >= 0 ? "+" : ""}{position.totalPnlPercent.toFixed(1)}%
+                </div>
+                <div style={{ fontSize: 11, lineHeight: 1.4, color: "hsl(var(--muted-foreground))" }}>
+                  {recommendation.reason}
+                </div>
+              </div>
+            </Link>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function PositionsPage() {
   const isMobile = useIsMobile();
   const { settings } = useSettings();
@@ -503,7 +728,10 @@ export default function PositionsPage() {
   });
   const { data: authStatus } = useGetTastytradeAuthStatus();
 
-  const positions = (data?.positions ?? []) as ExtendedPosition[];
+  const positions = useMemo(() => ((data?.positions ?? []) as ExtendedPosition[]).map(position => ({
+    ...position,
+    recommendations: position.recommendations ?? getPositionRecommendations(position, settings),
+  })), [data?.positions, settings]);
   const buyingPowerUsedPct =
     typeof (data as any)?.buyingPowerUsedPct === "number"
       ? (data as any).buyingPowerUsedPct
@@ -515,6 +743,14 @@ export default function PositionsPage() {
   const grouped = useMemo(() => groupPositions(sorted, settings.positionsGroupBy), [sorted, settings.positionsGroupBy]);
   const sectorAllocation = useMemo(() => allocationData(positions, "sector"), [positions]);
   const strategyAllocation = useMemo(() => allocationData(positions, "strategyType"), [positions]);
+  const actionQueue = useMemo(() => positions
+    .flatMap(position => (position.recommendations ?? []).slice(0, 1).map(recommendation => ({ position, recommendation })))
+    .filter(item => item.recommendation.severity !== "neutral")
+    .sort((a, b) => {
+      const rank = { danger: 4, success: 3, warning: 2, neutral: 1 };
+      return rank[b.recommendation.severity] - rank[a.recommendation.severity] || b.recommendation.confidence - a.recommendation.confidence;
+    })
+    .slice(0, 6), [positions]);
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -568,6 +804,7 @@ export default function PositionsPage() {
           {!isLoading && !error && positions.length > 0 && (
             <>
               <PortfolioSummary positions={positions} buyingPowerUsedPct={buyingPowerUsedPct} closedPnl={stats?.totalPnl ?? 0} />
+              <ActionQueue items={actionQueue} />
 
               {(settings.showSectorAllocationChart || settings.showStrategyAllocationChart || settings.showWinRateStatistics) && (
                 <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fit, minmax(240px, 1fr))", gap: 10, marginBottom: 18 }}>
