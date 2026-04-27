@@ -3,6 +3,7 @@ import { useGetStock, useGetStockPriceHistory, useGetWatchlist, useAddToWatchlis
 import { AlertCircle, BarChart2, Bookmark, BookmarkCheck, TrendingDown, TrendingUp } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { formatCurrency, formatNumber, formatPercent, useFormats } from "@/lib/format";
+import { formatFreshness, freshnessColor, getFreshnessTone, type FreshnessTone } from "@/lib/freshness";
 import { useSettings } from "@/contexts/SettingsContext";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -68,8 +69,8 @@ export function StockDetailPanel({ symbol }: StockDetailPanelProps) {
     setPeriod(next);
   }, [settings.defaultChartPeriod, symbol]);
 
-  const { data: stock, isLoading: isLoadingStock } = useGetStock(symbol, { query: { enabled: !!symbol } });
-  const { data: history = [], isLoading: isLoadingHistory } = useGetStockPriceHistory(symbol, { period }, { query: { enabled: !!symbol } });
+  const { data: stock, isLoading: isLoadingStock, dataUpdatedAt: stockUpdatedAt } = useGetStock(symbol, { query: { enabled: !!symbol } });
+  const { data: history = [], isLoading: isLoadingHistory, dataUpdatedAt: historyUpdatedAt } = useGetStockPriceHistory(symbol, { period }, { query: { enabled: !!symbol } });
   const { data: watchlist = [] } = useGetWatchlist();
   const addToWatchlist = useAddToWatchlist();
   const removeFromWatchlist = useRemoveFromWatchlist();
@@ -139,6 +140,8 @@ export function StockDetailPanel({ symbol }: StockDetailPanelProps) {
     quote.source === "polygon-eod" ? "Polygon EOD" :
     quote.source === "polygon" ? "Polygon" :
     "Market data";
+  const quoteFreshness = getFreshnessTone(stockUpdatedAt, quote.priceSource === "tastytrade-live" ? 45_000 : 5 * 60_000);
+  const historyFreshness = getFreshnessTone(historyUpdatedAt, 10 * 60_000);
   const relVol = Number(quote.relVol ?? (stock.volume && quote.avgVolume ? stock.volume / quote.avgVolume : 0));
   const dayRangePct = stock.fiftyTwoWeekHigh > stock.fiftyTwoWeekLow
     ? Math.max(0, Math.min(100, ((stock.price - stock.fiftyTwoWeekLow) / (stock.fiftyTwoWeekHigh - stock.fiftyTwoWeekLow)) * 100))
@@ -209,16 +212,18 @@ export function StockDetailPanel({ symbol }: StockDetailPanelProps) {
 
             <div style={{ textAlign: "right", minWidth: 280 }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8, marginBottom: 6 }}>
-                <span style={{
-                  display: "inline-flex", alignItems: "center", gap: 6, padding: "3px 8px", borderRadius: 999,
-                  background: quote.priceSource === "tastytrade-live" ? "hsl(var(--success) / 0.10)" : "rgba(255,255,255,0.05)",
-                  border: quote.priceSource === "tastytrade-live" ? "1px solid hsl(var(--success) / 0.24)" : "1px solid rgba(255,255,255,0.08)",
-                  color: quote.priceSource === "tastytrade-live" ? "hsl(var(--success))" : "hsl(var(--muted-foreground))",
-                  fontSize: 11, fontWeight: 700,
-                }}>
-                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: "currentColor" }} />
-                  {quoteSource}
-                </span>
+                <ProviderFreshnessBadge
+                  label={quoteSource}
+                  timestamp={stockUpdatedAt}
+                  tone={quoteFreshness}
+                  detail={quote.priceSource === "tastytrade-live" ? "quote stream" : "quote snapshot"}
+                />
+                <ProviderFreshnessBadge
+                  label={`${period} chart`}
+                  timestamp={historyUpdatedAt}
+                  tone={historyFreshness}
+                  detail="history"
+                />
               </div>
               <div style={{ fontSize: 36, fontWeight: 750, letterSpacing: "-0.04em", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
                 {formatCurrency(stock.price)}
@@ -705,6 +710,43 @@ function InfoCard({ label, value, sub }: { label: string; value: string; sub?: s
       <div style={{ fontSize: 13, fontWeight: 500, letterSpacing: "-0.01em", color: "hsl(var(--foreground))", lineHeight: 1.5 }}>{value}</div>
       {sub && <div style={{ fontSize: 12, color: "hsl(var(--muted-foreground))", marginTop: 4, fontVariantNumeric: "tabular-nums" }}>{sub}</div>}
     </div>
+  );
+}
+
+function ProviderFreshnessBadge({
+  label,
+  timestamp,
+  tone,
+  detail,
+}: {
+  label: string;
+  timestamp?: number | string | null;
+  tone: FreshnessTone;
+  detail?: string;
+}) {
+  const color = freshnessColor(tone);
+  return (
+    <span
+      title={`${label}${detail ? ` ${detail}` : ""} loaded ${formatFreshness(timestamp)}`}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        padding: "3px 8px",
+        borderRadius: 999,
+        background: tone === "fresh" ? "hsl(var(--success) / 0.10)" : tone === "aging" ? "rgba(245,158,11,0.10)" : tone === "stale" ? "hsl(var(--destructive) / 0.10)" : "rgba(255,255,255,0.05)",
+        border: `1px solid ${tone === "fresh" ? "hsl(var(--success) / 0.24)" : tone === "aging" ? "rgba(245,158,11,0.24)" : tone === "stale" ? "hsl(var(--destructive) / 0.24)" : "rgba(255,255,255,0.08)"}`,
+        color,
+        fontSize: 11,
+        fontWeight: 700,
+      }}
+    >
+      <span style={{ width: 6, height: 6, borderRadius: "50%", background: "currentColor" }} />
+      {label}
+      <span style={{ color: "hsl(var(--muted-foreground))", fontWeight: 600 }}>
+        {formatFreshness(timestamp)}
+      </span>
+    </span>
   );
 }
 
