@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useGetStock, useGetStockPriceHistory, useGetWatchlist, useAddToWatchlist, useRemoveFromWatchlist, getGetWatchlistQueryKey } from "@workspace/api-client-react";
-import { AlertCircle, BarChart2, Bookmark, BookmarkCheck, TrendingDown, TrendingUp } from "lucide-react";
+import { AlertCircle, BarChart2, Bookmark, BookmarkCheck, RefreshCw, TrendingDown, TrendingUp } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { formatCurrency, formatNumber, formatPercent, useFormats } from "@/lib/format";
 import { useSettings } from "@/contexts/SettingsContext";
@@ -72,7 +72,7 @@ export function StockDetailPanel({ symbol }: StockDetailPanelProps) {
     setPeriod(next);
   }, [settings.defaultChartPeriod, symbol]);
 
-  const { data: stock, isLoading: isLoadingStock } = useGetStock(symbol, {
+  const { data: stock, isLoading: isLoadingStock, isRefetching, refetch } = useGetStock(symbol, {
     query: {
       enabled: !!symbol,
       refetchInterval: quoteRefreshMs,
@@ -234,6 +234,27 @@ export function StockDetailPanel({ symbol }: StockDetailPanelProps) {
                   <span style={{ width: 6, height: 6, borderRadius: "50%", background: "currentColor" }} />
                   {quoteSource}
                 </span>
+                <button
+                  onClick={() => refetch()}
+                  disabled={isRefetching}
+                  title="Refresh live quote"
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    width: 24,
+                    height: 24,
+                    borderRadius: 6,
+                    border: "1px solid rgba(255,255,255,0.08)",
+                    background: "rgba(255,255,255,0.04)",
+                    color: "hsl(var(--muted-foreground))",
+                    cursor: isRefetching ? "not-allowed" : "pointer",
+                    opacity: isRefetching ? 0.5 : 1,
+                    padding: 0,
+                  }}
+                >
+                  <RefreshCw style={{ width: 11, height: 11, animation: isRefetching ? "spin 0.8s linear infinite" : "none" }} />
+                </button>
               </div>
               <div style={{ fontSize: 36, fontWeight: 750, letterSpacing: "-0.04em", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
                 {formatCurrency(stock.price)}
