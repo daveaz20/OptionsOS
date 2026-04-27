@@ -202,7 +202,7 @@ router.get("/stocks/:symbol", async (req, res): Promise<void> => {
     if (isPolygonEnabled()) {
       const cached = getScreenerRow(symbol);
       if (cached) {
-        const [liveRow] = await enrichRowsWithTastytradeQuotes([cached]);
+        const [liveRow] = await enrichRowsWithTastytradeQuotes([cached], { waitForLiveMs: 1200 });
         res.json(GetStockResponse.parse(screenerRowToStock(liveRow ?? cached)));
         return;
       }

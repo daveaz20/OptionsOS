@@ -5,6 +5,7 @@ import { StockDetailPanel } from "@/components/workspace/StockDetailPanel";
 import { StrategyPanel } from "@/components/workspace/StrategyPanel";
 import { useGetStock } from "@workspace/api-client-react";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useSettings } from "@/contexts/SettingsContext";
 
 type MobileTab = "detail" | "strategy";
 
@@ -41,7 +42,12 @@ export default function ScannerPage() {
   const [location] = useLocation();
   const search     = useSearch();
   const isMobile   = useIsMobile();
+  const { settings } = useSettings();
   const [mobileTab, setMobileTab] = useState<MobileTab>("detail");
+  const quoteRefreshMs =
+    settings.autoRefresh && !settings.disableStreamer
+      ? Math.max(2_000, Math.min(3_000, Number(settings.autoRefreshInterval || 60) * 1000))
+      : false;
 
   const [selectedSymbol, setSelectedSymbol] = useState<string>(getInitialAnalysisSymbol);
 
@@ -61,7 +67,13 @@ export default function ScannerPage() {
     } catch { /* ignore */ }
   }, [selectedSymbol]);
 
-  const { data: stock } = useGetStock(selectedSymbol, { query: { enabled: !!selectedSymbol } });
+  const { data: stock } = useGetStock(selectedSymbol, {
+    query: {
+      enabled: !!selectedSymbol,
+      refetchInterval: quoteRefreshMs,
+      refetchIntervalInBackground: true,
+    },
+  });
 
   // Mobile: single-panel tab layout
   if (isMobile) {

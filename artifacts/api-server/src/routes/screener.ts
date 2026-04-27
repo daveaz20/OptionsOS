@@ -47,6 +47,7 @@ import {
   getMarketMetrics,
   getQuoteSnapshots,
   getStreamedQuote,
+  streamerEvents,
   subscribeQuotes,
 } from "../lib/tastytrade.js";
 import { db, screenerCacheTable, userSettingsTable, watchlistTable } from "@workspace/db";
@@ -739,7 +740,32 @@ async function selectLiveQuoteSymbols(rows: ScreenerRow[]): Promise<Set<string>>
   return selected;
 }
 
-export async function enrichRowsWithTastytradeQuotes(rows: ScreenerRow[]): Promise<ScreenerRow[]> {
+async function waitForStreamedQuote(symbols: string[], timeoutMs: number): Promise<void> {
+  if (timeoutMs <= 0 || symbols.length === 0) return;
+  const wanted = new Set(symbols.map((symbol) => symbol.toUpperCase()));
+  if ([...wanted].some((symbol) => getStreamedQuote(symbol))) return;
+
+  await new Promise<void>((resolve) => {
+    const timer = setTimeout(done, timeoutMs);
+
+    function done() {
+      clearTimeout(timer);
+      streamerEvents.off("quote", onQuote);
+      resolve();
+    }
+
+    function onQuote(quote: { symbol?: string }) {
+      if (quote.symbol && wanted.has(quote.symbol.toUpperCase())) done();
+    }
+
+    streamerEvents.on("quote", onQuote);
+  });
+}
+
+export async function enrichRowsWithTastytradeQuotes(
+  rows: ScreenerRow[],
+  options: { waitForLiveMs?: number } = {},
+): Promise<ScreenerRow[]> {
   try {
     const selectedSymbols = await selectLiveQuoteSymbols(rows);
     const symbolsToEnrich = [...selectedSymbols]
@@ -754,6 +780,7 @@ export async function enrichRowsWithTastytradeQuotes(rows: ScreenerRow[]): Promi
     }
 
     subscribeQuotes(symbolsToEnrich);
+    await waitForStreamedQuote(symbolsToEnrich, options.waitForLiveMs ?? 0);
 
     const quoteRows = new Map<string, ScreenerRow>();
     for (const row of rows) {

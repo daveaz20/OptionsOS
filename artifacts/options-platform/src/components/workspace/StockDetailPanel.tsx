@@ -62,13 +62,23 @@ export function StockDetailPanel({ symbol }: StockDetailPanelProps) {
   const [period, setPeriod] = useState<Period>((PERIODS.includes(settings.defaultChartPeriod as Period) ? settings.defaultChartPeriod : "1M") as Period);
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const quoteRefreshMs =
+    settings.autoRefresh && !settings.disableStreamer
+      ? Math.max(2_000, Math.min(3_000, Number(settings.autoRefreshInterval || 60) * 1000))
+      : false;
 
   useEffect(() => {
     const next = PERIODS.includes(settings.defaultChartPeriod as Period) ? settings.defaultChartPeriod as Period : "1M";
     setPeriod(next);
   }, [settings.defaultChartPeriod, symbol]);
 
-  const { data: stock, isLoading: isLoadingStock } = useGetStock(symbol, { query: { enabled: !!symbol } });
+  const { data: stock, isLoading: isLoadingStock } = useGetStock(symbol, {
+    query: {
+      enabled: !!symbol,
+      refetchInterval: quoteRefreshMs,
+      refetchIntervalInBackground: true,
+    },
+  });
   const { data: history = [], isLoading: isLoadingHistory } = useGetStockPriceHistory(symbol, { period }, { query: { enabled: !!symbol } });
   const { data: watchlist = [] } = useGetWatchlist();
   const addToWatchlist = useAddToWatchlist();
